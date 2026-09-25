@@ -1,0 +1,34 @@
+{% extends "base.html" %}{% load workbench %}
+{% block title %}Timesheet{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles"><h1>My timesheet</h1>
+  <p class="intro">Log the hours you spend on each project or task. Your lead sees totals in the weekly report. You can also log time from any task page.</p></div>
+  <div class="actions"><a class="btn" href="{% url 'time:export' %}?from={{ start|date:'Y-m-d' }}&to={{ end|date:'Y-m-d' }}">{% icon 'download' 16 %} CSV</a></div></div>
+<div class="btn-row week-nav">
+  <a class="btn btn-sm" href="?week={{ prev }}">← Previous week</a>
+  <strong>{{ start|date:"D j M" }} – {{ end|date:"D j M Y" }}</strong>
+  <a class="btn btn-sm" href="?week={{ next }}">Next week →</a>
+  {% if not this_week %}<a class="btn btn-sm btn-ghost" href="?">This week</a>{% endif %}
+  <span class="right"><span class="muted">Week total</span> <strong class="big">{{ total|floatformat:"-2" }} h</strong></span>
+</div><p></p>
+<div class="grid grid-main">
+  <div class="card">
+    <div class="table-wrap"><table class="table">
+      <thead><tr><th>Day</th><th>Project / task</th><th>Note</th><th class="num">Hours</th><th></th></tr></thead>
+      <tbody>{% for d in days %}
+        {% for e in d.entries %}<tr><td class="nowrap">{% if forloop.first %}<strong>{{ d.date|date:"D j" }}</strong>{% endif %}</td>
+          <td><span class="key">{{ e.project.key }}</span>{% if e.task %} <a href="{{ e.task.get_absolute_url }}">{{ e.task.key }} {{ e.task.title|truncatechars:40 }}</a>{% endif %}</td>
+          <td class="small">{{ e.note }}</td><td class="num">{{ e.hours|floatformat:"-2" }}</td>
+          <td class="right"><form method="post" action="{% url 'time:delete' e.pk %}">{% csrf_token %}<button class="btn btn-sm btn-ghost" aria-label="Delete entry">{% icon 'x' 14 %}</button></form></td></tr>
+        {% empty %}<tr class="row-muted"><td class="nowrap">{{ d.date|date:"D j" }}</td><td colspan="4" class="small">—</td></tr>{% endfor %}
+        {% if d.entries|length > 1 %}<tr class="row-muted"><td></td><td colspan="2" class="small right">Day total</td><td class="num">{{ d.total|floatformat:"-2" }}</td><td></td></tr>{% endif %}
+      {% endfor %}</tbody>
+      <tfoot><tr><td colspan="3">Week total</td><td class="num">{{ total|floatformat:"-2" }}</td><td></td></tr></tfoot>
+    </table></div>
+  </div>
+  {% if not user.is_read_only %}
+  <div class="card"><div class="card-head"><h3>Log time</h3></div><div class="card-body">
+    <form method="post" novalidate>{% csrf_token %}{% include "partials/form.html" %}<button class="btn btn-primary">Add</button></form>
+  </div></div>{% endif %}
+</div>
+{% endblock %}

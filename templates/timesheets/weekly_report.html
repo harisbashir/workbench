@@ -1,0 +1,48 @@
+{% extends "base.html" %}{% load workbench humanize %}
+{% block title %}Weekly report{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles"><h1>Weekly report</h1>
+  <p class="intro">{% if is_manager %}What the team did this week: hours, finished work, reviews, blockers and production. Use it for your weekly check-in or send it to management — it prints cleanly.{% else %}Your hours and the work finished in your projects this week.{% endif %}</p></div>
+  <div class="actions no-print"><a class="btn" href="{% url 'time:export' %}?from={{ start|date:'Y-m-d' }}&to={{ end|date:'Y-m-d' }}">{% icon 'download' 16 %} Hours CSV</a>
+    <button class="btn" type="button" data-print>Print / save PDF</button></div></div>
+<div class="btn-row week-nav no-print">
+  <a class="btn btn-sm" href="?week={{ prev }}">← Previous week</a><strong>{{ start|date:"D j M" }} – {{ end|date:"D j M Y" }}</strong><a class="btn btn-sm" href="?week={{ next }}">Next week →</a>
+</div>
+<p class="print-only"><strong>{{ COMPANY_NAME }} — week of {{ start|date:"j M Y" }}</strong></p>
+
+<div class="grid grid-4">
+  <div class="card stat"><div class="label">Hours logged</div><div class="value">{{ grand_total|floatformat:"-1" }}</div></div>
+  <div class="card stat"><div class="label">Tasks finished</div><div class="value">{{ completed|length }}</div><div class="small muted">{{ created_count }} new tasks created</div></div>
+  <div class="card stat"><div class="label">Blocked now</div><div class="value {% if blocked %}bad{% endif %}">{{ blocked|length }}</div></div>
+  <div class="card stat"><div class="label">Overdue now</div><div class="value {% if overdue %}warn{% endif %}">{{ overdue|length }}</div></div>
+</div><p></p>
+
+<div class="card"><div class="card-head"><h2>Hours by person and project</h2></div>
+  {% if table %}<div class="table-wrap"><table class="table">
+    <thead><tr><th>Person</th>{% for k in keys %}<th class="num">{{ k }}</th>{% endfor %}<th class="num">Total</th></tr></thead>
+    <tbody>{% for r in table %}<tr><td>{{ r.person.display_name }}{% if r.person.time_zone %} <span class="faint small">{{ r.person.time_zone }}</span>{% endif %}</td>
+      {% for c in r.cells %}<td class="num">{% if c %}{{ c|floatformat:"-2" }}{% else %}<span class="faint">—</span>{% endif %}</td>{% endfor %}<td class="num"><strong>{{ r.total|floatformat:"-2" }}</strong></td></tr>{% endfor %}</tbody>
+    <tfoot><tr><td>Total</td>{% for c in col_totals %}<td class="num">{{ c|floatformat:"-2" }}</td>{% endfor %}<td class="num">{{ grand_total|floatformat:"-2" }}</td></tr></tfoot>
+  </table></div>
+  {% else %}<div class="card-body muted">No hours logged this week. People log time from <a href="{% url 'time:mine' %}">Timesheet</a> or on a task page.</div>{% endif %}
+</div><p></p>
+
+<div class="grid grid-2">
+  <div class="card"><div class="card-head"><h2>Finished this week</h2></div><div class="card-body">
+    {% if completed %}<ul class="list-plain">{% for t in completed %}<li><span class="key">{{ t.key }}</span><a href="{{ t.get_absolute_url }}">{{ t.title }}</a><span class="right small faint">{{ t.assignee|default:"" }}</span></li>{% endfor %}</ul>
+    {% else %}<p class="muted small">Nothing finished yet.</p>{% endif %}</div></div>
+  <div class="card"><div class="card-head"><h2>Sent for review</h2></div><div class="card-body">
+    {% if to_review %}<ul class="list-plain">{% for a in to_review %}<li>{% if a.task %}<span class="key">{{ a.task.key }}</span><a href="{{ a.task.get_absolute_url }}">{{ a.task.title|truncatechars:50 }}</a>{% else %}{{ a.text }}{% endif %}<span class="right small faint">{{ a.who }}</span></li>{% endfor %}</ul>
+    {% else %}<p class="muted small">No reviews requested.</p>{% endif %}</div></div>
+  <div class="card"><div class="card-head"><h2>Blocked</h2></div><div class="card-body">
+    {% if blocked %}<ul class="list-plain">{% for t in blocked %}<li><span class="key">{{ t.key }}</span><div><a href="{{ t.get_absolute_url }}">{{ t.title|truncatechars:50 }}</a><br><span class="small overdue">{{ t.blocked_reason }}</span></div><span class="right small faint">{{ t.assignee|default:"" }}</span></li>{% endfor %}</ul>
+    {% else %}<p class="muted small">Nothing is blocked.</p>{% endif %}</div></div>
+  <div class="card"><div class="card-head"><h2>Overdue</h2></div><div class="card-body">
+    {% if overdue %}<ul class="list-plain">{% for t in overdue %}<li><span class="key">{{ t.key }}</span><a href="{{ t.get_absolute_url }}">{{ t.title|truncatechars:50 }}</a><span class="right small overdue">due {{ t.due_date|date:"M j" }}</span></li>{% endfor %}</ul>
+    {% else %}<p class="muted small">Nothing overdue.</p>{% endif %}</div></div>
+  <div class="card"><div class="card-head"><h2>Production</h2></div><div class="card-body">
+    {% for b in builds_done %}<div class="kv"><a href="{{ b.get_absolute_url }}">{{ b.number }} · {{ b.revision }}</a><span>{{ b.completed_qty }} passed, {{ b.failed_qty }} failed{% if b.yield_percent is not None %} ({{ b.yield_percent }}%){% endif %}</span></div>
+    {% empty %}<p class="muted small">No builds completed this week.</p>{% endfor %}
+  </div></div>
+</div>
+{% endblock %}

@@ -1,0 +1,55 @@
+{% extends "base.html" %}{% load workbench humanize %}
+{% block title %}{{ part.ipn }}{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles">
+  <div class="crumbs"><a href="{% url 'inventory:part_list' %}">Parts</a> /</div>
+  <h1><span class="key">{{ part.ipn }}</span> {{ part.description }}</h1></div>
+  <div class="actions">{% if part.datasheet_url %}<a class="btn" href="{{ part.datasheet_url }}" target="_blank" rel="noopener">{% icon 'file' 16 %} Datasheet</a>{% endif %}
+    {% if not user.is_read_only %}<a class="btn" href="{% url 'inventory:part_edit' part.pk %}">{% icon 'edit' 16 %} Edit</a>{% endif %}
+    {% if user.can_manage_procurement and part.supplier %}<a class="btn btn-primary" href="{% url 'production:po_create' %}?supplier={{ part.supplier_id }}">{% icon 'truck' 16 %} Order</a>{% endif %}</div>
+</div>
+<div class="grid grid-main">
+  <div class="stack">
+    <div class="card"><div class="card-body grid grid-2">
+      <div>
+        <div class="kv"><span>Category</span><span>{{ part.get_category_display }}</span></div>
+        <div class="kv"><span>Value</span><span>{{ part.value|default:"—" }}</span></div>
+        <div class="kv"><span>Footprint</span><span class="small mono">{{ part.footprint|default:"—" }}</span></div>
+        <div class="kv"><span>Manufacturer</span><span>{{ part.manufacturer|default:"—" }}</span></div>
+        <div class="kv"><span>MPN</span><span class="mono">{{ part.mpn|default:"—" }}</span></div>
+      </div><div>
+        <div class="kv"><span>Supplier</span><span>{{ part.supplier|default:"—" }} {% if part.supplier_sku %}<span class="small faint">{{ part.supplier_sku }}</span>{% endif %}</span></div>
+        <div class="kv"><span>Unit cost</span><span>{{ part.unit_cost|floatformat:4 }}</span></div>
+        <div class="kv"><span>Location</span><span>{{ part.location|default:"—" }}</span></div>
+        <div class="kv"><span>Lifecycle</span><span>{% status_badge part.lifecycle part.get_lifecycle_display %}</span></div>
+        <div class="kv"><span>Reorder level</span><span>{{ part.min_stock }}</span></div>
+      </div>
+    </div>{% if part.notes %}<div class="card-foot">{{ part.notes|linebreaksbr }}</div>{% endif %}</div>
+
+    <div class="card"><div class="card-head"><h2>Used in</h2></div><div class="card-body">
+      {% if used_in %}<ul class="list-plain">{% for l in used_in %}<li><a href="{% url 'inventory:bom' l.revision.pk %}">{{ l.revision }}</a><span class="faint small">{{ l.references|truncatechars:60 }}</span><span class="right">{{ l.quantity }} per board</span></li>{% endfor %}</ul>
+      {% else %}<p class="muted small">Not used on any BOM you can see.</p>{% endif %}</div></div>
+
+    <div class="card"><div class="card-head"><h2>Stock history</h2></div>
+      {% if movements %}<div class="table-wrap"><table class="table"><thead><tr><th>When</th><th>Change</th><th>Balance</th><th>Reason</th><th>Reference</th><th>By</th></tr></thead><tbody>
+      {% for m in movements %}<tr><td class="small nowrap">{{ m.created_at|naturaltime }}</td><td class="num {% if m.delta < 0 %}overdue{% endif %}">{% if m.delta > 0 %}+{% endif %}{{ m.delta }}</td><td class="num">{{ m.balance_after }}</td>
+        <td>{{ m.get_reason_display }}</td><td class="small">{{ m.reference }}</td><td class="small">{{ m.user|default:"—" }}</td></tr>{% endfor %}</tbody></table></div>
+      {% else %}<div class="card-body muted small">No stock movements yet.</div>{% endif %}
+    </div>
+  </div>
+  <div class="stack">
+    <div class="card"><div class="card-body">
+      <div class="stat"><div class="label">In stock</div><div class="value {% if part.is_low %}warn{% endif %}">{{ part.stock }}</div>
+        {% if part.is_low %}<p class="small">Below the reorder level of {{ part.min_stock }}.</p>{% endif %}</div>
+      {% for l in open_pos %}<div class="kv"><span>On order: <a href="{{ l.order.get_absolute_url }}">{{ l.order.number }}</a></span><span>{{ l.outstanding }}</span></div>{% endfor %}
+    </div></div>
+    {% if user.can_manage_procurement %}
+    <div class="card"><div class="card-head"><h3>Adjust stock</h3></div><div class="card-body">
+      <form method="post" action="{% url 'inventory:part_adjust' part.pk %}" novalidate>{% csrf_token %}
+        {% include "partials/form.html" with form=adjust_form %}
+        <button class="btn btn-primary">Update stock</button></form>
+      <p class="small muted">Stock also changes automatically when purchase orders are received and builds start.</p>
+    </div></div>{% endif %}
+  </div>
+</div>
+{% endblock %}

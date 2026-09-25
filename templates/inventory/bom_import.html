@@ -1,0 +1,36 @@
+{% extends "base.html" %}{% load workbench %}
+{% block title %}Import BOM · {{ rev }}{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles"><div class="crumbs"><a href="{{ rev.project.get_absolute_url }}">{{ rev.project.name }}</a> / <a href="{% url 'inventory:bom' rev.pk %}">BOM · {{ rev.name }}</a> /</div>
+  <h1>Import BOM for {{ rev }}</h1></div></div>
+{% if not preview %}
+<div class="grid grid-main">
+  <div class="card"><div class="card-body">
+    <form method="post" enctype="multipart/form-data" novalidate>{% csrf_token %}
+      {% include "partials/form.html" %}
+      <button class="btn btn-primary">{% icon 'upload' 16 %} Upload and preview</button>
+    </form>
+  </div></div>
+  <div class="card"><div class="card-head"><h3>Where to get the file</h3></div><div class="card-body small">
+    <p><strong>From KiCad:</strong> open the schematic, choose <em>Tools → Generate Bill of Materials</em> (KiCad 8: <em>Tools → Generate BOM</em>), and export as CSV.</p>
+    <p><strong>From KiBot:</strong> use the CSV from the BOM output in your GitHub Actions artifacts.</p>
+    <p>Columns are detected automatically: Reference, Value, Footprint, Quantity, and optional MPN, Manufacturer, Datasheet and DNP.</p>
+    <p class="muted">Nothing is saved until you confirm on the next screen.</p>
+  </div></div>
+</div>
+{% else %}
+<div class="tip"><strong>Check before saving.</strong> {{ preview.rows|length }} lines found. {{ preview.new }} will create new parts in the library; the rest match existing parts.
+  {% if preview.replace %}The current BOM for {{ rev.name }} will be replaced.{% else %}Lines will be added to the current BOM.{% endif %}</div>
+<div class="card"><div class="table-wrap"><table class="table">
+  <thead><tr><th>References</th><th>Value</th><th>Footprint</th><th class="num">Qty</th><th>MPN</th><th>Matches</th></tr></thead>
+  <tbody>{% for r in preview.rows %}
+    <tr class="{% if r.dnp %}row-muted{% elif not r.match_id %}row-good{% endif %}"><td class="small">{{ r.references|truncatechars:40 }}</td><td>{{ r.value }}</td><td class="small">{{ r.footprint|truncatechars:40 }}</td>
+      <td class="num">{{ r.quantity }}</td><td class="small">{{ r.manufacturer }} {{ r.mpn }}</td>
+      <td class="small">{% if r.match_id %}{{ r.match_label }} <span class="faint">(by {{ r.match_how }})</span>{% else %}<span class="badge badge-done">New part</span>{% endif %}{% if r.dnp %} <span class="badge">DNP</span>{% endif %}</td></tr>
+  {% endfor %}</tbody></table></div>
+  <div class="card-foot"><form method="post" class="btn-row">{% csrf_token %}
+    <button class="btn btn-primary" name="confirm" value="1">Save BOM</button>
+    <a class="btn btn-ghost" href="{% url 'inventory:bom_import' rev.pk %}">Start over</a></form></div>
+</div>
+{% endif %}
+{% endblock %}

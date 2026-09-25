@@ -1,0 +1,45 @@
+{% extends "base.html" %}{% load workbench %}
+{% block title %}Parts{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles"><h1>Parts &amp; BOM</h1>
+  <p class="intro">Your shared parts library with stock levels. Parts are added automatically when you import a BOM from KiCad, or you can add them by hand. <a href="{% url 'core:help_topic' 'parts' %}">How parts &amp; BOMs work →</a></p></div>
+  <div class="actions"><a class="btn" href="{% url 'inventory:part_export' %}">{% icon 'download' 16 %} Export CSV</a>
+    {% if not user.is_read_only %}<a class="btn btn-primary" href="{% url 'inventory:part_create' %}">{% icon 'plus' 16 %} Add part</a>{% endif %}</div>
+</div>
+{% include "inventory/_tabs.html" with tab="parts" %}
+<div class="grid grid-3">
+  <div class="card stat"><div class="label">Parts in library</div><div class="value">{{ part_count }}</div></div>
+  <div class="card stat"><a href="?stock=low"><div class="label">Below reorder level</div><div class="value {% if low_count %}warn{% endif %}">{{ low_count }}</div></a></div>
+  <div class="card stat"><div class="label">Stock value</div><div class="value">{{ stock_value|money }}</div></div>
+</div><p></p>
+<form class="filters" method="get">
+  <input type="search" name="q" value="{{ q }}" placeholder="Search part number, value, MPN, footprint…">
+  <select name="category" data-autosubmit aria-label="Category"><option value="">All categories</option>
+    {% for k, label in categories %}<option value="{{ k }}" {% if category == k %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+  <select name="stock" data-autosubmit aria-label="Stock"><option value="">Any stock level</option>
+    <option value="low" {% if stock == 'low' %}selected{% endif %}>Below reorder level</option><option value="out" {% if stock == 'out' %}selected{% endif %}>Out of stock</option></select>
+  <button class="btn">Search</button>
+  {% if q or category or stock %}<a class="btn btn-ghost" href="{% url 'inventory:part_list' %}">Clear</a>{% endif %}
+</form>
+<div class="card">
+{% if page %}
+<div class="table-wrap"><table class="table">
+  <thead><tr><th>Part number</th><th>Description</th><th>Value</th><th>Footprint</th><th>MPN</th><th>Supplier</th><th class="num">Unit cost</th><th class="num">In stock</th></tr></thead>
+  <tbody>{% for p in page %}
+    <tr class="{% if p.stock <= 0 and p.min_stock %}row-bad{% elif p.is_low %}row-warn{% endif %}">
+      <td class="key"><a href="{{ p.get_absolute_url }}">{{ p.ipn }}</a></td><td>{{ p.description }}{% if p.lifecycle != 'active' %} {% status_badge p.lifecycle p.get_lifecycle_display %}{% endif %}</td>
+      <td>{{ p.value }}</td><td class="small">{{ p.footprint|cut:"Resistor_SMD:"|cut:"Capacitor_SMD:"|truncatechars:32 }}</td>
+      <td class="small">{{ p.manufacturer }} {{ p.mpn }}</td><td>{{ p.supplier|default:"—" }}</td>
+      <td class="num">{{ p.unit_cost|floatformat:4 }}</td><td class="num"><strong>{{ p.stock }}</strong>{% if p.is_low %} <span class="small">/ {{ p.min_stock }}</span>{% endif %}</td></tr>
+  {% endfor %}</tbody></table></div>
+  {% if page.has_other_pages %}<div class="card-foot btn-row">
+    {% if page.has_previous %}<a class="btn btn-sm" href="?q={{ q|urlencode }}&category={{ category }}&stock={{ stock }}&page={{ page.previous_page_number }}">Previous</a>{% endif %}
+    <span class="muted small">Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+    {% if page.has_next %}<a class="btn btn-sm" href="?q={{ q|urlencode }}&category={{ category }}&stock={{ stock }}&page={{ page.next_page_number }}">Next</a>{% endif %}</div>{% endif %}
+{% else %}
+  <div class="empty">{% icon 'chip' 40 %}<h3>{% if q or category or stock %}No parts match{% else %}Your parts library is empty{% endif %}</h3>
+    <p>The quickest way to fill it is to import a BOM from KiCad on a project revision — every part is added for you.</p>
+    <a class="btn btn-primary" href="{% url 'inventory:bom_index' %}">Go to BOMs</a></div>
+{% endif %}
+</div>
+{% endblock %}

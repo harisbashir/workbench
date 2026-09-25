@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}{% if supplier %}Edit {{ supplier.name }}{% else %}Add supplier{% endif %}{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles"><div class="crumbs"><a href="{% url 'inventory:supplier_list' %}">Suppliers</a> /</div>
+  <h1>{% if supplier %}{{ supplier.name }}{% else %}Add a supplier{% endif %}</h1></div></div>
+<div class="card form-card"><div class="card-body">
+  <form method="post" novalidate>{% csrf_token %}
+    {% include "partials/form.html" with grid=True %}
+    <div class="form-actions"><button class="btn btn-primary">Save supplier</button><a class="btn btn-ghost" href="{% url 'inventory:supplier_list' %}">Cancel</a></div>
+  </form>
+</div></div>
+{% endblock %}

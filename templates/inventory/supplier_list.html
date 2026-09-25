@@ -1,0 +1,16 @@
+{% extends "base.html" %}{% load workbench %}
+{% block title %}Suppliers{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles"><h1>Parts &amp; BOM</h1>
+  <p class="intro">Distributors, PCB fabs and assembly houses you buy from.</p></div>
+  {% if user.can_manage_procurement %}<div class="actions"><a class="btn btn-primary" href="{% url 'inventory:supplier_create' %}">{% icon 'plus' 16 %} Add supplier</a></div>{% endif %}</div>
+{% include "inventory/_tabs.html" with tab="suppliers" %}
+<div class="card">{% if suppliers %}<div class="table-wrap"><table class="table">
+  <thead><tr><th>Name</th><th>Type</th><th>Contact</th><th>Country</th><th class="num">Lead time</th><th></th></tr></thead>
+  <tbody>{% for s in suppliers %}<tr><td><strong>{{ s.name }}</strong>{% if s.website %} <a class="small" href="{{ s.website }}" target="_blank" rel="noopener">website</a>{% endif %}</td>
+    <td>{{ s.get_kind_display }}</td><td class="small">{{ s.contact_name }}{% if s.email %}<br><a href="mailto:{{ s.email }}">{{ s.email }}</a>{% endif %}{% if s.phone %}<br>{{ s.phone }}{% endif %}</td>
+    <td>{{ s.country }}</td><td class="num">{{ s.lead_time_days }} days</td>
+    <td class="right nowrap">{% if user.can_manage_procurement %}<a class="btn btn-sm" href="{% url 'production:po_create' %}?supplier={{ s.pk }}">New order</a> <a class="btn btn-sm btn-ghost" href="{% url 'inventory:supplier_edit' s.pk %}">Edit</a>{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+{% else %}<div class="empty">{% icon 'truck' 40 %}<h3>No suppliers yet</h3><p>Add the distributors and manufacturers you order from, e.g. DigiKey, LCSC, JLCPCB, or a local assembly house.</p>
+  {% if user.can_manage_procurement %}<a class="btn btn-primary" href="{% url 'inventory:supplier_create' %}">Add supplier</a>{% endif %}</div>{% endif %}</div>
+{% endblock %}

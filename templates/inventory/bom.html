@@ -1,0 +1,46 @@
+{% extends "base.html" %}{% load workbench %}
+{% block title %}BOM · {{ rev }}{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles">
+  <div class="crumbs"><a href="{% url 'projects:list' %}">Projects</a> / <a href="{{ project.get_absolute_url }}">{{ project.name }}</a> /</div>
+  <h1>BOM · {{ rev.name }} {% status_badge rev.status rev.get_status_display %}</h1>
+  {% if rev.status == 'released' %}<p class="intro">{% icon 'lock' 14 %} Released for production — only leads can change this BOM.</p>{% endif %}
+</div>
+<div class="actions">
+  {% if others %}<form method="get" class="btn-row" action="#" data-compare-form>
+    <select aria-label="Compare with" data-compare-select><option value="">Compare with…</option>
+      {% for o in others %}<option value="{% url 'inventory:bom_compare' rev.pk o.pk %}">{{ o.name }}</option>{% endfor %}</select></form>{% endif %}
+  <a class="btn" href="{% url 'inventory:bom_export' rev.pk %}">{% icon 'download' 16 %} CSV</a>
+  {% if can_edit %}<a class="btn" href="{% url 'inventory:bom_line_create' rev.pk %}">{% icon 'plus' 16 %} Add line</a>
+  <a class="btn btn-primary" href="{% url 'inventory:bom_import' rev.pk %}">{% icon 'upload' 16 %} Import from KiCad</a>{% endif %}
+</div></div>
+
+{% if lines %}
+<div class="grid grid-4">
+  <div class="card stat"><div class="label">Cost per board (parts)</div><div class="value">{{ cost|money }}</div></div>
+  <div class="card stat"><div class="label">Unique parts</div><div class="value">{{ unique_parts }}</div></div>
+  <div class="card stat"><div class="label">Placements per board</div><div class="value">{{ placements }}</div></div>
+  <div class="card stat"><div class="label">Boards buildable from stock</div><div class="value {% if buildable == 0 %}bad{% elif buildable < 10 %}warn{% endif %}">{{ buildable }}</div>
+    {% if limiting and buildable < 1000 %}<div class="small muted">Limited by {% for l in limiting %}<a href="{{ l.part.get_absolute_url }}">{{ l.part.ipn }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</div>{% endif %}</div>
+</div><p></p>
+<div class="btn-row">{% if user.can_manage_procurement %}<a class="btn" href="{% url 'production:build_create' %}?revision={{ rev.pk }}">{% icon 'factory' 16 %} Plan a build of this revision</a>{% endif %}</div><p></p>
+<div class="card"><div class="table-wrap"><table class="table">
+  <thead><tr><th>Part</th><th>Description</th><th>References</th><th class="num">Qty / board</th><th class="num">Unit cost</th><th class="num">Line cost</th><th class="num">In stock</th><th class="num">Boards</th>{% if can_edit %}<th></th>{% endif %}</tr></thead>
+  <tbody>{% for l in lines %}
+    <tr class="{% if l.dnp %}row-muted{% elif l.can_build == 0 %}row-bad{% elif l.part.is_low %}row-warn{% endif %}">
+      <td class="key"><a href="{{ l.part.get_absolute_url }}">{{ l.part.ipn }}</a></td>
+      <td>{{ l.part.description }}{% if l.dnp %} <span class="badge">Do not populate</span>{% endif %}<br><span class="small faint">{{ l.part.manufacturer }} {{ l.part.mpn }}</span></td>
+      <td class="small">{{ l.references|truncatechars:48 }}</td>
+      <td class="num">{{ l.quantity }}</td><td class="num">{{ l.part.unit_cost|floatformat:4 }}</td><td class="num">{{ l.line_cost|floatformat:2 }}</td>
+      <td class="num">{{ l.part.stock }}</td><td class="num">{% if l.dnp %}—{% else %}{{ l.can_build }}{% endif %}</td>
+      {% if can_edit %}<td class="right"><a class="btn btn-sm btn-ghost" href="{% url 'inventory:bom_line_edit' rev.pk l.pk %}">Edit</a></td>{% endif %}</tr>
+  {% endfor %}</tbody>
+  <tfoot><tr><td colspan="5">Total per board</td><td class="num">{{ cost|floatformat:2 }}</td><td colspan="{% if can_edit %}3{% else %}2{% endif %}"></td></tr></tfoot>
+</table></div></div>
+<p class="small muted">Red rows: not enough stock for even one board. Amber rows: below the part's reorder level. “Boards” shows how many boards the current stock of that part covers.</p>
+{% else %}
+<div class="card"><div class="empty">{% icon 'list' 40 %}<h3>This revision has no BOM yet</h3>
+  <p>In KiCad's schematic editor choose <strong>Tools → Generate Bill of Materials</strong> and export CSV, or use the CSV KiBot produces in GitHub Actions. Then upload it here.</p>
+  {% if can_edit %}<a class="btn btn-primary" href="{% url 'inventory:bom_import' rev.pk %}">{% icon 'upload' 16 %} Import BOM</a>{% endif %}</div></div>
+{% endif %}
+{% endblock %}

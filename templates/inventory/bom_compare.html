@@ -1,0 +1,16 @@
+{% extends "base.html" %}{% load workbench %}
+{% block title %}Compare {{ a.name }} → {{ b.name }}{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles"><div class="crumbs"><a href="{{ b.project.get_absolute_url }}">{{ b.project.name }}</a> / <a href="{% url 'inventory:bom' b.pk %}">BOM · {{ b.name }}</a> /</div>
+  <h1>BOM changes: {{ a.name }} → {{ b.name }}</h1>
+  <p class="intro">{{ summary.added }} added · {{ summary.removed }} removed · {{ summary.changed }} changed · {{ summary.same }} unchanged. Use this when reviewing a new board revision.</p></div>
+  <div class="actions"><a class="btn btn-ghost" href="?all={% if hide_same %}1{% else %}0{% endif %}">{% if hide_same %}Show unchanged{% else %}Hide unchanged{% endif %}</a></div></div>
+<div class="card"><div class="table-wrap"><table class="table">
+  <thead><tr><th>Change</th><th>Part</th><th>Description</th><th class="num">{{ a.name }} qty</th><th class="num">{{ b.name }} qty</th><th>References ({{ b.name }})</th></tr></thead>
+  <tbody>{% for r in rows %}{% if not hide_same or r.change != 'same' %}
+    <tr class="{% if r.change == 'added' %}row-good{% elif r.change == 'removed' %}row-bad{% elif r.change == 'changed' %}row-warn{% endif %}">
+      <td><strong>{{ r.change|capfirst }}</strong></td><td class="key"><a href="{{ r.part.get_absolute_url }}">{{ r.part.ipn }}</a></td><td>{{ r.part.description }}</td>
+      <td class="num">{{ r.old.quantity|default:"—" }}{% if r.old.dnp %} DNP{% endif %}</td><td class="num">{{ r.new.quantity|default:"—" }}{% if r.new.dnp %} DNP{% endif %}</td>
+      <td class="small">{{ r.new.references|default:r.old.references|truncatechars:60 }}</td></tr>
+  {% endif %}{% empty %}<tr><td colspan="6" class="muted">Both BOMs are empty.</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

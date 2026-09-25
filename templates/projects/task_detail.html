@@ -8,6 +8,7 @@
 {% if can_edit %}<div class="actions"><a class="btn" href="{% url 'projects:task_edit' project.key task.number %}">{% icon 'edit' 16 %} Edit</a></div>{% endif %}
 </div>
 
+{% if task.is_blocked %}<div class="alert alert-error">{% icon 'alert' 18 %}<div><strong>Blocked:</strong> {{ task.blocked_reason }}{% if can_edit %} · <a href="{% url 'projects:task_edit' project.key task.number %}">update</a>{% endif %}</div></div>{% endif %}
 <div class="grid grid-main">
   <div class="stack">
     <div class="card"><div class="card-body">
@@ -16,12 +17,12 @@
 
     <div class="card" id="files"><div class="card-head"><h2>Files</h2>
       {% if can_edit %}<form method="post" enctype="multipart/form-data" action="{% url 'projects:task_attach' project.key task.number %}">{% csrf_token %}
-        <label class="btn btn-sm">{% icon 'upload' 14 %} Upload<input class="hidden" type="file" name="file" data-autoupload></label></form>{% endif %}</div>
+        <label class="btn btn-sm">{% icon 'upload' 14 %} Upload<input class="hidden" type="file" name="file" multiple data-autoupload></label></form>{% endif %}</div>
       <div class="card-body">
       {% if attachments %}<ul class="list-plain">{% for a in attachments %}
-        <li>{% icon 'file' 16 %}<a href="{% url 'core:file' a.pk %}" target="_blank">{{ a.name }}</a><span class="faint small">{{ a.size|filesize }}</span>
-          <span class="right faint small">{{ a.uploaded_by }} · {{ a.uploaded_at|naturaltime }}</span></li>{% endfor %}</ul>
-      {% else %}<p class="muted small">Attach schematic PDFs, screenshots, scope captures or test logs. KiCad files are fine too, but for design work keep the source of truth in GitHub.</p>{% endif %}
+        <li>{% icon 'file' 16 %}<a href="{{ a.get_absolute_url }}">{{ a.name }}</a>{% if a.version_count > 1 %}<span class="badge">v{{ a.version_count }}</span>{% endif %}<span class="faint small">{{ a.size|filesize }}</span>
+          <span class="right faint small">{{ a.updated_by|default:"" }} · {{ a.updated_at|naturaltime }}</span></li>{% endfor %}</ul>
+      {% else %}<p class="muted small">Attach schematic PDFs, screenshots, scope captures or test logs. They're kept in the project's Files under “Task files / {{ task.key }}”, with version history.</p>{% endif %}
     </div></div>
 
     <div class="card" id="comments"><div class="card-head"><h2>Discussion</h2><span class="faint small">{{ comments|length }} comment{{ comments|length|pluralize }}</span></div>
@@ -67,6 +68,15 @@
         <p class="small muted">Link code or design changes to this task by putting <code>{{ task.key }}</code> in the branch name or pull request title. Suggested branch:</p>
         <div class="copy-box"><input id="branch" type="text" readonly value="{{ branch_name }}" aria-label="Suggested branch name"><button class="btn btn-sm" type="button" data-copy="#branch">Copy</button></div>
       {% endif %}
+    </div></div>
+
+    <div class="card" id="time"><div class="card-head"><h3>{% icon 'clock' 16 %} Time</h3><span class="small muted">{{ time_total|floatformat:"-2" }} h logged</span></div><div class="card-body">
+      {% for row in time_by_person %}<div class="kv"><span>{{ row.name }}</span><span>{{ row.hours|floatformat:"-2" }} h</span></div>{% endfor %}
+      {% if can_edit %}<form method="post" action="{% url 'time:log_task' project.key task.number %}" class="time-form">{% csrf_token %}
+        <input type="number" name="hours" step="0.25" min="0.25" max="16" placeholder="Hours" required aria-label="Hours">
+        <input type="date" name="date" value="{% now 'Y-m-d' %}" aria-label="Date">
+        <input type="text" name="note" placeholder="Note (optional)" maxlength="200" aria-label="Note">
+        <button class="btn btn-sm">Log time</button></form>{% endif %}
     </div></div>
 
     <div class="card"><div class="card-head"><h3>History</h3></div><div class="card-body">

@@ -14,6 +14,7 @@
   <select name="revision" data-autosubmit aria-label="Filter by revision"><option value="">All revisions</option>
     {% for r in revisions %}<option value="{{ r.pk }}" {% if filters.revision == r.pk|stringformat:'s' %}selected{% endif %}>{{ r.name }}</option>{% endfor %}</select>
   <input type="search" name="q" value="{{ filters.q }}" placeholder="Filter tasks…">
+  <label class="check-label small"><input type="checkbox" name="blocked" value="1" data-autosubmit {% if filters.blocked %}checked{% endif %}> Blocked only</label>
   {% if filtered %}<a class="btn btn-ghost btn-sm" href="{% url 'projects:board' project.key %}">Clear filters</a>{% endif %}
 </form>
 {% if can_edit %}<p class="small muted">Drag cards between columns to change their status. Opening a GitHub pull request that mentions a task ID moves it to <em>In review</em> automatically; merging moves it to <em>Done</em>.</p>{% endif %}
@@ -28,6 +29,7 @@
       <a class="tcard" href="{{ t.get_absolute_url }}" data-move-url="{% url 'projects:task_move' project.key t.number %}">
         <div class="btn-row"><span class="key">{{ t.key }}</span><span class="kind">{{ t.get_kind_display }}</span></div>
         <div class="t-title">{{ t.title }}</div>
+        {% if t.is_blocked %}<div class="blocked-chip" title="{{ t.blocked_reason }}">{% icon 'alert' 12 %} Blocked: {{ t.blocked_reason|truncatechars:40 }}</div>{% endif %}
         <div class="t-meta">
           <span title="{{ t.get_priority_display }} priority"><span class="prio prio-{{ t.priority }}"></span>{{ t.get_priority_display }}</span>
           {% if t.revision %}<span>{{ t.revision.name }}</span>{% endif %}

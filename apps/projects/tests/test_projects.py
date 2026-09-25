@@ -86,3 +86,42 @@ class ProjectTests(TestCase):
         r = signed_in(self.eng).get(reverse("projects:board", args=["PWR"]) + "?assignee=me")
         self.assertContains(r, "Mine")
         self.assertNotContains(r, "Theirs")
+
+
+class RevisionChecklistTests(TestCase):
+    def setUp(self):
+        from apps.projects.models import Revision
+        self.lead = make_user("lead", role=User.Role.LEAD)
+        self.eng = make_user("eng")
+        self.project = Project.objects.create(key="PWR", name="Power board", lead=self.lead)
+        self.project.members.add(self.eng)
+        self.Revision = Revision
+
+    def test_new_revision_gets_standard_checklist(self):
+        signed_in(self.eng).post(reverse("projects:revision_create", args=["PWR"]), {"name": "Rev B", "status": "design"})
+        rev = self.Revision.objects.get()
+        self.assertGreaterEqual(rev.checks.count(), 8)
+
+    def test_release_blocked_until_checklist_done(self):
+        c = signed_in(self.lead)
+        c.post(reverse("projects:revision_create", args=["PWR"]), {"name": "Rev B", "status": "design"})
+        rev = self.Revision.objects.get()
+        r = c.post(reverse("projects:revision_edit", args=["PWR", rev.pk]), {"name": "Rev B", "status": "released"})
+        self.assertContains(r, "Finish the release checklist")
+        for item in rev.checks.all():
+            signed_in(self.eng).post(reverse("projects:revision_check", args=["PWR", rev.pk]), {"action": "toggle", "item": item.pk})
+        self.assertTrue(Notification.objects.filter(user=self.lead, text__contains="checklist is complete").exists())
+        c.post(reverse("projects:revision_edit", args=["PWR", rev.pk]), {"name": "Rev B", "status": "released"})
+        rev.refresh_from_db()
+        self.assertEqual(rev.status, "released")
+        self.assertEqual(rev.checks.first().done_by, self.eng)
+
+    def test_blocked_task_notifies_lead(self):
+        task = Task.objects.create(project=self.project, title="Layout", assignee=self.eng, priority=2)
+        signed_in(self.eng).post(reverse("projects:task_edit", args=["PWR", task.number]), {
+            "title": "Layout", "kind": "pcb", "priority": 2, "status": "in_progress", "assignee": self.eng.pk,
+            "blocked_reason": "Waiting for connector footprint"})
+        self.assertTrue(Notification.objects.filter(user=self.lead, text__contains="is blocked").exists())
+        r = signed_in(self.lead).get(reverse("projects:board", args=["PWR"]) + "?blocked=1")
+        self.assertContains(r, "Waiting for connector")
+        self.assertContains(signed_in(self.lead).get("/"), "Waiting for connector")

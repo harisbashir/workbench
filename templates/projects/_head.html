@@ -5,6 +5,7 @@
 </div>
 <div class="actions">
   {% if project.github_repo %}<a class="btn" href="{{ project.github_url }}" target="_blank" rel="noopener">{% icon 'git' 16 %} {{ project.github_repo }}</a>{% endif %}
+  <a class="btn" href="{% url 'files:space' project.key %}">{% icon 'file' 16 %} Files</a>
   {% if project.channel %}<a class="btn" href="{{ project.channel.get_absolute_url }}">{% icon 'chat' 16 %} Chat</a>{% endif %}
   {% if can_edit %}<a class="btn btn-primary" href="{% url 'projects:task_create' project.key %}">{% icon 'plus' 16 %} New task</a>{% endif %}
 </div></div>

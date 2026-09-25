@@ -9,7 +9,7 @@
 <div class="card">{% if tasks %}<div class="table-wrap"><table class="table">
   <thead><tr><th>ID</th><th>Title</th><th>Type</th><th>Status</th><th>Assignee</th><th>Reviewer</th><th>Revision</th><th>Due</th></tr></thead>
   <tbody>{% for t in tasks %}<tr>
-    <td class="key"><span class="prio prio-{{ t.priority }}"></span>{{ t.key }}</td><td><a href="{{ t.get_absolute_url }}">{{ t.title }}</a></td>
+    <td class="key"><span class="prio prio-{{ t.priority }}"></span>{{ t.key }}</td><td><a href="{{ t.get_absolute_url }}">{{ t.title }}</a>{% if t.is_blocked %} <span class="badge badge-failure" title="{{ t.blocked_reason }}">Blocked</span>{% endif %}</td>
     <td class="kind">{{ t.get_kind_display }}</td><td>{% status_badge t.status t.get_status_display %}</td>
     <td>{{ t.assignee|default:"—" }}</td><td>{{ t.reviewer|default:"—" }}</td><td>{{ t.revision.name|default:"—" }}</td>
     <td class="nowrap {% if t.is_overdue %}overdue{% endif %}">{{ t.due_date|default:"—" }}</td></tr>{% endfor %}</tbody></table></div>

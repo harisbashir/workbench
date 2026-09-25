@@ -1,0 +1,53 @@
+{% extends "base.html" %}{% load workbench humanize %}
+{% block title %}{{ rev }}{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles">
+  <div class="crumbs"><a href="{% url 'projects:list' %}">Projects</a> / <a href="{{ project.get_absolute_url }}">{{ project.name }}</a> /</div>
+  <h1>{{ rev.name }} {% status_badge rev.status rev.get_status_display %}</h1>
+  <p class="intro">{% if rev.target_date %}<span class="meta-item">Target {{ rev.target_date|naturalday }}</span>{% endif %}{% if rev.git_ref %}<span class="meta-item">git <code>{{ rev.git_ref }}</code></span>{% endif %}{% if rev.notes %}<span class="meta-item">{{ rev.notes }}</span>{% endif %}</p></div>
+  <div class="actions">
+    <a class="btn" href="{% url 'inventory:bom' rev.pk %}">{% icon 'chip' 16 %} BOM</a>
+    <a class="btn" href="{% url 'projects:board' project.key %}?revision={{ rev.pk }}">{% icon 'board' 16 %} Tasks</a>
+    {% if can_edit %}<a class="btn" href="{% url 'projects:revision_edit' project.key rev.pk %}">{% icon 'edit' 16 %} Edit</a>{% endif %}
+  </div></div>
+
+<div class="grid grid-4">
+  <div class="card stat"><div class="label">Release checklist</div><div class="value {% if done == checks|length and checks %}{% else %}warn{% endif %}">{{ done }}/{{ checks|length }}</div><div class="progress"><span class="w-{{ check_pct|percent_step }}"></span></div></div>
+  <div class="card stat"><div class="label">Open tasks</div><div class="value">{{ tasks_open|length }}</div><div class="small muted">{{ tasks_done }} done</div></div>
+  <div class="card stat"><a href="{% url 'inventory:bom' rev.pk %}"><div class="label">BOM</div><div class="value">{{ bom_cost|money }}</div><div class="small muted">{{ bom_count }} lines, per board</div></a></div>
+  <div class="card stat"><div class="label">Buildable from stock</div><div class="value {% if not buildable %}bad{% endif %}">{{ buildable }}</div></div>
+</div><p></p>
+
+<div class="grid grid-main">
+  <div class="card" id="checklist"><div class="card-head"><h2>Release checklist</h2><span class="small muted">All items must be signed off before the revision can be released for production.</span></div>
+    <div class="card-body">
+    {% if checks %}<ul class="checklist">
+      {% for c in checks %}<li class="{% if c.done_at %}done{% endif %}">
+        {% if can_edit %}<form method="post" action="{% url 'projects:revision_check' project.key rev.pk %}">{% csrf_token %}<input type="hidden" name="item" value="{{ c.pk }}">
+          <button class="tick tick-btn" name="action" value="toggle" aria-label="{% if c.done_at %}Un-tick{% else %}Sign off{% endif %}: {{ c.text }}">{% if c.done_at %}{% icon 'check' 14 %}{% endif %}</button></form>
+        {% else %}<span class="tick">{% if c.done_at %}{% icon 'check' 14 %}{% endif %}</span>{% endif %}
+        <div><div class="what">{{ c.text }}</div>{% if c.done_at %}<div class="small muted">Signed off by {{ c.done_by|default:"—" }}, {{ c.done_at|naturaltime }}{% if c.note %} — {{ c.note }}{% endif %}</div>{% endif %}</div>
+        {% if can_edit %}<form method="post" action="{% url 'projects:revision_check' project.key rev.pk %}" class="right" data-confirm="Remove this checklist item?">{% csrf_token %}<input type="hidden" name="item" value="{{ c.pk }}"><button class="btn btn-sm btn-ghost" name="action" value="delete" aria-label="Remove item">{% icon 'x' 14 %}</button></form>{% endif %}
+      </li>{% endfor %}
+    </ul>{% else %}<p class="muted">No checklist items yet.</p>{% endif %}
+    {% if can_edit %}<form method="post" action="{% url 'projects:revision_check' project.key rev.pk %}" class="btn-row">{% csrf_token %}
+      <input type="text" name="text" maxlength="200" placeholder="Add a checklist item, e.g. Thermal test at 2 A passed" aria-label="New checklist item" class="grow"><button class="btn btn-sm" name="action" value="add">{% icon 'plus' 14 %} Add</button></form>{% endif %}
+    </div></div>
+
+  <div class="stack">
+    <div class="card"><div class="card-head"><h3>Open tasks</h3></div><div class="card-body">
+      {% if tasks_open %}<ul class="list-plain">{% for t in tasks_open %}<li><span class="key">{{ t.key }}</span><a href="{{ t.get_absolute_url }}">{{ t.title|truncatechars:48 }}</a>{% if t.is_blocked %}<span class="badge badge-failure">Blocked</span>{% endif %}</li>{% endfor %}</ul>
+      {% else %}<p class="muted small">Nothing open for this revision.</p>{% endif %}
+      {% if can_edit %}<a class="btn btn-sm" href="{% url 'projects:task_create' project.key %}?revision={{ rev.pk }}">{% icon 'plus' 14 %} Task for {{ rev.name }}</a>{% endif %}
+    </div></div>
+    <div class="card"><div class="card-head"><h3>Builds</h3></div><div class="card-body">
+      {% for b in builds %}<div class="kv"><a href="{{ b.get_absolute_url }}">{{ b.number }} × {{ b.quantity }}</a>{% status_badge b.status b.get_status_display %}</div>
+      {% empty %}<p class="muted small">No builds yet.</p>{% endfor %}
+      {% if user.can_manage_procurement %}<a class="btn btn-sm" href="{% url 'production:build_create' %}?revision={{ rev.pk }}">Plan a build</a>{% endif %}
+    </div></div>
+    {% if revisions|length > 1 %}<div class="card"><div class="card-head"><h3>Other revisions</h3></div><div class="card-body">
+      {% for r in revisions %}{% if r != rev %}<div class="kv"><a href="{{ r.get_absolute_url }}">{{ r.name }}</a><a class="small" href="{% url 'inventory:bom_compare' rev.pk r.pk %}">Compare BOM</a></div>{% endif %}{% endfor %}
+    </div></div>{% endif %}
+  </div>
+</div>
+{% endblock %}

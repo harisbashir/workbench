@@ -19,12 +19,12 @@
       <div class="table-wrap"><table class="table">
         <thead><tr><th>Revision</th><th>Status</th><th>Target date</th><th class="num">Tasks</th><th class="num">BOM lines</th><th></th></tr></thead>
         <tbody>{% for r in revisions %}
-          <tr><td><strong>{{ r.name }}</strong>{% if r.git_ref %} <span class="key">@{{ r.git_ref }}</span>{% endif %}</td>
+          <tr><td><a href="{{ r.get_absolute_url }}"><strong>{{ r.name }}</strong></a>{% if r.git_ref %} <span class="key">@{{ r.git_ref }}</span>{% endif %}</td>
             <td>{% status_badge r.status r.get_status_display %}</td>
             <td>{{ r.target_date|default:"—" }}</td>
             <td class="num"><a href="{% url 'projects:board' project.key %}?revision={{ r.pk }}">{{ r.task_count }}</a></td>
             <td class="num">{{ r.bom_count }}</td>
-            <td class="right nowrap"><a class="btn btn-sm" href="{% url 'inventory:bom' r.pk %}">{% icon 'chip' 14 %} BOM</a>
+            <td class="right nowrap"><a class="btn btn-sm" href="{{ r.get_absolute_url }}">{% icon 'check' 14 %} Checklist</a> <a class="btn btn-sm" href="{% url 'inventory:bom' r.pk %}">{% icon 'chip' 14 %} BOM</a>
               {% if can_edit %}<a class="btn btn-sm btn-ghost" href="{% url 'projects:revision_edit' project.key r.pk %}">Edit</a>{% endif %}</td></tr>
         {% endfor %}</tbody></table></div>
       {% else %}

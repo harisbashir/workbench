@@ -18,5 +18,7 @@ urlpatterns = [
     path("<str:key>/tasks/<int:number>/attach/", views.task_attach, name="task_attach"),
     path("<str:key>/tasks/<int:number>/delete/", views.task_delete, name="task_delete"),
     path("<str:key>/revisions/new/", views.revision_edit, name="revision_create"),
+    path("<str:key>/revisions/<int:pk>/", views.revision_detail, name="revision"),
     path("<str:key>/revisions/<int:pk>/edit/", views.revision_edit, name="revision_edit"),
+    path("<str:key>/revisions/<int:pk>/checklist/", views.revision_check, name="revision_check"),
 ]

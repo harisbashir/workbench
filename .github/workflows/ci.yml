@@ -20,10 +20,20 @@ jobs:
         env:
           WORKBENCH_DEBUG: "1"
         run: python manage.py test apps
-      - name: Production settings check
+      - name: Production settings check (HTTPS mode)
         env:
-          WORKBENCH_SECRET_KEY: ci-only-${{ github.run_id }}-not-a-real-secret-key-0123456789abcdef
-          WORKBENCH_ALLOWED_HOSTS: example.com
+          WORKBENCH_DOMAIN: workbench.example.com
         run: python manage.py check --deploy --fail-level WARNING
+      - name: Build the container image
+        run: docker build -t workbench:ci .
+      - name: Container starts and reports healthy
+        run: |
+          docker run -d --name wb -p 8000:8000 workbench:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/healthz; then exit 0; fi
+            sleep 2
+          done
+          docker logs wb
+          exit 1
       - name: Dependency audit
         run: pip install pip-audit && pip-audit -r requirements.txt

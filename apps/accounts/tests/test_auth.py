@@ -16,6 +16,7 @@ PASSWORD = "Correct-horse-battery-9"
 
 class LoginAndTwoFactorTests(TestCase):
     def test_pages_require_sign_in(self):
+        make_user("someone")
         r = self.client.get(reverse("core:dashboard"))
         self.assertRedirects(r, reverse("accounts:login") + "?next=/", fetch_redirect_response=False)
 
@@ -112,3 +113,15 @@ class AdminOnlyTests(TestCase):
         signed_in(admin).post(reverse("accounts:user_reset_mfa", args=[eng.pk]))
         eng.refresh_from_db()
         self.assertFalse(eng.mfa_enabled)
+
+
+class TotpReplayTests(TestCase):
+    def test_code_cannot_be_reused(self):
+        user = make_user("eng")
+        code = pyotp.TOTP(user.mfa_secret).now()
+        c1 = Client()
+        c1.post(reverse("accounts:login"), {"username": "eng", "password": PASSWORD})
+        self.assertEqual(c1.post(reverse("accounts:mfa_verify"), {"code": code}).status_code, 302)
+        c2 = Client()
+        c2.post(reverse("accounts:login"), {"username": "eng", "password": PASSWORD})
+        self.assertEqual(c2.post(reverse("accounts:mfa_verify"), {"code": code}).status_code, 200)

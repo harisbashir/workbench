@@ -51,10 +51,88 @@
       sel.addEventListener("change", () => { if (sel.value) window.location = sel.value; });
     });
 
+    // Print buttons
+    document.querySelectorAll("[data-print]").forEach((b) => b.addEventListener("click", () => window.print()));
+
+    initDropzone();
+    initTeamClock();
     initBoard();
     initChat();
     pollUnread();
   });
+
+  // -------------------------------------------------------------- Uploads --
+  function initDropzone() {
+    const zone = document.querySelector("[data-dropzone]");
+    if (!zone) return;
+    const bar = zone.querySelector("[data-bar]");
+    const status = zone.querySelector("[data-status]");
+    const box = zone.querySelector(".upload-progress");
+    ["dragenter", "dragover"].forEach((ev) => document.addEventListener(ev, (e) => { e.preventDefault(); zone.classList.add("over"); }));
+    ["dragleave", "drop"].forEach((ev) => document.addEventListener(ev, (e) => {
+      if (ev === "dragleave" && e.relatedTarget) return;
+      e.preventDefault(); zone.classList.remove("over");
+    }));
+    document.addEventListener("drop", (e) => {
+      const files = e.dataTransfer && e.dataTransfer.files;
+      if (files && files.length) send(files);
+    });
+    // Replace the plain form submit with a progress-reporting upload
+    const input = zone.querySelector("input[type=file]");
+    if (input) {
+      input.removeAttribute("data-autoupload");
+      input.addEventListener("change", () => { if (input.files.length) send(input.files); });
+    }
+    function send(files) {
+      const fd = new FormData();
+      for (const f of files) fd.append("files", f);
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", zone.dataset.uploadUrl);
+      xhr.setRequestHeader("X-CSRFToken", csrf());
+      xhr.setRequestHeader("X-Requested-With", "fetch");
+      box.classList.remove("hidden");
+      status.textContent = "Uploading " + files.length + " file" + (files.length > 1 ? "s" : "") + "…";
+      xhr.upload.onprogress = (e) => {
+        if (!e.lengthComputable) return;
+        const pct = Math.round((e.loaded / e.total) * 20) * 5;
+        bar.className = "w-" + pct;
+        status.textContent = "Uploading… " + pct + "%";
+      };
+      xhr.onload = () => {
+        let data = {};
+        try { data = JSON.parse(xhr.responseText); } catch (err) { /* ignore */ }
+        if (xhr.status >= 400 || (data.errors && data.errors.length)) {
+          status.textContent = (data.errors || ["Upload failed (" + xhr.status + ")."]).join(" ");
+          status.classList.add("overdue");
+          if (data.uploaded && data.uploaded.length) setTimeout(() => location.reload(), 2500);
+        } else {
+          status.textContent = "Done.";
+          location.reload();
+        }
+      };
+      xhr.onerror = () => { status.textContent = "Upload failed. Check your connection and try again."; };
+      xhr.send(fd);
+    }
+  }
+
+  // ----------------------------------------------------------- Team clock --
+  function initTeamClock() {
+    const rows = document.querySelectorAll(".clock-row[data-tz]");
+    if (!rows.length) return;
+    function tick() {
+      rows.forEach((row) => {
+        try {
+          const now = new Date();
+          const time = new Intl.DateTimeFormat([], { timeZone: row.dataset.tz, hour: "2-digit", minute: "2-digit", weekday: "short" }).format(now);
+          const hour = parseInt(new Intl.DateTimeFormat("en-GB", { timeZone: row.dataset.tz, hour: "2-digit", hour12: false }).format(now), 10);
+          row.querySelector(".clock-time").textContent = time;
+          row.classList.toggle("working", hour >= 9 && hour < 18);
+        } catch (e) { /* unknown zone */ }
+      });
+    }
+    tick();
+    setInterval(tick, 30000);
+  }
 
   // ---------------------------------------------------------------- Board --
   function initBoard() {

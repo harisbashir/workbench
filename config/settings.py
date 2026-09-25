@@ -1,38 +1,92 @@
 """
 Workbench settings.
 
-Everything security-relevant is driven by environment variables so the same
-code runs safely in development and production. See .env.example.
+Zero-configuration by design: everything Workbench stores — database, uploaded
+files, backups and its own generated secrets — lives in one data folder
+(WORKBENCH_DATA_DIR, `/data` in the container). Environment variables are
+optional overrides; see .env.example.
 """
+import json
 import os
+import secrets as _secrets
+import sys
+import tempfile
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
 def env(name, default=None):
-    return os.environ.get(name, default)
+    value = os.environ.get(name)
+    return default if value in (None, "") else value
 
 
 def env_bool(name, default=False):
     return str(env(name, default)).lower() in {"1", "true", "yes", "on"}
 
 
+def env_list(name, default=""):
+    return [x.strip() for x in str(env(name, default)).split(",") if x.strip()]
+
+
 DEBUG = env_bool("WORKBENCH_DEBUG", False)
+TESTING = len(sys.argv) > 1 and sys.argv[1] == "test"
 
-SECRET_KEY = env("WORKBENCH_SECRET_KEY")
-if not SECRET_KEY:
-    if DEBUG:
-        SECRET_KEY = "dev-only-insecure-key-do-not-use-in-production"
-    else:
-        raise RuntimeError("WORKBENCH_SECRET_KEY must be set when DEBUG is off.")
+# --- The data folder -------------------------------------------------------
+if TESTING:
+    DATA_DIR = Path(tempfile.mkdtemp(prefix="workbench-test-"))
+else:
+    DATA_DIR = Path(env("WORKBENCH_DATA_DIR", BASE_DIR / "data")).resolve()
+DB_DIR = DATA_DIR / "db"
+FILES_DIR = DATA_DIR / "files"
+BACKUP_DIR = DATA_DIR / "backups"
+for _d in (DATA_DIR, DB_DIR, FILES_DIR, BACKUP_DIR):
+    _d.mkdir(parents=True, exist_ok=True)
 
-ALLOWED_HOSTS = [h.strip() for h in env("WORKBENCH_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if h.strip()]
-CSRF_TRUSTED_ORIGINS = [o.strip() for o in env("WORKBENCH_CSRF_TRUSTED_ORIGINS", "").split(",") if o.strip()]
 
-# Public URL of this site, used to show the GitHub webhook address.
-SITE_URL = env("WORKBENCH_SITE_URL", "http://localhost:8000")
-COMPANY_NAME = env("WORKBENCH_COMPANY_NAME", "Workbench")
+def _load_or_create_secrets():
+    """Secrets are generated on first start and kept in the data folder.
+
+    Back up the data folder and you back up the keys with it; environment
+    variables still win if you prefer to manage secrets yourself.
+    """
+    path = DATA_DIR / "secrets.json"
+    data = {}
+    if path.exists():
+        data = json.loads(path.read_text())
+    changed = False
+    for key, maker in {
+        "secret_key": lambda: _secrets.token_urlsafe(50),
+        "field_key": lambda: __import__("cryptography.fernet", fromlist=["Fernet"]).Fernet.generate_key().decode(),
+        "setup_token": lambda: _secrets.token_hex(4).upper(),
+    }.items():
+        if not data.get(key):
+            data[key] = maker()
+            changed = True
+    if changed:
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, indent=2))
+        os.chmod(tmp, 0o600)
+        tmp.replace(path)
+    return data
+
+
+GENERATED = _load_or_create_secrets()
+SECRET_KEY = env("WORKBENCH_SECRET_KEY", GENERATED["secret_key"])
+FIELD_KEY = env("WORKBENCH_FIELD_KEY", GENERATED["field_key"])
+SETUP_TOKEN = GENERATED["setup_token"]
+
+# --- Domain / HTTPS ------------------------------------------------------------
+# Set WORKBENCH_DOMAIN (e.g. workbench.example.com) when running with the HTTPS
+# profile. Without it Workbench also works on a plain IP/port, e.g. inside a VPN.
+DOMAIN = env("WORKBENCH_DOMAIN", "")
+HTTPS = env_bool("WORKBENCH_HTTPS", bool(DOMAIN))
+if DOMAIN:
+    ALLOWED_HOSTS = [DOMAIN, "localhost", "127.0.0.1"] + env_list("WORKBENCH_ALLOWED_HOSTS")
+    CSRF_TRUSTED_ORIGINS = [f"https://{DOMAIN}"] + env_list("WORKBENCH_CSRF_TRUSTED_ORIGINS")
+else:
+    ALLOWED_HOSTS = env_list("WORKBENCH_ALLOWED_HOSTS", "*")
+    CSRF_TRUSTED_ORIGINS = env_list("WORKBENCH_CSRF_TRUSTED_ORIGINS")
 
 INSTALLED_APPS = [
     "django.contrib.auth",
@@ -45,9 +99,11 @@ INSTALLED_APPS = [
     "apps.core",
     "apps.projects",
     "apps.chat",
+    "apps.files",
     "apps.inventory",
     "apps.production",
     "apps.integrations",
+    "apps.timesheets",
 ]
 
 MIDDLEWARE = [
@@ -57,17 +113,17 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "apps.core.middleware.FirstRunSetupMiddleware",
     "apps.accounts.middleware.MFARequiredMiddleware",
     "apps.accounts.middleware.UserTimezoneMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-# Serve CSS/JS with WhiteNoise in production when it's installed.
-try:
+try:  # WhiteNoise serves CSS/JS efficiently from the same container.
     import whitenoise  # noqa: F401
     MIDDLEWARE.insert(1, "whitenoise.middleware.WhiteNoiseMiddleware")
-    if not DEBUG:  # hashed file names need `collectstatic`, which only runs for production builds
+    if not DEBUG and not TESTING:
         STORAGES = {
             "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
             "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
@@ -95,7 +151,9 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
-# Database: SQLite for development, PostgreSQL in production via DATABASE_* vars.
+# --- Database ------------------------------------------------------------------
+# SQLite in the data folder by default (plenty for a team of dozens, and backups
+# are a single file). Set WORKBENCH_DB_NAME etc. to use PostgreSQL instead.
 if env("WORKBENCH_DB_NAME"):
     DATABASES = {
         "default": {
@@ -112,7 +170,11 @@ else:
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",
+            "NAME": DB_DIR / "workbench.sqlite3",
+            "OPTIONS": {
+                "init_command": "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=5000;",
+                "transaction_mode": "IMMEDIATE",
+            },
         }
     }
 
@@ -121,7 +183,6 @@ LOGIN_URL = "accounts:login"
 LOGIN_REDIRECT_URL = "core:dashboard"
 LOGOUT_REDIRECT_URL = "accounts:login"
 
-# Strong password hashing (Argon2 if installed, PBKDF2 fallback).
 PASSWORD_HASHERS = [
     "django.contrib.auth.hashers.PBKDF2PasswordHasher",
     "django.contrib.auth.hashers.PBKDF2SHA1PasswordHasher",
@@ -133,9 +194,7 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
-# Require every user to enrol in two-factor authentication.
 WORKBENCH_REQUIRE_MFA = env_bool("WORKBENCH_REQUIRE_MFA", True)
-# Lock an account for this many minutes after this many failed logins.
 LOGIN_MAX_ATTEMPTS = int(env("WORKBENCH_LOGIN_MAX_ATTEMPTS", 5))
 LOGIN_LOCKOUT_MINUTES = int(env("WORKBENCH_LOGIN_LOCKOUT_MINUTES", 15))
 
@@ -148,12 +207,14 @@ STATIC_URL = "static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
+# Uploaded files live in <data>/files and are only served through
+# permission-checked views, never directly.
 MEDIA_URL = "/media/"
-MEDIA_ROOT = Path(env("WORKBENCH_MEDIA_ROOT", BASE_DIR / "media"))
-# Files are served only through an authenticated view, never directly.
-MAX_UPLOAD_MB = int(env("WORKBENCH_MAX_UPLOAD_MB", 25))
-DATA_UPLOAD_MAX_MEMORY_SIZE = MAX_UPLOAD_MB * 1024 * 1024
+MEDIA_ROOT = FILES_DIR
+MAX_UPLOAD_MB = int(env("WORKBENCH_MAX_UPLOAD_MB", 200))
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
+FILE_UPLOAD_PERMISSIONS = 0o640
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
@@ -162,19 +223,22 @@ SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SAMESITE = "Lax"
 SESSION_COOKIE_AGE = int(env("WORKBENCH_SESSION_HOURS", 12)) * 3600
-SESSION_EXPIRE_AT_BROWSER_CLOSE = False
 X_FRAME_OPTIONS = "DENY"
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = "same-origin"
 
-if not DEBUG:
+if HTTPS:
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
-    SECURE_SSL_REDIRECT = env_bool("WORKBENCH_SSL_REDIRECT", True)
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SECURE_SSL_REDIRECT = env_bool("WORKBENCH_SSL_REDIRECT", True)
+    SECURE_REDIRECT_EXEMPT = [r"^healthz$"]  # the container's own health check talks plain HTTP
     SECURE_HSTS_SECONDS = 31536000
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-    SECURE_HSTS_PRELOAD = True
+
+EMAIL_TIMEOUT = 15
+# HSTS preload is a one-way, domain-wide decision; leave it to the domain owner.
+SILENCED_SYSTEM_CHECKS = ["security.W021"]
 
 LOGGING = {
     "version": 1,
@@ -183,5 +247,6 @@ LOGGING = {
     "loggers": {
         "workbench": {"handlers": ["console"], "level": "INFO"},
         "django.security": {"handlers": ["console"], "level": "WARNING"},
+        "django.request": {"handlers": ["console"], "level": "ERROR", "propagate": False},
     },
 }

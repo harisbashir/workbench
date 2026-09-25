@@ -17,6 +17,7 @@ from django.utils.encoding import force_bytes, force_str
 from django.utils.http import url_has_allowed_host_and_scheme, urlsafe_base64_decode, urlsafe_base64_encode
 from django.views.decorators.http import require_POST
 
+from apps.core.models import SiteSettings
 from apps.core.utils import admin_required, audit
 
 from .forms import ChangePasswordForm, CodeForm, LoginForm, ProfileForm, SetPasswordForm, UserAdminForm
@@ -95,11 +96,11 @@ def mfa_setup(request):
         secret = pyotp.random_base32()
         request.session["mfa_pending_secret"] = secret
     totp = pyotp.TOTP(secret)
-    uri = totp.provisioning_uri(name=user.username, issuer_name=settings.COMPANY_NAME)
+    uri = totp.provisioning_uri(name=user.username, issuer_name=SiteSettings.load().company_name)
 
     form = CodeForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
-        if totp.verify(form.cleaned_data["code"].replace(" ", ""), valid_window=1):
+        if user.verify_totp(form.cleaned_data["code"], secret=secret):
             user.mfa_secret = secret
             user.mfa_enabled = True
             user.save()
@@ -123,7 +124,7 @@ def mfa_verify(request):
     form = CodeForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
         code = form.cleaned_data["code"].replace(" ", "")
-        ok = pyotp.TOTP(user.mfa_secret).verify(code, valid_window=1)
+        ok = user.verify_totp(code)
         used_recovery = False
         if not ok and "-" in code:
             ok = used_recovery = RecoveryCode.use(user, code)
@@ -185,7 +186,9 @@ def security(request):
 def _set_password_link(request, user):
     uid = urlsafe_base64_encode(force_bytes(user.pk))
     token = default_token_generator.make_token(user)
-    return request.build_absolute_uri(reverse("accounts:set_password", args=[uid, token]))
+    # Built from the configured site address (not the request's Host header),
+    # so a forged Host header can't redirect password links elsewhere.
+    return SiteSettings.load().absolute_url(reverse("accounts:set_password", args=[uid, token]), request)
 
 
 @admin_required
@@ -216,11 +219,25 @@ def user_edit(request, pk=None):
 @admin_required
 def user_invite(request, pk):
     user = get_object_or_404(User, pk=pk)
+    site = SiteSettings.load()
+    if request.method == "POST" and request.POST.get("action") == "email":
+        from apps.core import email as mail
+        url = _set_password_link(request, user)
+        try:
+            mail.send(user.email, "Your Workbench account",
+                      f"Hi {user.first_name or user.username},\n\n{request.user.display_name} has set up a Workbench account for you.\n"
+                      f"Your username is: {user.username}\n\nChoose your password here (the link works once and expires in 3 days):\n{url}\n\n"
+                      "After that you'll set up two-factor sign-in with an authenticator app on your phone.", site)
+            audit(request, "user.invite_emailed", user)
+            messages.success(request, f"Sign-in link emailed to {user.email}.")
+        except Exception as e:
+            messages.error(request, f"Couldn't send the email: {e}")
+        return redirect("accounts:user_list")
     link = request.session.pop("invite_link", None)
     if not link:
         link = {"user": user.display_name, "url": _set_password_link(request, user)}
         audit(request, "user.password_link", user)
-    return render(request, "accounts/user_invite.html", {"link": link, "target": user})
+    return render(request, "accounts/user_invite.html", {"link": link, "target": user, "can_email": site.email_ready and bool(user.email)})
 
 
 @admin_required

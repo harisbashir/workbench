@@ -3,7 +3,6 @@ import logging
 import os
 from datetime import timedelta
 
-from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.db import IntegrityError, transaction
 from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
@@ -13,6 +12,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
+from apps.core.models import SiteSettings
 from apps.projects.models import Project
 
 from . import github
@@ -22,7 +22,8 @@ log = logging.getLogger("workbench")
 
 
 def webhook_secret():
-    return os.environ.get("WORKBENCH_GITHUB_WEBHOOK_SECRET", "")
+    """The shared secret GitHub signs deliveries with (System → GitHub)."""
+    return os.environ.get("WORKBENCH_GITHUB_WEBHOOK_SECRET") or SiteSettings.load().github_secret
 
 
 @csrf_exempt  # GitHub can't send a CSRF token; the HMAC signature authenticates it instead.
@@ -65,7 +66,7 @@ def github_webhook(request):
 def overview(request):
     visible = Project.objects.visible_to(request.user)
     return render(request, "integrations/overview.html", {
-        "webhook_url": settings.SITE_URL.rstrip("/") + reverse("integrations:github_webhook"),
+        "webhook_url": SiteSettings.load().absolute_url(reverse("integrations:github_webhook"), request),
         "secret_set": bool(webhook_secret()),
         "projects": visible.order_by("key"),
         "pulls": PullRequest.objects.filter(project__in=visible).exclude(state__in=["closed", "merged"]).select_related("project").prefetch_related("tasks")[:30],

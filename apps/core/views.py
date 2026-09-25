@@ -1,7 +1,5 @@
-import mimetypes
-from pathlib import Path
 
-from django.conf import settings
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.db.models import Count, F, Q
@@ -12,10 +10,10 @@ from django.views.decorators.http import require_POST
 
 from apps.inventory.models import Part
 from apps.production.models import BuildOrder, PurchaseOrder
-from apps.projects.models import Activity, Project, Task, TaskAttachment
+from apps.projects.models import Activity, Project, Task
 
 from .models import AuditLog, Notification
-from .utils import admin_required
+from .utils import admin_required, audit
 
 
 @login_required
@@ -33,19 +31,28 @@ def dashboard(request):
     open_pos = PurchaseOrder.objects.filter(status__in=["ordered", "partial"]).count()
     active_builds = BuildOrder.objects.filter(status__in=["planned", "in_progress"]).select_related("revision__project")[:5]
     checklist = _setup_checklist(user) if user.can_manage_projects else None
+    from collections import defaultdict
+
+    from apps.accounts.models import User
+    zones = defaultdict(list)
+    for person in User.objects.filter(is_active=True).only("first_name", "last_name", "username", "time_zone"):
+        zones[person.time_zone or "UTC"].append(person.first_name or person.username)
+    team_clock = sorted(({"tz": tz, "city": tz.split("/")[-1].replace("_", " "), "people": names} for tz, names in zones.items()),
+                        key=lambda z: z["tz"])
+    blocked = Task.objects.filter(project__in=projects).exclude(blocked_reason="").exclude(status=Task.Status.DONE).select_related("project")
     return render(request, "core/dashboard.html", {
         "projects": projects, "my_tasks": my_tasks, "to_review": to_review, "overdue": overdue,
         "activity": activity, "low_stock": low_stock, "open_pos": open_pos, "active_builds": active_builds,
-        "checklist": checklist,
+        "checklist": checklist, "team_clock": team_clock, "blocked": blocked,
         "show_checklist": checklist is not None and not all(s["done"] for s in checklist),
     })
 
 
 def _setup_checklist(user):
     """Getting-started steps for admins and leads, until they're all done."""
-    import os
-
     from django.urls import reverse
+
+    from apps.integrations.models import PullRequest
 
     from apps.accounts.models import User
     from apps.inventory.models import BomLine
@@ -67,7 +74,7 @@ def _setup_checklist(user):
          "done": BomLine.objects.exists(),
          "url": reverse("inventory:bom_import", args=[first_rev.pk]) if first_rev else reverse("inventory:bom_index"), "cta": "Import BOM"},
         {"what": "Connect GitHub", "why": "Link a repository so pull requests move tasks and post to chat automatically.",
-         "done": bool(os.environ.get("WORKBENCH_GITHUB_WEBHOOK_SECRET")) and Project.objects.exclude(github_repo="").exists(),
+         "done": Project.objects.exclude(github_repo="").exists() and PullRequest.objects.exists(),
          "url": reverse("integrations:overview"), "cta": "Set up"},
     ]
     return steps
@@ -96,6 +103,9 @@ def search(request):
         results["parts"] = Part.objects.filter(Q(ipn__icontains=q) | Q(description__icontains=q) | Q(mpn__icontains=q) | Q(value__iexact=q))[:25]
         from apps.chat.models import Channel, Message
         channels = Channel.objects.visible_to(request.user)
+        from apps.files.models import Document
+        results["files"] = Document.objects.alive().visible_to(request.user).filter(
+            Q(name__icontains=q) | Q(description__icontains=q)).select_related("project")[:20]
         results["messages"] = Message.objects.filter(channel__in=channels, body__icontains=q, is_deleted=False).select_related("channel", "author").order_by("-created_at")[:20]
     return render(request, "core/search.html", {"q": q, "results": results,
                                                 "total": sum(len(v) for v in results.values())})
@@ -134,28 +144,10 @@ def audit_log(request):
 
 @login_required
 def help_page(request, topic="start"):
-    topics = ["start", "projects", "reviews", "chat", "parts", "production", "github", "security"]
+    topics = ["start", "projects", "reviews", "chat", "files", "time", "parts", "production", "github", "security", "install"]
     if topic not in topics:
         raise Http404
     return render(request, f"core/help/{topic}.html", {"topic": topic, "topics": topics})
-
-
-@login_required
-def protected_file(request, pk):
-    """Serves task attachments only to people who can see the project."""
-    att = get_object_or_404(TaskAttachment.objects.select_related("task__project"), pk=pk)
-    if not att.task.project.can_view(request.user):
-        raise Http404
-    path = Path(att.file.path).resolve()
-    if not str(path).startswith(str(Path(settings.MEDIA_ROOT).resolve())) or not path.exists():
-        raise Http404
-    ctype = mimetypes.guess_type(att.name)[0] or "application/octet-stream"
-    inline = ctype in ("application/pdf", "image/png", "image/jpeg", "image/svg+xml", "text/plain")
-    resp = FileResponse(open(path, "rb"), content_type=ctype, as_attachment=not inline, filename=att.name)
-    resp["X-Content-Type-Options"] = "nosniff"
-    if ctype == "image/svg+xml":
-        resp["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
-    return resp
 
 
 def error_403(request, exception=None):
@@ -166,3 +158,138 @@ def error_403(request, exception=None):
 def error_404(request, exception=None):
     return render(request, "core/error.html", {"code": 404, "title": "Page not found",
                                                "message": "This page doesn't exist, or you don't have access to it."}, status=404)
+
+
+# --- First-run setup ------------------------------------------------------------
+
+def setup(request):
+    from django.conf import settings as dj
+    from django.contrib.auth import login
+
+    from apps.accounts.models import User
+
+    from .forms import SetupForm
+    from .middleware import FirstRunSetupMiddleware
+    from .models import SiteSettings
+
+    if User.objects.exists():
+        return redirect("core:dashboard")
+    initial = {"site_url": f"{request.scheme}://{request.get_host()}"}
+    form = SetupForm(request.POST or None, initial=initial, expected_code=dj.SETUP_TOKEN)
+    if request.method == "POST" and form.is_valid():
+        d = form.cleaned_data
+        site = SiteSettings.load()
+        site.company_name = d["company_name"]
+        site.site_url = d["site_url"].rstrip("/")
+        site.time_zone = d["time_zone"]
+        site.setup_completed_at = timezone.now()
+        site.save()
+        user = User.objects.create_user(username=d["username"], password=d["password1"], email=d["email"],
+                                        first_name=d["first_name"], last_name=d["last_name"], time_zone=d["time_zone"],
+                                        role=User.Role.ADMIN, is_staff=True, is_superuser=True)
+        FirstRunSetupMiddleware._done = True
+        audit(request, "setup.completed", user, actor=user)
+        login(request, user, backend="django.contrib.auth.backends.ModelBackend")
+        request.session["mfa_verified"] = False
+        return redirect("accounts:mfa_setup")
+    return render(request, "core/setup.html", {"form": form})
+
+
+def healthz(request):
+    from django.http import JsonResponse
+
+    from .system import health
+    data = health()
+    return JsonResponse(data, status=200 if data["ok"] else 503)
+
+
+# --- System (administrators) ---------------------------------------------------------
+
+@admin_required
+def system_page(request, tab="overview"):
+    from django.conf import settings as dj
+    from django.urls import reverse
+
+    from apps.files.models import DocumentVersion
+
+    from . import system
+    from .forms import EmailSettingsForm, GeneralSettingsForm, StorageSettingsForm
+    from .models import SiteSettings
+
+    site = SiteSettings.load()
+    forms_by_tab = {"general": GeneralSettingsForm, "email": EmailSettingsForm, "backups": StorageSettingsForm}
+    form = None
+    if tab in forms_by_tab:
+        form = forms_by_tab[tab](request.POST or None, instance=site)
+        if request.method == "POST" and form.is_valid():
+            form.save()
+            audit(request, f"settings.{tab}", site)
+            messages.success(request, "Settings saved.")
+            return redirect("core:system_tab", tab=tab)
+    ctx = {"tab": tab, "form": form, "site": site}
+    if tab == "overview":
+        from django.db.models import Sum as S
+        ctx.update({
+            "health": system.health(), "disk": system.disk_usage(), "db_size": system.database_size(),
+            "files_size": DocumentVersion.objects.aggregate(s=S("size"))["s"] or 0,
+            "backups": system.list_backups()[:1], "data_dir": dj.DATA_DIR, "https": dj.HTTPS, "domain": dj.DOMAIN,
+            "version": system.VERSION, "db_vendor": "SQLite" if system.is_sqlite() else "PostgreSQL",
+            "user_count": __import__("apps.accounts.models", fromlist=["User"]).User.objects.filter(is_active=True).count(),
+        })
+    elif tab == "backups":
+        ctx.update({"backups": system.list_backups(), "backup_dir": dj.BACKUP_DIR})
+    elif tab == "github":
+        import os
+        ctx.update({"webhook_url": site.absolute_url(reverse("integrations:github_webhook"), request),
+                    "secret": site.github_secret, "env_override": bool(os.environ.get("WORKBENCH_GITHUB_WEBHOOK_SECRET"))})
+    return render(request, "core/system/system.html", ctx)
+
+
+@admin_required
+@require_POST
+def system_action(request):
+    import secrets as pysecrets
+
+
+    from . import email, system
+    from .models import SiteSettings
+
+    action = request.POST.get("action")
+    site = SiteSettings.load()
+    if action == "backup_now":
+        try:
+            path = system.create_backup(f"manual by {request.user.username}")
+            system.prune_backups(site.backup_keep)
+            audit(request, "backup.created", None, file=path.name)
+            messages.success(request, f"Backup created: {path.name}")
+        except Exception as e:  # disk full, permissions…
+            messages.error(request, f"Backup failed: {e}")
+        return redirect("core:system_tab", tab="backups")
+    if action in ("download_backup", "delete_backup"):
+        p = system.backup_path(request.POST.get("name", ""))
+        if p is None:
+            raise Http404
+        if action == "delete_backup":
+            p.unlink()
+            audit(request, "backup.deleted", None, file=p.name)
+            messages.success(request, f"Deleted {p.name}.")
+            return redirect("core:system_tab", tab="backups")
+        audit(request, "backup.downloaded", None, file=p.name)
+        return FileResponse(open(p, "rb"), as_attachment=True, filename=p.name)
+    if action == "test_email":
+        if not request.user.email:
+            messages.error(request, "Add an email address to your profile first.")
+        else:
+            try:
+                email.send(request.user.email, "Test email", "Email from Workbench is working.", site)
+                messages.success(request, f"Test email sent to {request.user.email}.")
+            except Exception as e:
+                messages.error(request, f"Couldn't send: {e}")
+        return redirect("core:system_tab", tab="email")
+    if action == "rotate_github_secret":
+        site.github_secret = pysecrets.token_hex(32)
+        site.save(update_fields=["_github_secret"])
+        audit(request, "github.secret_rotated", site)
+        messages.success(request, "New webhook secret generated. Update it in GitHub's webhook settings now.")
+        return redirect("core:system_tab", tab="github")
+    return redirect("core:system")

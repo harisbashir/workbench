@@ -11,6 +11,8 @@
   {% for p in results.projects %}<li><span class="key">{{ p.key }}</span><a href="{{ p.get_absolute_url }}">{{ p.name }}</a></li>{% endfor %}</ul></div></div>{% endif %}
 {% if results.parts %}<div class="card"><div class="card-head"><h2>Parts</h2></div><div class="card-body"><ul class="list-plain">
   {% for p in results.parts %}<li><span class="key">{{ p.ipn }}</span><a href="{{ p.get_absolute_url }}">{{ p.description }}</a><span class="faint small">{{ p.mpn }}</span><span class="right small">{{ p.stock }} in stock</span></li>{% endfor %}</ul></div></div>{% endif %}
+{% if results.files %}<div class="card"><div class="card-head"><h2>Files</h2></div><div class="card-body"><ul class="list-plain">
+  {% for d in results.files %}<li>{% icon 'file' 15 %}<a href="{{ d.get_absolute_url }}">{{ d.name }}</a><span class="faint small">{% if d.project %}{{ d.project.key }}{% else %}Shared{% endif %} · v{{ d.version_count }}</span><span class="right small">{{ d.size|filesizeformat }}</span></li>{% endfor %}</ul></div></div>{% endif %}
 {% if results.messages %}<div class="card"><div class="card-head"><h2>Chat messages</h2></div><div class="card-body"><ul class="list-plain">
   {% for m in results.messages %}<li><span class="avatar sm">{% if m.author %}{{ m.author.initials }}{% else %}GH{% endif %}</span><div><strong>{{ m.author_name }}</strong> in <a href="{{ m.channel.get_absolute_url }}">{{ m.channel|channel_label:user }}</a> <span class="faint small">{{ m.created_at|naturaltime }}</span><br>{{ m.body|chat_format|truncatewords_html:40 }}</div></li>{% endfor %}</ul></div></div>{% endif %}
 </div>

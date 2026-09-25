@@ -14,5 +14,9 @@ urlpatterns = [
     path("audit/", views.audit_log, name="audit_log"),
     path("help/", views.help_page, name="help"),
     path("help/<slug:topic>/", views.help_page, name="help_topic"),
-    path("files/<int:pk>/", views.protected_file, name="file"),
+    path("setup/", views.setup, name="setup"),
+    path("healthz", views.healthz, name="healthz"),
+    path("system/", views.system_page, name="system"),
+    path("system/action/", views.system_action, name="system_action"),
+    path("system/<slug:tab>/", views.system_page, name="system_tab"),
 ]

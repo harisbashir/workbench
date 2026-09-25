@@ -2,7 +2,6 @@
 
     python manage.py create_admin --username haris --first-name Haris --email you@example.com
 """
-from django.conf import settings
 from django.contrib.auth.tokens import default_token_generator
 from django.core.management.base import BaseCommand, CommandError
 from django.urls import reverse
@@ -10,6 +9,7 @@ from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 
 from apps.accounts.models import User
+from apps.core.models import SiteSettings
 
 
 class Command(BaseCommand):
@@ -31,7 +31,9 @@ class Command(BaseCommand):
         user.save()
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         token = default_token_generator.make_token(user)
-        url = settings.SITE_URL.rstrip("/") + reverse("accounts:set_password", args=[uid, token])
+        url = SiteSettings.load().absolute_url(reverse("accounts:set_password", args=[uid, token])) 
+        if not url.startswith("http"):
+            url = "http://localhost:8000" + url
         self.stdout.write(self.style.SUCCESS(f"Administrator {user.username} created."))
         self.stdout.write("Open this link to choose a password (valid for 3 days, works once):")
         self.stdout.write(url)

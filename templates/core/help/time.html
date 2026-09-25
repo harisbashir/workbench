@@ -1,0 +1,25 @@
+{% extends "core/help/_layout.html" %}
+{% block help_title %}Timesheets &amp; reports{% endblock %}
+{% block help %}
+<h1>Timesheets &amp; weekly report</h1>
+<h2>Logging time</h2>
+<ul>
+  <li>On any task page, use the <strong>Time</strong> box: enter hours (in quarter hours, e.g. 1.5), the date, and an optional note.</li>
+  <li>Or open <a href="{% url 'time:mine' %}">Timesheet</a> to see your week day by day and add entries for any project.</li>
+  <li>Made a mistake? Delete the entry from your timesheet and add it again.</li>
+</ul>
+<p>Log time at the end of each working day. It takes a minute, and your lead then doesn't need to ask for a status update.</p>
+
+<h2>Weekly report</h2>
+<p>The <a href="{% url 'time:report' %}">Weekly report</a> gathers one week of activity on a single page:</p>
+<ul>
+  <li>Hours by person and project</li>
+  <li>Tasks finished, and tasks sent for review</li>
+  <li>What's blocked and what's overdue right now</li>
+  <li>Builds completed, with yield</li>
+</ul>
+<p>Leads and administrators see the whole team; everyone else sees their own hours. Use <em>Print / save PDF</em> to send it on, or <em>Hours CSV</em> to open the hours in Excel, for example for invoicing or payroll.</p>
+
+<h2>Blocked tasks</h2>
+<p>If you can't make progress, edit the task and fill in <strong>Blocked by</strong>, for example “waiting for USBLC6 parts” or “needs PWR-3 first”. The project lead is notified, and the task shows in red on the board, on Home and in the weekly report. Clear the field once you're moving again.</p>
+{% endblock %}

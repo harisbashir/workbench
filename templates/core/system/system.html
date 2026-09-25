@@ -1,0 +1,114 @@
+{% extends "base.html" %}{% load workbench humanize %}
+{% block title %}System{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles"><h1>System &amp; backups</h1>
+  <p class="intro">Settings for the whole installation. Everything Workbench stores is in one data folder on the server — back it up and you have everything.</p></div></div>
+<nav class="tabs">
+  <a href="{% url 'core:system' %}" class="{% if tab == 'overview' %}active{% endif %}">{% icon 'database' 15 %} Overview</a>
+  <a href="{% url 'core:system_tab' 'general' %}" class="{% if tab == 'general' %}active{% endif %}">{% icon 'settings' 15 %} General</a>
+  <a href="{% url 'core:system_tab' 'backups' %}" class="{% if tab == 'backups' %}active{% endif %}">{% icon 'box' 15 %} Backups &amp; storage</a>
+  <a href="{% url 'core:system_tab' 'email' %}" class="{% if tab == 'email' %}active{% endif %}">{% icon 'bell' 15 %} Email</a>
+  <a href="{% url 'core:system_tab' 'github' %}" class="{% if tab == 'github' %}active{% endif %}">{% icon 'git' 15 %} GitHub</a>
+</nav>
+
+{% if tab == 'overview' %}
+<div class="grid grid-4">
+  <div class="card stat"><div class="label">Status</div><div class="value {% if not health.ok %}bad{% endif %}">{% if health.ok %}Healthy{% else %}Check{% endif %}</div><div class="small muted">Version {{ version }}</div></div>
+  <div class="card stat"><div class="label">Disk free</div><div class="value {% if disk.percent > 85 %}bad{% elif disk.percent > 70 %}warn{% endif %}">{{ disk.free|filesizeformat }}</div>
+    <div class="progress"><span class="w-{{ disk.percent|percent_step }}"></span></div><div class="small muted">{{ disk.percent }}% of {{ disk.total|filesizeformat }} used</div></div>
+  <div class="card stat"><a href="{% url 'files:storage' %}"><div class="label">Files (all versions)</div><div class="value">{{ files_size|filesizeformat }}</div></a><div class="small muted">Database {% if db_size %}{{ db_size|filesizeformat }}{% else %}on PostgreSQL{% endif %}</div></div>
+  <div class="card stat"><a href="{% url 'core:system_tab' 'backups' %}"><div class="label">Last backup</div>
+    <div class="value {% if not site.last_backup_at %}bad{% endif %}">{% if site.last_backup_at %}{{ site.last_backup_at|naturaltime }}{% else %}Never{% endif %}</div></a>
+    <div class="small muted">{% if site.backup_enabled %}Nightly at {{ site.backup_hour }}:00 ({{ site.time_zone }}){% else %}Nightly backups are off{% endif %}</div></div>
+</div><p></p>
+<div class="grid grid-2">
+  <div class="card"><div class="card-head"><h2>Installation</h2></div><div class="card-body">
+    <div class="kv"><span>Data folder</span><code>{{ data_dir }}</code></div>
+    <div class="kv"><span>Database</span><span>{{ db_vendor }}</span></div>
+    <div class="kv"><span>Address</span><span>{{ site.site_url|default:"not set" }}</span></div>
+    <div class="kv"><span>HTTPS</span><span>{% if https %}<span class="badge badge-done">On</span> {{ domain }}{% else %}<span class="badge badge-high">Off</span>{% endif %}</span></div>
+    <div class="kv"><span>Background jobs</span><span>{% if health.scheduler_seen %}<span class="badge badge-done">Running</span>{% else %}<span class="badge badge-high">Not seen yet</span>{% endif %}</span></div>
+    <div class="kv"><span>Active people</span><span>{{ user_count }}</span></div>
+  </div></div>
+  <div class="card"><div class="card-head"><h2>Good to know</h2></div><div class="card-body small">
+    <ul class="bullets">
+      <li>Updating: <code>git pull</code> then <code>docker compose up -d --build</code>. Your data folder is kept.</li>
+      <li>Backups are zip files in <code>data/backups</code>. Copy them somewhere else too — a backup on the same disk won't survive a disk failure.</li>
+      <li>Moving to a new server: copy the whole <code>data</code> folder across and start Workbench there.</li>
+      <li>Health check for monitoring: <code>/healthz</code></li>
+    </ul>
+    <a class="btn btn-sm" href="{% url 'core:help_topic' 'install' %}">Installation guide</a>
+  </div></div>
+</div>
+
+{% elif tab == 'backups' %}
+<div class="grid grid-main">
+  <div class="stack">
+    <div class="card"><div class="card-head"><h2>Backups</h2>
+      <form method="post" action="{% url 'core:system_action' %}">{% csrf_token %}<button class="btn btn-primary btn-sm" name="action" value="backup_now">{% icon 'box' 14 %} Back up now</button></form></div>
+      {% if backups %}<div class="table-wrap"><table class="table"><thead><tr><th>Backup</th><th>Created</th><th class="num">Size</th><th></th></tr></thead><tbody>
+      {% for b in backups %}<tr><td class="mono small">{{ b.name }}</td><td>{{ b.created|naturaltime }}</td><td class="num">{{ b.size|filesizeformat }}</td>
+        <td class="right nowrap"><form class="inline" method="post" action="{% url 'core:system_action' %}">{% csrf_token %}<input type="hidden" name="name" value="{{ b.name }}">
+          <button class="btn btn-sm" name="action" value="download_backup">{% icon 'download' 14 %} Download</button></form>
+          <form class="inline" method="post" action="{% url 'core:system_action' %}" data-confirm="Delete {{ b.name }}?">{% csrf_token %}<input type="hidden" name="name" value="{{ b.name }}">
+          <button class="btn btn-sm btn-ghost" name="action" value="delete_backup">Delete</button></form></td></tr>{% endfor %}
+      </tbody></table></div>
+      {% else %}<div class="empty"><h3>No backups yet</h3><p>Press <em>Back up now</em>, or wait for tonight's automatic backup.</p></div>{% endif %}
+      <div class="card-foot small muted">Stored on the server in <code>data/backups</code> (next to <code>docker-compose.yml</code>). Each backup holds the database, every file and the encryption keys — keep downloads somewhere safe.</div>
+    </div>
+    <div class="card"><div class="card-head"><h3>Restoring a backup</h3></div><div class="card-body small">
+      <p>Restoring replaces everything with the backup's contents. Your current data is kept in a <code>pre-restore-…</code> folder just in case. On the server:</p>
+      <pre><code>docker compose stop workbench
+docker compose run --rm workbench restore workbench-YYYYMMDD-HHMMSS.zip
+docker compose start workbench</code></pre>
+      <p>To restore on a new server, put the zip in <code>data/backups/</code> first.</p></div></div>
+  </div>
+  <div class="stack">
+    <div class="card"><div class="card-head"><h3>Schedule &amp; limits</h3></div><div class="card-body">
+      <form method="post" novalidate>{% csrf_token %}{% include "partials/form.html" %}<button class="btn btn-primary">Save</button></form>
+    </div></div>
+    <div class="card"><div class="card-body"><a class="btn" href="{% url 'files:storage' %}">{% icon 'database' 16 %} Storage usage &amp; cleanup</a></div></div>
+  </div>
+</div>
+
+{% elif tab == 'email' %}
+<div class="grid grid-main">
+  <div class="card"><div class="card-body">
+    <form method="post" novalidate>{% csrf_token %}{% include "partials/form.html" with grid=True %}
+      <div class="form-actions"><button class="btn btn-primary">Save</button></div></form>
+    <form method="post" action="{% url 'core:system_action' %}">{% csrf_token %}<button class="btn" name="action" value="test_email" {% if not site.email_ready %}disabled{% endif %}>Send me a test email</button></form>
+  </div></div>
+  <div class="card"><div class="card-head"><h3>Why set up email?</h3></div><div class="card-body small">
+    <p>Email is optional. When it's on, people get their notifications (assignments, review requests, @mentions, failed checks) by email as well, grouped into one message per minute. Each person can turn this off in their profile.</p>
+    <p><strong>Gmail / Google Workspace:</strong> smtp.gmail.com, port 587, STARTTLS, and an <em>app password</em>.</p>
+    <p><strong>Microsoft 365:</strong> smtp.office365.com, port 587, STARTTLS.</p>
+    <p>The password is stored encrypted.</p>
+  </div></div>
+</div>
+
+{% elif tab == 'github' %}
+<div class="grid grid-main">
+  <div class="card"><div class="card-body">
+    <p>Add a webhook in each GitHub repository (or once for the whole GitHub organisation): <strong>Settings → Webhooks → Add webhook</strong>.</p>
+    <div class="field"><label class="field-label">Payload URL</label><div class="copy-box"><input id="hook" type="text" readonly value="{{ webhook_url }}"><button class="btn btn-sm" type="button" data-copy="#hook">Copy</button></div></div>
+    <div class="field"><label class="field-label">Secret</label>
+      {% if env_override %}<p class="small muted">Set by the server's <code>WORKBENCH_GITHUB_WEBHOOK_SECRET</code> environment variable.</p>
+      {% else %}<div class="copy-box"><input id="secret" type="text" readonly value="{{ secret }}"><button class="btn btn-sm" type="button" data-copy="#secret">Copy</button></div>{% endif %}</div>
+    <div class="kv"><span>Content type</span><code>application/json</code></div>
+    <div class="kv"><span>Events</span><span>Pull requests, Pull request reviews, Pushes, Workflow runs</span></div>
+    <p></p>
+    {% if not env_override %}<form method="post" action="{% url 'core:system_action' %}" data-confirm="Generate a new secret? GitHub deliveries will be rejected until you paste it into GitHub.">{% csrf_token %}
+      <button class="btn btn-sm btn-danger" name="action" value="rotate_github_secret">Generate a new secret</button></form>{% endif %}
+  </div></div>
+  <div class="card"><div class="card-body small">
+    <p>Then link each project to its repository in the project's <em>Settings &amp; members</em>.</p>
+    <p>Check <a href="{% url 'integrations:overview' %}">GitHub → Recent webhook deliveries</a> to confirm GitHub's test “ping” arrived.</p>
+  </div></div>
+</div>
+
+{% else %}
+<div class="card form-card"><div class="card-body">
+  <form method="post" novalidate>{% csrf_token %}{% include "partials/form.html" %}<button class="btn btn-primary">Save</button></form>
+</div></div>
+{% endif %}
+{% endblock %}

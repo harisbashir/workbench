@@ -41,6 +41,14 @@ ICONS = {
     "x": '<path d="M6 6l12 12M18 6L6 18"/>',
     "lock": '<rect x="5" y="11" width="14" height="10" rx="1"/><path d="M8 11V7a4 4 0 018 0v4"/>',
     "send": '<path d="M4 12l16-8-6 16-2-6z"/>',
+    "settings": '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>',
+    "chart": '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+    "folder-plus": '<path d="M3 6a2 2 0 012-2h4l2 2h8a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><path d="M12 10v6M9 13h6"/>',
+    "trash": '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
+    "restore": '<path d="M4 12a8 8 0 108-8H8M8 4L5 7l3 3"/>',
+    "paperclip": '<path d="M20 11l-8 8a5 5 0 01-7-7l8-8a3 3 0 014 4l-8 8a1 1 0 01-2-2l7-7"/>',
+    "database": '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>',
+    "globe": '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/>',
     "hash": '<path d="M5 9h14M5 15h14M10 4L8 20M16 4l-2 16"/>',
 }
 

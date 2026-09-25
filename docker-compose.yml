@@ -1,49 +1,40 @@
-# Production stack: Caddy (automatic HTTPS) -> Workbench (gunicorn) -> PostgreSQL.
-# Usage:  cp .env.example .env  (fill it in)  &&  docker compose up -d --build
+# Workbench — quick start
+#
+#   docker compose up -d                      # http://<server>:8000
+#   docker compose --profile https up -d      # https://$WORKBENCH_DOMAIN (set it in .env)
+#
+# Everything Workbench stores is in ./data next to this file:
+#   data/db        the database          data/files    uploaded files
+#   data/backups   nightly backups       data/secrets.json  generated keys
 services:
-  db:
-    image: postgres:16
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${WORKBENCH_DB_NAME}
-      POSTGRES_USER: ${WORKBENCH_DB_USER}
-      POSTGRES_PASSWORD: ${WORKBENCH_DB_PASSWORD}
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${WORKBENCH_DB_USER}"]
-      interval: 10s
-      retries: 5
-
-  web:
+  workbench:
     build: .
+    image: workbench:latest
     restart: unless-stopped
-    env_file: .env
-    depends_on:
-      db:
-        condition: service_healthy
+    init: true
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      WORKBENCH_DOMAIN: ${WORKBENCH_DOMAIN:-}
+    ports:
+      - "${WORKBENCH_BIND:-0.0.0.0}:${WORKBENCH_PORT:-8000}:8000"
     volumes:
-      - media:/app/media
-    expose:
-      - "8000"
+      - ./data:/data
 
+  # Optional: automatic HTTPS with Let's Encrypt. Needs WORKBENCH_DOMAIN in .env
+  # and ports 80/443 open to the internet.
   caddy:
     image: caddy:2
+    profiles: ["https"]
     restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
     environment:
-      WORKBENCH_DOMAIN: ${WORKBENCH_DOMAIN}
+      WORKBENCH_DOMAIN: ${WORKBENCH_DOMAIN:-}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
+      - ./data/caddy:/data
     depends_on:
-      - web
-
-volumes:
-  pgdata:
-  media:
-  caddy_data:
-  caddy_config:
+      - workbench

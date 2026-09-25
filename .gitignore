@@ -10,3 +10,4 @@ staticfiles/
 .DS_Store
 .coverage
 htmlcov/
+data/

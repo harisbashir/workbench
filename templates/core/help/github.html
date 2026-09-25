@@ -6,11 +6,11 @@
 
 <h2>One-time setup (administrator)</h2>
 <ol>
-  <li>Generate a long random secret on the server, e.g. <code>python3 -c "import secrets; print(secrets.token_hex(32))"</code>, and set it as <code>WORKBENCH_GITHUB_WEBHOOK_SECRET</code>. Restart Workbench.</li>
+  <li>Open <a href="{% url 'core:system_tab' 'github' %}">System → GitHub</a>. Workbench has already generated a secret; copy the Payload URL and the secret from there.</li>
   <li>In Workbench, open each project's <em>Settings &amp; members</em> and fill in its GitHub repository (<code>owner/name</code>).</li>
   <li>In GitHub, open the repository → <strong>Settings → Webhooks → Add webhook</strong>:
     <ul>
-      <li>Payload URL: shown on the <a href="{% url 'integrations:overview' %}">GitHub page</a></li>
+      <li>Payload URL: from System → GitHub</li>
       <li>Content type: <code>application/json</code></li>
       <li>Secret: the same secret from step 1</li>
       <li>Events: choose <em>Let me select individual events</em> and tick <strong>Pull requests</strong>, <strong>Pull request reviews</strong>, <strong>Pushes</strong> and <strong>Workflow runs</strong>.</li>
@@ -26,7 +26,7 @@
 <ul>
   <li>Every delivery is checked against the secret with an HMAC-SHA256 signature. Deliveries with a missing or wrong signature are rejected and logged.</li>
   <li>Each delivery ID is accepted only once, so captured requests can't be replayed.</li>
-  <li>If you think the secret leaked, generate a new one and update it on the server and in GitHub.</li>
+  <li>If you think the secret leaked, use <em>Generate a new secret</em> in System → GitHub and paste it into GitHub.</li>
 </ul>
 
 <h2>Recommended: KiBot in GitHub Actions</h2>

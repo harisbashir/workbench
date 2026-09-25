@@ -35,9 +35,13 @@ class User(AbstractUser):
         help_text="Lets Workbench match GitHub activity to you.",
     )
 
+    email_notifications = models.BooleanField(
+        default=True, help_text="Also send my notifications by email (when the administrator has set up email).")
+
     # Two-factor authentication (TOTP). The secret is encrypted at rest.
     _mfa_secret = models.TextField(blank=True, db_column="mfa_secret")
     mfa_enabled = models.BooleanField(default=False)
+    mfa_last_step = models.BigIntegerField(default=0, editable=False)  # stops a code being used twice
 
     # Brute-force protection.
     failed_logins = models.PositiveIntegerField(default=0)
@@ -66,6 +70,21 @@ class User(AbstractUser):
     @mfa_secret.setter
     def mfa_secret(self, value):
         self._mfa_secret = encrypt(value) if value else ""
+
+    def verify_totp(self, code, secret=None):
+        """Checks a 6-digit code (±30 s for clock drift). Each code works only once."""
+        import time
+
+        import pyotp
+        code = (code or "").replace(" ", "")
+        totp = pyotp.TOTP(secret or self.mfa_secret)
+        now_step = int(time.time()) // 30
+        for step in (now_step - 1, now_step, now_step + 1):
+            if step > self.mfa_last_step and pyotp.utils.strings_equal(totp.at(step * 30), code):
+                self.mfa_last_step = step
+                self.save(update_fields=["mfa_last_step"])
+                return True
+        return False
 
     # --- Lockout -----------------------------------------------------------
     @property

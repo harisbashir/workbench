@@ -24,12 +24,17 @@
 <div class="grid grid-4">
   <div class="card stat"><a href="{% url 'core:my_work' %}"><div class="label">{% icon 'check' 15 %} Assigned to me</div><div class="value">{{ my_tasks|length }}</div></a></div>
   <div class="card stat"><a href="{% url 'core:my_work' %}"><div class="label">{% icon 'pr' 15 %} Waiting for my review</div><div class="value {% if to_review %}warn{% endif %}">{{ to_review|length }}</div></a></div>
-  <div class="card stat"><div class="label">{% icon 'clock' 15 %} Overdue tasks</div><div class="value {% if overdue %}bad{% endif %}">{{ overdue }}</div></div>
+  <div class="card stat"><div class="label">{% icon 'clock' 15 %} Overdue / blocked</div><div class="value {% if overdue or blocked %}bad{% endif %}">{{ overdue }} / {{ blocked|length }}</div></div>
   <div class="card stat"><a href="{% url 'inventory:part_list' %}?stock=low"><div class="label">{% icon 'alert' 15 %} Parts below reorder level</div><div class="value {% if low_stock %}warn{% endif %}">{{ low_stock }}</div></a></div>
 </div>
 <p></p>
 <div class="grid grid-main">
   <div class="stack">
+    {% if blocked %}
+    <div class="card"><div class="card-head"><h2>Blocked</h2></div><div class="card-body"><ul class="list-plain">
+      {% for t in blocked %}<li><span class="key">{{ t.key }}</span><div><a href="{{ t.get_absolute_url }}">{{ t.title }}</a><br><span class="small overdue">{{ t.blocked_reason }}</span></div><span class="right small faint">{{ t.assignee|default:"" }}</span></li>{% endfor %}
+    </ul></div></div>
+    {% endif %}
     {% if to_review %}
     <div class="card"><div class="card-head"><h2>Needs your review</h2></div><div class="card-body"><ul class="list-plain">
       {% for t in to_review %}<li><span class="key">{{ t.key }}</span><a href="{{ t.get_absolute_url }}">{{ t.title }}</a>
@@ -65,6 +70,12 @@
   </div>
 
   <div class="stack">
+    {% if team_clock|length > 1 or team_clock.0.people|length > 1 %}
+    <div class="card"><div class="card-head"><h2>Team time</h2><span class="small faint">working hours 9–18</span></div><div class="card-body">
+      {% for z in team_clock %}<div class="clock-row" data-tz="{{ z.tz }}"><span class="clock-dot"></span><div><strong>{{ z.city }}</strong> <span class="clock-time mono"></span><br><span class="small muted">{{ z.people|join:", "|truncatechars:60 }}</span></div></div>{% endfor %}
+      <p class="small faint">Best overlap for calls is shown in green.</p>
+    </div></div>
+    {% endif %}
     <div class="card"><div class="card-head"><h2>Production</h2><a class="small" href="{% url 'production:build_list' %}">Open</a></div><div class="card-body">
       <div class="kv"><span>Purchase orders on the way</span><a href="{% url 'production:po_list' %}">{{ open_pos }}</a></div>
       {% for b in active_builds %}<div class="kv"><span><a href="{{ b.get_absolute_url }}">{{ b.number }}</a> · {{ b.revision }} × {{ b.quantity }}</span>{% status_badge b.status b.get_status_display %}</div>

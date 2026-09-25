@@ -83,6 +83,12 @@ class Command(BaseCommand):
         rev_b = Revision.objects.create(project=pwr, name="Rev B", status=Revision.Status.DESIGN, target_date=(now + timedelta(days=21)).date(),
                                         notes="Adds USB ESD protection and a load switch; fixes Rev A feedback divider.")
         sens_a = Revision.objects.create(project=sens, name="EVT", status=Revision.Status.DESIGN, target_date=(now + timedelta(days=45)).date())
+        for rev in (rev_a, rev_b, sens_a):
+            rev.add_default_checks()
+        rev_a.checks.update(done_by=u["ayesha"], done_at=now - timedelta(days=60))
+        for c in rev_b.checks.all()[:4]:
+            c.done_by, c.done_at = (u["sana"] if c.order % 2 else u["haris"]), now - timedelta(days=1, hours=c.order)
+            c.save()
 
         # BOM for Rev B from the sample KiCad CSV, using the real importer.
         sample = Path(settings.BASE_DIR) / "docs" / "examples" / "sample_bom_rev_b.csv"
@@ -185,6 +191,44 @@ class Command(BaseCommand):
                                                         "html_url": f"https://github.com/{pwr.github_repo}/actions/runs/1001", "head_branch": "pwr-4-brownout"}})
         github.handle("pull_request", pr_payload("opened", 45, "PWR-1 Add USBLC6 ESD protection", "pwr-1-usb-esd", "sana-pcb", draft=True))
         # The brown-out PR moved PWR-4 to review; leave it there so the reviewer sees it.
+
+        # Blocked task
+        Task.objects.filter(project=pwr, number=3).update(blocked_reason="Waiting for final USB-C connector footprint from GCT")
+
+        # Time entries for this week and last week
+        from apps.timesheets.models import TimeEntry
+        today = timezone.localdate()
+        monday = today - timedelta(days=today.weekday())
+        plan = [("sana", "PWR", 1, [3, 2.5, 4, 3]), ("bilal", "PWR", 4, [4, 3.5, 2, 4]), ("bilal", "SENS", None, [1, 1.5]),
+                ("usman", "PWR", 6, [2, 3]), ("ayesha", "PWR", 2, [1.5, 1]), ("haris", "PWR", 4, [1, 0.75, 1.25])]
+        for who, key, num, hours in plan:
+            proj = Project.objects.get(key=key)
+            t = Task.objects.filter(project=proj, number=num).first() if num else None
+            for i, h in enumerate(hours):
+                for offset in (0, -7):
+                    d = monday + timedelta(days=i + offset)
+                    if d <= today:
+                        TimeEntry.objects.create(user=u[who], project=proj, task=t, date=d, hours=Decimal(str(h)),
+                                                 note="" if offset else "Demo entry")
+
+        # Files
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from apps.files.models import Folder
+        from apps.files.views import store_upload
+        def put(project, path, name, content, user, task=None):
+            folder = Folder.get_or_create_path(project, *path, user=user) if path else None
+            return store_upload(SimpleUploadedFile(name, content), project=project, folder=folder, user=user, task=task)[0]
+        put(pwr, ["Manufacturing", "Rev B"], "PWR-RevB-BOM.csv", sample.read_bytes(), u["sana"])
+        put(pwr, ["Test reports"], "RevA-thermal-2A.csv", b"time_min,case_temp_c,ambient_c\n0,25.1,25.0\n10,58.4,25.1\n20,68.9,25.0\n30,71.2,25.0\n", u["usman"])
+        notes = b"# Rev B design review\n\nAttendees: Ayesha, Sana, Bilal, Haris\n\n- ESD: USBLC6-2SC6 behind J1 (PWR-1)\n- Feedback divider fixed (PWR-2)\n- Open: connector footprint from GCT\n"
+        put(pwr, ["Meeting notes"], "2026-09-22-revB-review.md", notes, u["haris"])
+        doc = put(pwr, ["Meeting notes"], "2026-09-22-revB-review.md", notes + b"- Decision: keep 2-layer stack-up\n", u["ayesha"])
+        doc.versions.filter(number=2).update(note="Added stack-up decision")
+        put(None, ["Procedures"], "Firmware-release-checklist.md", b"# Firmware release\n\n1. Tag in git\n2. CI green\n3. Update CHANGELOG\n", u["bilal"])
+        put(None, ["Datasheets"], "TPS62133-notes.txt", b"TPS62133 key limits: VIN 3-17V, 3A, FB 0.8V\n", u["sana"])
+        put(pwr, ["Task files", "PWR-4"], "pvd-flush-timing.csv", b"run,pvd_to_flush_ms\n1,2.9\n2,3.1\n3,3.0\n", u["bilal"],
+            task=Task.objects.get(project=pwr, number=4))
 
         # Purchasing and production
         po = PurchaseOrder.objects.create(supplier=s["LCSC"], created_by=u["fatima"], reference="LC-20260918-7731",

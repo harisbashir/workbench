@@ -11,6 +11,8 @@
     <button class="btn btn-primary" type="button" data-copy="#invite-url">Copy</button></div>
   <p></p>
   <div class="tip"><strong>Security tip:</strong> send the link in a direct message, not in a group chat. Anyone with the link can set the password until it's used.</div>
-  <a class="btn" href="{% url 'accounts:user_list' %}">Back to people</a>
+  <div class="btn-row">
+  {% if can_email %}<form method="post">{% csrf_token %}<button class="btn btn-primary" name="action" value="email">Email the link to {{ target.email }}</button></form>{% endif %}
+  <a class="btn" href="{% url 'accounts:user_list' %}">Back to people</a></div>
 </div></div>
 {% endblock %}

@@ -26,7 +26,83 @@ class Notification(models.Model):
     text = models.CharField(max_length=255)
     url = models.CharField(max_length=500, blank=True)
     is_read = models.BooleanField(default=False)
+    emailed = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["-created_at"]
+
+
+class SiteSettings(models.Model):
+    """Settings an administrator can change in the app (System → Settings)."""
+
+    company_name = models.CharField(max_length=80, default="Workbench")
+    site_url = models.URLField(
+        blank=True, help_text="The address people use to open Workbench, e.g. https://workbench.example.com. "
+                              "Used in sign-in links, emails and the GitHub webhook address.")
+    time_zone = models.CharField(max_length=64, default="UTC", help_text="Used to schedule nightly backups.")
+
+    # GitHub
+    _github_secret = models.TextField(blank=True, db_column="github_secret")
+
+    # Email (optional)
+    email_enabled = models.BooleanField(default=False, help_text="Send notifications and sign-in links by email.")
+    smtp_host = models.CharField("SMTP server", max_length=200, blank=True, help_text="e.g. smtp.gmail.com or smtp.office365.com")
+    smtp_port = models.PositiveIntegerField("SMTP port", default=587)
+    smtp_username = models.CharField("SMTP username", max_length=200, blank=True)
+    _smtp_password = models.TextField(blank=True, db_column="smtp_password")
+    smtp_use_tls = models.BooleanField("Use STARTTLS", default=True)
+    email_from = models.EmailField("Send emails from", blank=True, help_text="e.g. workbench@yourcompany.com")
+
+    # Backups & storage
+    backup_enabled = models.BooleanField("Nightly backups", default=True)
+    backup_hour = models.PositiveSmallIntegerField("Backup time (hour, 0–23)", default=2)
+    backup_keep = models.PositiveSmallIntegerField("Backups to keep", default=14)
+    trash_days = models.PositiveSmallIntegerField("Empty trash after (days)", default=30)
+    max_upload_mb = models.PositiveIntegerField("Largest upload (MB)", default=200)
+
+    setup_completed_at = models.DateTimeField(null=True, blank=True)
+    last_backup_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "site settings"
+
+    @classmethod
+    def load(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        if not obj._github_secret:
+            import secrets
+            obj.github_secret = secrets.token_hex(32)
+            obj.save(update_fields=["_github_secret"])
+        return obj
+
+    # Encrypted fields --------------------------------------------------------
+    @property
+    def github_secret(self):
+        from .crypto import decrypt
+        return decrypt(self._github_secret) if self._github_secret else ""
+
+    @github_secret.setter
+    def github_secret(self, value):
+        from .crypto import encrypt
+        self._github_secret = encrypt(value) if value else ""
+
+    @property
+    def smtp_password(self):
+        from .crypto import decrypt
+        return decrypt(self._smtp_password) if self._smtp_password else ""
+
+    @smtp_password.setter
+    def smtp_password(self, value):
+        from .crypto import encrypt
+        self._smtp_password = encrypt(value) if value else ""
+
+    @property
+    def email_ready(self):
+        return self.email_enabled and bool(self.smtp_host and self.email_from)
+
+    def absolute_url(self, path, request=None):
+        base = (self.site_url or "").rstrip("/")
+        if not base and request is not None:
+            base = f"{request.scheme}://{request.get_host()}"
+        return base + path

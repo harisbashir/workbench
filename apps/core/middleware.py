@@ -29,3 +29,25 @@ class SecurityHeadersMiddleware:
         if request.user.is_authenticated if hasattr(request, "user") else False:
             response.setdefault("Cache-Control", "no-store")
         return response
+
+
+class FirstRunSetupMiddleware:
+    """Until the first administrator exists, every page leads to the setup page."""
+
+    _done = False  # cached once setup is complete, so it costs nothing afterwards
+    OPEN_PREFIXES = ("/setup/", "/static/", "/healthz")
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if not FirstRunSetupMiddleware._done:
+            from django.shortcuts import redirect
+
+            from apps.accounts.models import User
+
+            if User.objects.exists():
+                FirstRunSetupMiddleware._done = True
+            elif not request.path.startswith(self.OPEN_PREFIXES):
+                return redirect("core:setup")
+        return self.get_response(request)

@@ -1,0 +1,32 @@
+{% extends "core/help/_layout.html" %}
+{% block help_title %}Files{% endblock %}
+{% block help %}
+<h1>Files</h1>
+<p>Workbench has its own file library, so documents don't get scattered across email, WhatsApp and personal drives.</p>
+
+<h2>Spaces and folders</h2>
+<ul>
+  <li><strong>Each project has a space</strong>, visible only to people on that project. Use it for test reports, scope captures, manufacturing files and meeting notes.</li>
+  <li><strong>Shared</strong> is company-wide. Use it for datasheets, templates, procedures and policies.</li>
+  <li>Make folders inside a space however you like, for example <em>Datasheets</em>, <em>Test reports / Rev B</em> or <em>Manufacturing</em>.</li>
+</ul>
+
+<h2>Uploading</h2>
+<p>Drag files anywhere onto a folder page, or choose <em>choose files</em>. You can upload many files at once, and a progress bar shows how far along the upload is.</p>
+<p>Files attached to a task are saved in <em>Task files / PWR-12</em>, and files shared in a chat channel go to <em>Chat uploads</em>. Everything ends up in one place.</p>
+
+<h2>Versions — nothing gets overwritten</h2>
+<p>Upload a file with the same name into the same folder, or use <em>Upload a new version</em> on the file's page, and it becomes the next version. Every older version stays available to download, with who uploaded it, when, and an optional note about what changed. A SHA-256 fingerprint lets you check two copies are identical.</p>
+
+<h2>Previews</h2>
+<p>PDFs, images and text files (CSV, logs, source code, KiCad text files) open right in the browser. Other types download.</p>
+
+<h2>Deleting and restoring</h2>
+<p>Deleted files go to the <a href="{% url 'files:trash' %}">Trash</a>, where anyone who can edit the project can restore them. They're removed automatically after the number of days set in <em>System → Backups &amp; storage</em> (30 by default).</p>
+
+<h2>Where files live on the server</h2>
+<p>For administrators: every file is stored in the server's <code>data/files</code> folder, sorted by project (<code>data/files/PWR/…</code>, <code>data/files/shared/…</code>). They're ordinary files, so you can see and copy them directly. Change them through Workbench, though, so versions and permissions stay correct. <em>Files → Storage</em> shows what's using space and can clean up old versions.</p>
+
+<h2>Blocked file types</h2>
+<p>Files that could run in a browser or on a computer (<code>.html</code>, <code>.js</code>, <code>.exe</code>, scripts…) can't be uploaded, to protect the team. Zip them first if you really need to share one.</p>
+{% endblock %}

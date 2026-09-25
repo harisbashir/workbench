@@ -1,0 +1,10 @@
+{% extends "accounts/auth_base.html" %}
+{% block title %}Set up Workbench{% endblock %}
+{% block auth %}
+<h1>Welcome — let's set up Workbench</h1>
+<p class="muted">This page only appears once. You'll create the administrator account, then set up two-factor sign-in on your phone. After that you can invite your team.</p>
+<form method="post" novalidate>{% csrf_token %}
+  {% include "partials/form.html" %}
+  <button class="btn btn-primary" type="submit">Create administrator and continue</button>
+</form>
+{% endblock %}

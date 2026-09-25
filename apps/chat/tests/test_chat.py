@@ -81,3 +81,19 @@ class ChannelTests(TestCase):
         r = signed_in(self.a).get(reverse("chat:index"))
         self.assertRedirects(r, "/chat/pwr/", fetch_redirect_response=False)
         self.assertNotIn("pwr", [c.slug for c in Channel.objects.visible_to(self.b)])
+
+    def test_share_file_in_project_channel(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from apps.files.models import Document
+        p = Project.objects.create(key="PWR", name="Power")
+        p.members.add(self.a)
+        ch = Channel.objects.create(name="pwr", slug="pwr", kind=Channel.Kind.PROJECT, project=p)
+        signed_in(self.a).post(reverse("chat:upload", args=["pwr"]), {"files": [SimpleUploadedFile("scope.png", b"png")]})
+        doc = Document.objects.get()
+        self.assertEqual(doc.project, p)
+        msg = ch.messages.get()
+        self.assertEqual(msg.url, doc.get_absolute_url())
+        dm = Channel.direct_between(self.a, self.b)
+        signed_in(self.a).post(reverse("chat:upload", args=[dm.slug]), {"files": [SimpleUploadedFile("x.png", b"png")]})
+        self.assertEqual(Document.objects.count(), 1)

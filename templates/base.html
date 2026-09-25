@@ -20,14 +20,18 @@
       <a href="{% url 'projects:list' %}" class="{% if section == 'projects' %}active{% endif %}">{% icon 'folder' %} Projects</a>
       <a href="{% url 'chat:index' %}" class="{% if section == 'chat' %}active{% endif %}">{% icon 'chat' %} Chat
         <span class="count {% if not unread_chat %}hidden{% endif %}" data-chat-badge data-url="{% url 'chat:unread' %}">{{ unread_chat }}</span></a>
+      <a href="{% url 'files:index' %}" class="{% if section == 'files' %}active{% endif %}">{% icon 'file' %} Files</a>
       <a href="{% url 'integrations:overview' %}" class="{% if section == 'integrations' %}active{% endif %}">{% icon 'git' %} GitHub</a>
       <div class="nav-label">Operations</div>
       <a href="{% url 'inventory:part_list' %}" class="{% if section == 'parts' %}active{% endif %}">{% icon 'chip' %} Parts &amp; BOM</a>
       <a href="{% url 'production:build_list' %}" class="{% if section == 'production' %}active{% endif %}">{% icon 'factory' %} Production</a>
+      <a href="{% url 'time:mine' %}" class="{% if section == 'time' and 'report' not in request.path %}active{% endif %}">{% icon 'clock' %} Timesheet</a>
+      <a href="{% url 'time:report' %}" class="{% if section == 'time' and 'report' in request.path %}active{% endif %}">{% icon 'chart' %} Weekly report</a>
       {% if user.is_admin_role %}
       <div class="nav-label">Admin</div>
       <a href="{% url 'accounts:user_list' %}" class="{% if section == 'accounts' and 'users' in request.path %}active{% endif %}">{% icon 'users' %} People</a>
       <a href="{% url 'core:audit_log' %}" class="{% if section == 'audit' %}active{% endif %}">{% icon 'log' %} Audit log</a>
+      <a href="{% url 'core:system' %}" class="{% if section == 'system' %}active{% endif %}">{% icon 'settings' %} System &amp; backups</a>
       {% endif %}
       <div class="nav-label">Support</div>
       <a href="{% url 'core:help' %}" class="{% if section == 'help' %}active{% endif %}">{% icon 'help' %} Help &amp; guides</a>
@@ -47,13 +51,14 @@
       <button class="icon-btn menu-toggle" data-menu-toggle aria-label="Open menu">{% icon 'menu' 20 %}</button>
       <form action="{% url 'core:search' %}" method="get" role="search">
         <span class="search-icon">{% icon 'search' 16 %}</span>
-        <input type="search" name="q" value="{{ request.GET.q|default:'' }}" placeholder="Search tasks, parts, messages — or type a task ID like PWR-12" aria-label="Search">
+        <input type="search" name="q" value="{{ request.GET.q|default:'' }}" placeholder="Search tasks, files, parts, messages — or type a task ID like PWR-12" aria-label="Search">
       </form>
       <span class="spacer"></span>
       <a class="icon-btn" href="{% url 'core:help' %}" title="Help">{% icon 'help' 20 %}</a>
       <a class="icon-btn" href="{% url 'core:notifications' %}" title="Notifications">{% icon 'bell' 20 %}{% if unread_notifications %}<span class="dot">{{ unread_notifications }}</span>{% endif %}</a>
     </header>
     <main class="content {% block content_class %}{% endblock %}" id="content">
+      {% if user.is_admin_role and not https_on and not debug_mode %}<div class="alert alert-warning">{% icon 'alert' 18 %}<div>Workbench is running <strong>without HTTPS</strong>, so passwords travel unencrypted. Fine inside a VPN or office network; for internet access turn on the HTTPS option — see <a href="{% url 'core:help_topic' 'install' %}">Installing &amp; updating</a>.</div></div>{% endif %}
       {% if messages %}<ul class="messages">{% for m in messages %}<li class="alert alert-{{ m.tags }}">{{ m }}</li>{% endfor %}</ul>{% endif %}
       {% block content %}{% endblock %}
     </main>

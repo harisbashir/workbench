@@ -28,11 +28,11 @@
   <div class="stack">
     <div class="card"><div class="card-head"><h3>Connection</h3>{% if secret_set %}<span class="badge badge-done">Secret configured</span>{% else %}<span class="badge badge-failure">Not configured</span>{% endif %}</div>
       <div class="card-body small">
-        {% if not secret_set %}<div class="alert alert-warning">The server administrator must set <code>WORKBENCH_GITHUB_WEBHOOK_SECRET</code> before GitHub events are accepted. Until then every delivery is rejected.</div>{% endif %}
+        {% if user.is_admin_role %}<p><a href="{% url 'core:system_tab' 'github' %}">Copy the secret from System → GitHub</a>.</p>{% endif %}
         <p>In each GitHub repository go to <strong>Settings → Webhooks → Add webhook</strong> and enter:</p>
         <div class="field"><label class="field-label">Payload URL</label><div class="copy-box"><input id="hook" type="text" readonly value="{{ webhook_url }}"><button class="btn btn-sm" type="button" data-copy="#hook">Copy</button></div></div>
         <div class="kv"><span>Content type</span><code>application/json</code></div>
-        <div class="kv"><span>Secret</span><span>the same value as the server setting</span></div>
+        <div class="kv"><span>Secret</span><span>shown to administrators in System → GitHub</span></div>
         <div class="kv"><span>Events</span><span>Pull requests, Pull request reviews, Pushes, Workflow runs</span></div>
       </div></div>
     <div class="card"><div class="card-head"><h3>Linked repositories</h3></div><div class="card-body">

@@ -1,0 +1,44 @@
+{% extends "core/help/_layout.html" %}
+{% block help_title %}Installing, backups &amp; updates{% endblock %}
+{% block help %}
+<h1>Installing, backups &amp; updates</h1>
+<p>Workbench runs as a single Docker container. Everything it stores goes in one <code>data</code> folder: the database, uploaded files, backups, and the encryption keys it generates on first start. There's nothing else to configure.</p>
+
+<h2>Install</h2>
+<p>On any machine with Docker (a Linux cloud server, a Windows or Mac PC, a NAS), in the Workbench folder:</p>
+<pre><code>docker compose up -d</code></pre>
+<p>Open <code>http://&lt;server&gt;:8000</code>. The first page asks for a setup code, which is printed in the log:</p>
+<pre><code>docker compose logs workbench</code></pre>
+<p>On a fresh Ubuntu or Debian server, <code>./install.sh</code> does it all: it installs Docker, asks for your domain, turns on HTTPS and prints the setup code.</p>
+
+<h2>HTTPS for internet access</h2>
+<p>If people connect over the internet, use HTTPS. Point a domain name (e.g. <code>workbench.yourcompany.com</code>) at the server, then:</p>
+<pre><code>echo "WORKBENCH_DOMAIN=workbench.yourcompany.com" &gt; .env
+docker compose --profile https up -d</code></pre>
+<p>A small Caddy web server is added that fetches and renews a free certificate automatically. Ports 80 and 443 must be open.</p>
+<p>Without a domain, Workbench still works, for example inside a company VPN or over Tailscale. Administrators see a reminder banner about HTTPS.</p>
+
+<h2>Backups</h2>
+<ul>
+  <li>A backup is taken <strong>every night</strong> automatically (the time is set in <a href="{% url 'core:system_tab' 'backups' %}">System → Backups</a>). The newest 14 are kept.</li>
+  <li><em>Back up now</em> takes one immediately, for example before an update.</li>
+  <li>Each backup is a single <code>.zip</code> containing the database, all files and the keys. <strong>Copy backups off the server regularly</strong>, e.g. by downloading them from the Backups page or syncing <code>data/backups</code> to cloud storage.</li>
+</ul>
+
+<h2>Restore</h2>
+<pre><code>docker compose stop workbench
+docker compose run --rm workbench restore workbench-20260925-020000.zip
+docker compose start workbench</code></pre>
+<p>Your data from before the restore is kept in <code>data/pre-restore-…</code> until you delete it.</p>
+
+<h2>Update</h2>
+<pre><code>git pull
+docker compose up -d --build</code></pre>
+<p>Database changes are applied automatically when the container starts. Take a backup first.</p>
+
+<h2>Move to another server</h2>
+<p>Stop Workbench, copy the whole <code>data</code> folder to the new server, and run <code>docker compose up -d</code> there.</p>
+
+<h2>Monitoring</h2>
+<p><code>/healthz</code> returns <code>{"ok": true}</code> when the database is reachable and there's enough disk space. Docker uses it for the container's health status, and you can point an uptime monitor at it.</p>
+{% endblock %}

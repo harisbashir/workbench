@@ -1,0 +1,34 @@
+{% extends "core/help/_layout.html" %}
+{% block help_title %}Connecting GitHub{% endblock %}
+{% block help %}
+<h1>Connecting GitHub</h1>
+<p>Workbench receives events from GitHub through a <strong>webhook</strong>. It never needs your GitHub password or a token, and it can't change your repositories.</p>
+
+<h2>One-time setup (administrator)</h2>
+<ol>
+  <li>Generate a long random secret on the server, e.g. <code>python3 -c "import secrets; print(secrets.token_hex(32))"</code>, and set it as <code>WORKBENCH_GITHUB_WEBHOOK_SECRET</code>. Restart Workbench.</li>
+  <li>In Workbench, open each project's <em>Settings &amp; members</em> and fill in its GitHub repository (<code>owner/name</code>).</li>
+  <li>In GitHub, open the repository → <strong>Settings → Webhooks → Add webhook</strong>:
+    <ul>
+      <li>Payload URL: shown on the <a href="{% url 'integrations:overview' %}">GitHub page</a></li>
+      <li>Content type: <code>application/json</code></li>
+      <li>Secret: the same secret from step 1</li>
+      <li>Events: choose <em>Let me select individual events</em> and tick <strong>Pull requests</strong>, <strong>Pull request reviews</strong>, <strong>Pushes</strong> and <strong>Workflow runs</strong>.</li>
+    </ul></li>
+  <li>GitHub sends a test “ping”. It shows as <em>processed</em> in <em>Recent webhook deliveries</em> on the GitHub page.</li>
+</ol>
+<p>For a GitHub organisation you can add the webhook once at organisation level instead of per repository.</p>
+
+<h2>How work gets linked</h2>
+<p>Workbench looks for task IDs (like <code>PWR-12</code>) in pull request titles, branch names and descriptions, and in commit messages. Only IDs whose key matches the project linked to that repository are used.</p>
+
+<h2>Security</h2>
+<ul>
+  <li>Every delivery is checked against the secret with an HMAC-SHA256 signature. Deliveries with a missing or wrong signature are rejected and logged.</li>
+  <li>Each delivery ID is accepted only once, so captured requests can't be replayed.</li>
+  <li>If you think the secret leaked, generate a new one and update it on the server and in GitHub.</li>
+</ul>
+
+<h2>Recommended: KiBot in GitHub Actions</h2>
+<p>Add <code>docs/examples/kibot.yml</code> from the Workbench repository to your hardware repos as <code>.github/workflows/kibot.yml</code>. On every pull request it runs ERC and DRC and produces schematic PDFs, Gerbers and a BOM CSV. Workbench shows the pass/fail result on the task and posts failures to chat.</p>
+{% endblock %}

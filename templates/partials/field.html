@@ -1,0 +1,16 @@
+<div class="field {% if field.errors %}has-error{% endif %} {% if field.field.widget.input_type == 'checkbox' and not field.field.widget.allow_multiple_selected %}field-check{% endif %} {% if field.name in full_fields or field.field.widget.attrs.rows or field.field.widget.allow_multiple_selected or field.field.widget.input_type == 'radio' %}full{% endif %}">
+  {% if field.field.widget.input_type == 'checkbox' and not field.field.widget.allow_multiple_selected %}
+    <label class="check-label">{{ field }} {{ field.label }}</label>
+  {% elif field.field.widget.allow_multiple_selected and field.field.widget.input_type == 'checkbox' %}
+    <span class="field-label">{{ field.label }}</span>
+    <div class="checks">{{ field }}</div>
+  {% elif field.field.widget.input_type == 'radio' %}
+    <span class="field-label">{{ field.label }}</span>
+    <div class="radios">{{ field }}</div>
+  {% else %}
+    <label for="{{ field.id_for_label }}">{{ field.label }}{% if not field.field.required %} <span class="faint small">(optional)</span>{% endif %}</label>
+    {{ field }}
+  {% endif %}
+  {% if field.help_text %}<div class="help">{{ field.help_text|safe }}</div>{% endif %}
+  {{ field.errors }}
+</div>

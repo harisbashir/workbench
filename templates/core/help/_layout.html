@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Help · {% block help_title %}{% endblock %}{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles"><h1>Help &amp; guides</h1><p class="intro">Short guides for everyday work. Start with <em>Getting started</em> if you're new.</p></div></div>
+<div class="help-layout">
+  <nav class="help-nav card"><div class="card-body">
+    <a href="{% url 'core:help_topic' 'start' %}" class="{% if topic == 'start' %}active{% endif %}">Getting started</a>
+    <a href="{% url 'core:help_topic' 'projects' %}" class="{% if topic == 'projects' %}active{% endif %}">Projects &amp; tasks</a>
+    <a href="{% url 'core:help_topic' 'reviews' %}" class="{% if topic == 'reviews' %}active{% endif %}">Design &amp; code reviews</a>
+    <a href="{% url 'core:help_topic' 'chat' %}" class="{% if topic == 'chat' %}active{% endif %}">Chat</a>
+    <a href="{% url 'core:help_topic' 'parts' %}" class="{% if topic == 'parts' %}active{% endif %}">Parts &amp; BOMs</a>
+    <a href="{% url 'core:help_topic' 'production' %}" class="{% if topic == 'production' %}active{% endif %}">Purchasing &amp; production</a>
+    <a href="{% url 'core:help_topic' 'github' %}" class="{% if topic == 'github' %}active{% endif %}">Connecting GitHub</a>
+    <a href="{% url 'core:help_topic' 'security' %}" class="{% if topic == 'security' %}active{% endif %}">Accounts &amp; security</a>
+  </div></nav>
+  <article class="card"><div class="card-body prose">{% block help %}{% endblock %}</div></article>
+</div>
+{% endblock %}

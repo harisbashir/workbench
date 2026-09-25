@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}{% if obj %}Edit {{ obj.display_name }}{% else %}Add person{% endif %}{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles">
+  <div class="crumbs"><a href="{% url 'accounts:user_list' %}">People</a> /</div>
+  <h1>{% if obj %}{{ obj.display_name }}{% else %}Add a person{% endif %}</h1>
+  {% if not obj %}<p class="intro">After saving you'll get a one-time link to send them (by WhatsApp, email, etc.). They use it to choose their own password.</p>{% endif %}
+</div></div>
+<div class="grid grid-main">
+  <div class="card"><div class="card-body">
+    <form method="post" novalidate>{% csrf_token %}
+      {% include "partials/form.html" with grid=True %}
+      <div class="form-actions"><button class="btn btn-primary">{% if obj %}Save{% else %}Add and create sign-in link{% endif %}</button>
+        <a class="btn btn-ghost" href="{% url 'accounts:user_list' %}">Cancel</a></div>
+    </form>
+  </div></div>
+  <div class="card"><div class="card-head"><h3>Roles</h3></div><div class="card-body small">
+    {% for role, text in roles.items %}<p><strong>{{ role.label }}</strong><br><span class="muted">{{ text }}</span></p>{% endfor %}
+    <p class="muted">Engineers only see projects they're added to. Add them to projects from the project's <em>Edit</em> page.</p>
+  </div></div>
+</div>
+{% endblock %}

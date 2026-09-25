@@ -1,0 +1,42 @@
+{% extends "core/help/_layout.html" %}
+{% block help_title %}Accounts &amp; security{% endblock %}
+{% block help %}
+<h1>Accounts &amp; security</h1>
+<h2>Signing in</h2>
+<p>Everyone signs in with a password <strong>and</strong> a 6-digit code from an authenticator app on their phone (Google Authenticator, Microsoft Authenticator, Authy…). You set this up the first time you sign in.</p>
+<p>When you set it up you get 8 <strong>recovery codes</strong>. Keep them somewhere safe. Each one can be used once if you lose your phone.</p>
+<p>After 5 wrong passwords in a row, an account is locked for 15 minutes. An administrator can unlock it sooner.</p>
+
+<h2>Roles</h2>
+<table>
+  <tr><th>Role</th><th>Can do</th></tr>
+  <tr><td>Administrator</td><td>Everything, including adding people, resetting two-factor sign-in, and the audit log.</td></tr>
+  <tr><td>Engineering lead</td><td>Create and manage all projects, revisions, tasks and BOMs; plan builds.</td></tr>
+  <tr><td>Engineer</td><td>Work on tasks, BOMs and chat in the projects they're a member of.</td></tr>
+  <tr><td>Procurement / production</td><td>Manage parts, suppliers, purchase orders and builds; view all projects.</td></tr>
+  <tr><td>Viewer</td><td>Read-only access to their projects.</td></tr>
+</table>
+
+<h2>For administrators</h2>
+<h3>Adding someone</h3>
+<ol>
+  <li><a href="{% url 'accounts:user_list' %}">People</a> → <em>Add person</em>. Choose their role.</li>
+  <li>Copy the one-time sign-in link and send it to them privately. It expires after 3 days.</li>
+  <li>Add them to the right projects from each project's <em>Settings &amp; members</em>.</li>
+</ol>
+<h3>When someone leaves</h3>
+<p>Open their account and untick <strong>Active</strong>. They can't sign in any more, but their history stays. Do this on their last day.</p>
+<h3>Lost phone</h3>
+<p>On <a href="{% url 'accounts:user_list' %}">People</a>, choose <em>Reset 2FA</em> for that person. They set it up again at their next sign-in.</p>
+<h3>Audit log</h3>
+<p>The <a href="{% url 'core:audit_log' %}">audit log</a> records sign-ins (including failures), permission changes, file uploads, BOM imports, stock changes and orders, with the time and IP address. Entries can't be edited or deleted from the app.</p>
+
+<h2>How your data is protected</h2>
+<ul>
+  <li>All traffic is encrypted (HTTPS only, with HSTS).</li>
+  <li>Passwords are stored as salted PBKDF2 hashes; two-factor secrets are encrypted in the database.</li>
+  <li>Uploaded files are only served to people who can see the project — there are no public file links.</li>
+  <li>The site loads no third-party scripts, fonts or trackers, and sends a strict Content Security Policy.</li>
+  <li>Forms are protected against cross-site request forgery; the GitHub webhook is protected by a signature instead.</li>
+</ul>
+{% endblock %}

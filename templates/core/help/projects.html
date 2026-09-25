@@ -1,0 +1,38 @@
+{% extends "core/help/_layout.html" %}
+{% block help_title %}Projects &amp; tasks{% endblock %}
+{% block help %}
+<h1>Projects &amp; tasks</h1>
+<h2>Projects</h2>
+<p>A project is a product or board you're developing, like “Power board” or “Sensor node”. Each project has a short <strong>key</strong> (e.g. <code>PWR</code>) that prefixes its task IDs: <code>PWR-1</code>, <code>PWR-2</code>…</p>
+<p>Leads and administrators create projects and choose members. Engineers only see projects they're a member of.</p>
+
+<h2>Revisions</h2>
+<p>A revision is one spin of the board: Rev A, Rev B, or EVT/DVT/PVT. Each revision has its own BOM, and you can tie tasks to a revision to see what's left before it's ready. Revision statuses:</p>
+<ul>
+  <li><strong>In design</strong> — schematic and layout are being worked on.</li>
+  <li><strong>In review</strong> — design is complete and being checked.</li>
+  <li><strong>Released for production</strong> — frozen. Only leads can change its BOM.</li>
+  <li><strong>Obsolete</strong> — replaced by a newer revision.</li>
+</ul>
+
+<h2>Tasks</h2>
+<p>Every task has a type (firmware, schematic, PCB layout, mechanical, test, production), an assignee, an optional <strong>reviewer</strong>, a priority and a due date.</p>
+<table>
+  <tr><th>Column</th><th>Means</th></tr>
+  <tr><td>To do</td><td>Agreed and ready to start.</td></tr>
+  <tr><td>In progress</td><td>Someone is working on it.</td></tr>
+  <tr><td>In review</td><td>Work is done and waiting for the reviewer. Opening a pull request moves the task here automatically.</td></tr>
+  <tr><td>Done</td><td>Reviewed and merged or accepted. Merging the pull request moves it here automatically.</td></tr>
+</table>
+<p>Move tasks by dragging cards on the <strong>Board</strong>, or with the status buttons on the task page.</p>
+
+<h2>Writing good tasks</h2>
+<ul>
+  <li>Start the title with a verb: “Route USB-C connector and add ESD protection”.</li>
+  <li>In the description, say how you'll know it's done: “DRC clean, ESD diodes within 5 mm of connector”.</li>
+  <li>Attach reference material: datasheet pages, scope captures, previous test results.</li>
+</ul>
+
+<h2>Formatting in descriptions, comments and chat</h2>
+<p><code>**bold**</code>, <code>`code`</code>, <code>```code block```</code>, links are clickable, task IDs like <code>PWR-12</code> become links, and <code>@username</code> notifies that person.</p>
+{% endblock %}

@@ -1,0 +1,82 @@
+{% extends "base.html" %}{% load workbench humanize %}
+{% block title %}Home{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles">
+  <h1>Good to see you, {{ user.first_name|default:user.username }}</h1>
+  <p class="intro">Here's what needs your attention across projects, reviews and production.</p>
+</div>
+{% if user.can_manage_projects %}<div class="actions"><a class="btn btn-primary" href="{% url 'projects:create' %}">{% icon 'plus' 16 %} New project</a></div>{% endif %}
+</div>
+
+{% if show_checklist %}
+<div class="card" id="getting-started">
+  <div class="card-head"><h2>Getting started</h2><a class="small" href="{% url 'core:help' %}">Read the guide</a></div>
+  <div class="card-body"><ul class="checklist">
+    {% for s in checklist %}
+      <li class="{% if s.done %}done{% endif %}"><span class="tick">{% if s.done %}{% icon 'check' 14 %}{% endif %}</span>
+        <div><div class="what">{{ s.what }}</div><div class="small muted">{{ s.why }}</div></div>
+        {% if not s.done %}<a class="btn btn-sm" href="{{ s.url }}">{{ s.cta }}</a>{% endif %}</li>
+    {% endfor %}
+  </ul></div>
+</div><p></p>
+{% endif %}
+
+<div class="grid grid-4">
+  <div class="card stat"><a href="{% url 'core:my_work' %}"><div class="label">{% icon 'check' 15 %} Assigned to me</div><div class="value">{{ my_tasks|length }}</div></a></div>
+  <div class="card stat"><a href="{% url 'core:my_work' %}"><div class="label">{% icon 'pr' 15 %} Waiting for my review</div><div class="value {% if to_review %}warn{% endif %}">{{ to_review|length }}</div></a></div>
+  <div class="card stat"><div class="label">{% icon 'clock' 15 %} Overdue tasks</div><div class="value {% if overdue %}bad{% endif %}">{{ overdue }}</div></div>
+  <div class="card stat"><a href="{% url 'inventory:part_list' %}?stock=low"><div class="label">{% icon 'alert' 15 %} Parts below reorder level</div><div class="value {% if low_stock %}warn{% endif %}">{{ low_stock }}</div></a></div>
+</div>
+<p></p>
+<div class="grid grid-main">
+  <div class="stack">
+    {% if to_review %}
+    <div class="card"><div class="card-head"><h2>Needs your review</h2></div><div class="card-body"><ul class="list-plain">
+      {% for t in to_review %}<li><span class="key">{{ t.key }}</span><a href="{{ t.get_absolute_url }}">{{ t.title }}</a>
+        <span class="kind">{{ t.get_kind_display }}</span>{% for pr in t.pull_requests.all %}<a class="small" href="{{ pr.url }}" target="_blank" rel="noopener">PR #{{ pr.number }}</a>{% endfor %}</li>{% endfor %}
+    </ul></div></div>
+    {% endif %}
+
+    <div class="card"><div class="card-head"><h2>Active projects</h2><a class="small" href="{% url 'projects:list' %}">All projects</a></div>
+      {% if projects %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Project</th><th>Lead</th><th class="num">Open tasks</th><th class="num">In review</th><th></th></tr></thead>
+        <tbody>{% for p in projects %}
+          <tr><td><a href="{{ p.get_absolute_url }}"><strong>{{ p.name }}</strong></a> <span class="key">{{ p.key }}</span></td>
+            <td>{{ p.lead|default:"—" }}</td><td class="num">{{ p.open_tasks }}</td><td class="num">{{ p.review_tasks }}</td>
+            <td class="right"><a class="btn btn-sm" href="{% url 'projects:board' p.key %}">{% icon 'board' 14 %} Board</a></td></tr>
+        {% endfor %}</tbody></table></div>
+      {% else %}
+        <div class="empty">{% icon 'folder' 36 %}<h3>No projects yet</h3>
+          <p>{% if user.can_manage_projects %}Create a project for each product or board your team is developing.{% else %}You haven't been added to a project yet. Ask your engineering lead to add you.{% endif %}</p>
+          {% if user.can_manage_projects %}<a class="btn btn-primary" href="{% url 'projects:create' %}">Create a project</a>{% endif %}</div>
+      {% endif %}
+    </div>
+
+    <div class="card"><div class="card-head"><h2>My tasks</h2><a class="small" href="{% url 'core:my_work' %}">See all</a></div>
+      <div class="card-body">
+      {% if my_tasks %}<ul class="list-plain">
+        {% for t in my_tasks %}<li><span class="prio prio-{{ t.priority }}" title="{{ t.get_priority_display }} priority"></span><span class="key">{{ t.key }}</span>
+          <a href="{{ t.get_absolute_url }}">{{ t.title }}</a>
+          <span class="right">{% status_badge t.status t.get_status_display %}</span>
+          {% if t.due_date %}<span class="small {% if t.is_overdue %}overdue{% else %}faint{% endif %}">due {{ t.due_date|naturalday }}</span>{% endif %}</li>{% endfor %}
+      </ul>{% else %}<p class="muted">Nothing assigned to you right now.</p>{% endif %}
+      </div></div>
+  </div>
+
+  <div class="stack">
+    <div class="card"><div class="card-head"><h2>Production</h2><a class="small" href="{% url 'production:build_list' %}">Open</a></div><div class="card-body">
+      <div class="kv"><span>Purchase orders on the way</span><a href="{% url 'production:po_list' %}">{{ open_pos }}</a></div>
+      {% for b in active_builds %}<div class="kv"><span><a href="{{ b.get_absolute_url }}">{{ b.number }}</a> · {{ b.revision }} × {{ b.quantity }}</span>{% status_badge b.status b.get_status_display %}</div>
+      {% empty %}<p class="muted small">No builds planned.</p>{% endfor %}
+    </div></div>
+    <div class="card"><div class="card-head"><h2>Recent activity</h2></div><div class="card-body">
+      {% if activity %}<ul class="feed">
+        {% for a in activity %}<li><span class="avatar sm {% if a.source == 'github' %}gh{% endif %}">{% if a.actor %}{{ a.actor.initials }}{% else %}GH{% endif %}</span>
+          <div><strong>{{ a.who }}</strong> {% if a.url %}<a href="{{ a.url }}">{{ a.text }}</a>{% else %}{{ a.text }}{% endif %} <span class="faint small">in {{ a.project.key }}</span></div>
+          <span class="when">{{ a.created_at|naturaltime }}</span></li>{% endfor %}
+      </ul>{% else %}<p class="muted small">Activity from your projects and GitHub will appear here.</p>{% endif %}
+    </div></div>
+  </div>
+</div>
+{% endblock %}

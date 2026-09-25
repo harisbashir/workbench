@@ -1,0 +1,9 @@
+{% extends "accounts/auth_base.html" %}
+{% block title %}Recovery codes{% endblock %}
+{% block auth %}
+<h1>Save your recovery codes</h1>
+<p class="muted">If you lose your phone, each of these codes lets you sign in once. <strong>This is the only time they're shown.</strong> Store them in your password manager or print them.</p>
+<div class="codes">{% for c in codes %}<span>{{ c }}</span>{% endfor %}</div>
+<p></p>
+<a class="btn btn-primary" href="{% url 'core:dashboard' %}">I've saved them — continue</a>
+{% endblock %}

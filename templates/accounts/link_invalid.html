@@ -1,0 +1,7 @@
+{% extends "accounts/auth_base.html" %}
+{% block title %}Link expired{% endblock %}
+{% block auth %}
+<h1>This link has expired</h1>
+<p class="muted">Sign-in links work once and expire after 3 days. Ask your administrator to create a new one for you.</p>
+<a class="btn" href="{% url 'accounts:login' %}">Go to sign in</a>
+{% endblock %}

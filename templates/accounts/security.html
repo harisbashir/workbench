@@ -1,0 +1,30 @@
+{% extends "base.html" %}{% load workbench %}
+{% block title %}Security{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles"><h1>Security</h1>
+  <p class="intro">Change your password and manage two-factor sign-in.</p></div></div>
+<div class="grid grid-2">
+  <div class="card"><div class="card-head"><h2>Change password</h2></div><div class="card-body">
+    <form method="post" novalidate>{% csrf_token %}
+      {% include "partials/form.html" %}
+      <button class="btn btn-primary">Change password</button>
+    </form>
+  </div></div>
+  <div class="card"><div class="card-head"><h2>Two-factor sign-in</h2>
+      {% if user.mfa_enabled %}<span class="badge badge-done">On</span>{% else %}<span class="badge badge-failure">Off</span>{% endif %}</div>
+    <div class="card-body">
+      {% if user.mfa_enabled %}
+        <p>You sign in with your password and a code from your authenticator app.</p>
+        <div class="kv"><span>Unused recovery codes</span><strong>{{ remaining }} of 8</strong></div>
+        {% if remaining < 3 %}<div class="alert alert-warning">You're running low on recovery codes. Generate a new set.</div>{% endif %}
+        <p></p>
+        <form method="post" action="{% url 'accounts:regenerate_recovery_codes' %}" data-confirm="This replaces your old recovery codes. Continue?">{% csrf_token %}
+          <button class="btn">{% icon 'shield' 16 %} Generate new recovery codes</button></form>
+        <p class="small muted">Got a new phone? Ask an administrator to reset two-factor sign-in; you'll set it up again next time you sign in.</p>
+      {% else %}
+        <p>Two-factor sign-in isn't set up.</p>
+        <a class="btn btn-primary" href="{% url 'accounts:mfa_setup' %}">Set it up now</a>
+      {% endif %}
+    </div></div>
+</div>
+{% endblock %}

@@ -1,0 +1,24 @@
+{% extends "core/help/_layout.html" %}
+{% block help_title %}Purchasing &amp; production{% endblock %}
+{% block help %}
+<h1>Purchasing &amp; production</h1>
+<h2>Running a build</h2>
+<ol>
+  <li><strong>Plan the build.</strong> Production → <em>Plan a build</em>. Pick the revision, the number of boards, and the assembly house (or in-house).</li>
+  <li><strong>Check parts.</strong> The build page lists every part needed and what's short.</li>
+  <li><strong>Order missing parts.</strong> <em>Order missing parts</em> creates draft purchase orders for exactly the shortfall, one per supplier. Parts without a supplier are listed so you can set one.</li>
+  <li><strong>Start the build</strong> when the parts are in. This takes the parts out of stock (for example, when you ship a kit to the assembler).</li>
+  <li><strong>Record results.</strong> When boards come back and are tested, enter how many passed and failed. Yield is calculated and posted to the project channel.</li>
+</ol>
+
+<h2>Purchase orders</h2>
+<table>
+  <tr><th>Status</th><th>Means</th><th>What you do next</th></tr>
+  <tr><td>Draft</td><td>Being prepared.</td><td>Add parts, place the order with the supplier, then <em>Mark as ordered</em>.</td></tr>
+  <tr><td>Ordered</td><td>Sent to the supplier.</td><td>When it arrives, enter quantities and <em>Receive into stock</em>.</td></tr>
+  <tr><td>Partly received</td><td>Some items arrived.</td><td>Receive the rest when it comes.</td></tr>
+  <tr><td>Received</td><td>Everything arrived.</td><td>Nothing — stock is updated.</td></tr>
+</table>
+<p>Receiving updates each part's unit cost to the price on the order, so BOM costs stay current.</p>
+<p>Workbench tracks what was ordered and received; payments and accounting stay in your accounting system.</p>
+{% endblock %}

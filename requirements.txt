@@ -1,0 +1,8 @@
+# Runtime
+Django>=5.2,<5.3
+pyotp>=2.9           # time-based one-time passwords (two-factor sign-in)
+qrcode>=7.4          # draws the QR code shown during two-factor setup
+cryptography>=42     # encrypts two-factor secrets at rest
+psycopg[binary]>=3.2 # PostgreSQL driver (production database)
+gunicorn>=22         # production web server
+whitenoise>=6.7      # serves CSS/JS efficiently in production

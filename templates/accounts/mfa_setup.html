@@ -1,0 +1,18 @@
+{% extends "accounts/auth_base.html" %}
+{% block title %}Set up two-factor sign-in{% endblock %}
+{% block auth %}
+<h1>Protect your account</h1>
+<p class="muted">Everyone at {{ COMPANY_NAME }} signs in with a password <em>and</em> a 6-digit code from their phone. This takes about a minute.</p>
+<ol class="steps">
+  <li>Install an authenticator app on your phone — <strong>Google Authenticator</strong>, <strong>Microsoft Authenticator</strong> or <strong>Authy</strong> all work.</li>
+  <li>In the app, tap <strong>+</strong> and scan this code:
+    <img class="qr" src="{{ qr }}" alt="QR code for your authenticator app">
+    <span class="small muted">Can't scan? Choose “enter a setup key” and type: <code>{{ secret }}</code></span></li>
+  <li>Type the 6-digit code the app shows:</li>
+</ol>
+<form method="post" novalidate>{% csrf_token %}
+  {% include "partials/form.html" %}
+  <button class="btn btn-primary" type="submit">Turn on two-factor sign-in</button>
+</form>
+<form method="post" action="{% url 'accounts:logout' %}" class="small">{% csrf_token %}<button class="link-btn">Sign out instead</button></form>
+{% endblock %}

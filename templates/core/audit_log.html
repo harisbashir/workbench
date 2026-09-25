@@ -1,0 +1,19 @@
+{% extends "base.html" %}{% load workbench %}
+{% block title %}Audit log{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles"><h1>Audit log</h1>
+  <p class="intro">A permanent record of sign-ins, permission changes, file uploads, BOM imports, stock changes and orders. Entries can't be edited or deleted from the app.</p></div></div>
+<form class="filters" method="get"><input type="search" name="q" value="{{ q }}" placeholder="Filter by action, person or item"><button class="btn">Filter</button></form>
+<div class="card"><div class="table-wrap"><table class="table">
+  <thead><tr><th>When (your time)</th><th>Who</th><th>Action</th><th>Item</th><th>Details</th><th>IP address</th></tr></thead>
+  <tbody>{% for e in page %}
+    <tr class="{% if 'failed' in e.action or 'locked' in e.action %}row-warn{% endif %}"><td class="nowrap small">{{ e.created_at|date:"Y-m-d H:i:s" }}</td><td>{{ e.actor|default:"—" }}</td>
+      <td><code>{{ e.action }}</code></td><td>{{ e.object_repr }}</td>
+      <td class="small">{% for k, v in e.details.items %}{{ k }}={{ v }}{% if not forloop.last %}, {% endif %}{% endfor %}</td><td class="small mono">{{ e.ip_address|default:"" }}</td></tr>
+  {% empty %}<tr><td colspan="6" class="muted">No entries.</td></tr>{% endfor %}</tbody></table></div>
+  {% if page.has_other_pages %}<div class="card-foot btn-row">
+    {% if page.has_previous %}<a class="btn btn-sm" href="?q={{ q|urlencode }}&page={{ page.previous_page_number }}">Newer</a>{% endif %}
+    <span class="muted small">Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+    {% if page.has_next %}<a class="btn btn-sm" href="?q={{ q|urlencode }}&page={{ page.next_page_number }}">Older</a>{% endif %}</div>{% endif %}
+</div>
+{% endblock %}

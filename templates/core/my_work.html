@@ -1,0 +1,22 @@
+{% extends "base.html" %}{% load workbench humanize %}
+{% block title %}My work{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles"><h1>My work</h1>
+  <p class="intro">Everything assigned to you, plus tasks where you're the reviewer. Finished tasks are hidden.</p></div></div>
+<div class="card">
+{% if tasks %}
+<div class="table-wrap"><table class="table">
+  <thead><tr><th>Task</th><th>Project</th><th>My part</th><th>Type</th><th>Status</th><th>Due</th></tr></thead>
+  <tbody>{% for t in tasks %}
+    <tr><td><span class="prio prio-{{ t.priority }}"></span><span class="key">{{ t.key }}</span> <a href="{{ t.get_absolute_url }}">{{ t.title }}</a></td>
+      <td>{{ t.project.name }}</td>
+      <td>{% if t.assignee_id == user.id %}Doing it{% endif %}{% if t.assignee_id == user.id and t.reviewer_id == user.id %} · {% endif %}{% if t.reviewer_id == user.id %}Reviewing{% endif %}</td>
+      <td class="kind">{{ t.get_kind_display }}</td>
+      <td>{% status_badge t.status t.get_status_display %}</td>
+      <td class="nowrap {% if t.is_overdue %}overdue{% endif %}">{{ t.due_date|naturalday|default:"—" }}</td></tr>
+  {% endfor %}</tbody></table></div>
+{% else %}
+  <div class="empty">{% icon 'check' 36 %}<h3>You're all caught up</h3><p>New tasks assigned to you will appear here, and you'll get a notification.</p></div>
+{% endif %}
+</div>
+{% endblock %}

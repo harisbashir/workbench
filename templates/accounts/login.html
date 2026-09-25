@@ -1,0 +1,12 @@
+{% extends "accounts/auth_base.html" %}
+{% block title %}Sign in{% endblock %}
+{% block auth %}
+<h1>Sign in</h1>
+<p class="muted">Use the username and password your administrator set up for you.</p>
+<form method="post" novalidate>{% csrf_token %}
+  <input type="hidden" name="next" value="{{ next }}">
+  {% include "partials/form.html" %}
+  <button class="btn btn-primary" type="submit">Continue</button>
+</form>
+{% endblock %}
+{% block below %}<p class="small faint auth-note">Forgot your password? Ask an administrator to send you a new sign-in link.</p>{% endblock %}

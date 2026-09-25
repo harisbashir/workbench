@@ -1,0 +1,35 @@
+{% extends "core/help/_layout.html" %}
+{% block help_title %}Design &amp; code reviews{% endblock %}
+{% block help %}
+<h1>Design &amp; code reviews</h1>
+<p>Every schematic, PCB and firmware change goes through a pull request on GitHub, and every pull request is linked to a task. That gives one review process for code and hardware.</p>
+
+<h2>The flow</h2>
+<ol>
+  <li><strong>Start the task.</strong> Drag it to <em>In progress</em>. Copy the suggested branch name from the task page (for example <code>pwr-12-route-usb-c</code>).</li>
+  <li><strong>Do the work</strong> in KiCad or your editor and commit to that branch. Mention the task ID in commit messages if you like — commits then appear in the task history.</li>
+  <li><strong>Open a pull request</strong> on GitHub. Workbench moves the task to <em>In review</em> and notifies the reviewer.</li>
+  <li><strong>CI runs</strong> (see below). If ERC/DRC or the firmware build fails, you're notified and the project channel gets a message.</li>
+  <li><strong>The reviewer reviews on GitHub.</strong> “Request changes” moves the task back to <em>In progress</em>; “Approve” is shown on the task.</li>
+  <li><strong>Merge.</strong> The task moves to <em>Done</em>.</li>
+</ol>
+
+<h2>Reviewing KiCad changes</h2>
+<p>KiCad files are text, but diffs of them are hard to read. The recommended GitHub Actions setup uses <strong>KiBot</strong> to produce, on every pull request:</p>
+<ul>
+  <li>Schematic PDF and PCB renders — review these instead of raw file diffs.</li>
+  <li>ERC and DRC reports — the pull request fails if either has errors.</li>
+  <li>A BOM CSV — download it and import it into the revision to see cost and stock impact.</li>
+</ul>
+<p>An example workflow file is in the Workbench repository under <code>docs/examples/kibot.yml</code>.</p>
+
+<h2>Checklist for schematic and PCB reviews</h2>
+<ul>
+  <li>ERC/DRC clean, or every waiver explained in the PR.</li>
+  <li>New parts exist in the parts library with a manufacturer part number.</li>
+  <li>No obsolete or “not recommended” parts (check the BOM page).</li>
+  <li>Compare the BOM with the previous revision (BOM page → <em>Compare with…</em>).</li>
+  <li>Decoupling, ESD protection, test points and footprints checked against datasheets.</li>
+</ul>
+<p>Put review decisions in the pull request or in task comments so they're kept with the work.</p>
+{% endblock %}

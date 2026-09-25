@@ -1,0 +1,26 @@
+{% extends "core/help/_layout.html" %}
+{% block help_title %}Chat{% endblock %}
+{% block help %}
+<h1>Chat</h1>
+<h2>Kinds of conversation</h2>
+<table>
+  <tr><th>Kind</th><th>Who sees it</th></tr>
+  <tr><td><strong>Project channels</strong></td><td>Created automatically with each project. Everyone on the project sees it. GitHub and task updates are posted here.</td></tr>
+  <tr><td><strong>Public channels</strong></td><td>Anyone can find and join them — good for #general, #firmware, #suppliers.</td></tr>
+  <tr><td><strong>Private channels</strong></td><td>Only the members chosen when it was created.</td></tr>
+  <tr><td><strong>Direct messages</strong></td><td>Just you and one other person. Start one with “Message someone…” in the chat sidebar.</td></tr>
+</table>
+
+<h2>Sending messages</h2>
+<ul>
+  <li><kbd>Enter</kbd> sends, <kbd>Shift</kbd>+<kbd>Enter</kbd> adds a new line.</li>
+  <li><code>@username</code> notifies that person.</li>
+  <li>Task IDs such as <code>PWR-12</code> turn into links.</li>
+  <li><code>**bold**</code>, <code>`code`</code> and <code>```code blocks```</code> for register dumps or logs.</li>
+  <li>Hover over your own message to edit or delete it.</li>
+</ul>
+<p>New messages appear within a few seconds. The number next to <em>Chat</em> in the menu shows unread messages.</p>
+
+<h2>Chat or comment?</h2>
+<p>Use chat for quick questions. Anything someone will need to find later — a design decision, review feedback, a test result — belongs in a <strong>task comment</strong>.</p>
+{% endblock %}

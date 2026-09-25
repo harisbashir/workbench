@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Sign-in link{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles">
+  <div class="crumbs"><a href="{% url 'accounts:user_list' %}">People</a> /</div>
+  <h1>Sign-in link for {{ link.user }}</h1>
+  <p class="intro">Send this link to {{ link.user }} privately. It works once, expires in 3 days, and lets them choose a new password. Then they'll set up two-factor sign-in.</p>
+</div></div>
+<div class="card form-card"><div class="card-body">
+  <div class="copy-box"><input type="text" id="invite-url" value="{{ link.url }}" readonly aria-label="Sign-in link">
+    <button class="btn btn-primary" type="button" data-copy="#invite-url">Copy</button></div>
+  <p></p>
+  <div class="tip"><strong>Security tip:</strong> send the link in a direct message, not in a group chat. Anyone with the link can set the password until it's used.</div>
+  <a class="btn" href="{% url 'accounts:user_list' %}">Back to people</a>
+</div></div>
+{% endblock %}

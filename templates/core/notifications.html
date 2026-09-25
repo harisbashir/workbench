@@ -1,0 +1,14 @@
+{% extends "base.html" %}{% load workbench humanize %}
+{% block title %}Notifications{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles"><h1>Notifications</h1>
+  <p class="intro">You're notified when you're assigned a task, asked to review, mentioned with @, or when GitHub checks fail on your work.</p></div>
+  {% if unread_notifications %}<div class="actions"><form method="post" action="{% url 'core:notifications_read' %}">{% csrf_token %}<button class="btn">Mark all as read</button></form></div>{% endif %}
+</div>
+<div class="card"><div class="card-body">
+{% if items %}<ul class="list-plain">
+  {% for n in items %}<li>{% if not n.is_read %}<span class="badge badge-in_progress">New</span>{% endif %}
+    <a href="{% url 'core:notification_open' n.pk %}">{{ n.text }}</a><span class="right faint small nowrap">{{ n.created_at|naturaltime }}</span></li>{% endfor %}
+</ul>{% else %}<div class="empty">{% icon 'bell' 36 %}<h3>No notifications yet</h3></div>{% endif %}
+</div></div>
+{% endblock %}

@@ -1,0 +1,37 @@
+{% extends "core/help/_layout.html" %}
+{% block help_title %}Getting started{% endblock %}
+{% block help %}
+<h1>Getting started</h1>
+<p>{{ COMPANY_NAME }} Workbench is the one place for the engineering team's work: tasks, design reviews, chat, parts, BOMs, purchasing and production. It's linked to GitHub, where firmware and KiCad files live.</p>
+
+<h2>The main areas</h2>
+<table>
+  <tr><th>Area</th><th>Use it for</th></tr>
+  <tr><td><strong>Home</strong></td><td>What needs you today: your tasks, reviews waiting on you, overdue work, low stock.</td></tr>
+  <tr><td><strong>My work</strong></td><td>Every unfinished task you're doing or reviewing, in one list.</td></tr>
+  <tr><td><strong>Projects</strong></td><td>One per product or board. Each has a task board, revisions (Rev A, Rev B…) and a team.</td></tr>
+  <tr><td><strong>Chat</strong></td><td>Project channels (created automatically), topic channels, and direct messages.</td></tr>
+  <tr><td><strong>GitHub</strong></td><td>Open pull requests across projects and how they link to tasks.</td></tr>
+  <tr><td><strong>Parts &amp; BOM</strong></td><td>The shared parts library, stock levels, suppliers and each revision's bill of materials.</td></tr>
+  <tr><td><strong>Production</strong></td><td>Builds (production runs) and purchase orders.</td></tr>
+</table>
+
+<h2>Your first day</h2>
+<ol>
+  <li><strong>Set your profile.</strong> Add your time zone and GitHub username under <a href="{% url 'accounts:profile' %}">Profile</a>. Times are then shown in your local time, and your pull requests are credited to you.</li>
+  <li><strong>Open your project's board.</strong> Go to <a href="{% url 'projects:list' %}">Projects</a> and choose <em>Board</em>. Drag a task to <em>In progress</em> when you start it.</li>
+  <li><strong>Join the conversation.</strong> Your project's channel is in <a href="{% url 'chat:index' %}">Chat</a>. GitHub activity is posted there too.</li>
+  <li><strong>Name branches after tasks.</strong> Use the task ID in your branch, like <code>pwr-12-usb-esd</code>. That's all it takes to link your work.</li>
+</ol>
+
+<h2>Working across time zones</h2>
+<p>The team spans Pakistan and Canada (about 9 hours apart), so most work happens asynchronously:</p>
+<ul>
+  <li>Write decisions and review feedback as <strong>task comments</strong>, not only in chat — comments stay with the work.</li>
+  <li>Before you log off, move tasks to the right column and leave a comment saying where you got to.</li>
+  <li>Use <strong>@username</strong> when you need someone specific; they get a notification.</li>
+</ul>
+
+<h2>Finding things</h2>
+<p>The search bar at the top searches tasks, projects, parts (by value, MPN or footprint) and chat. Type a task ID like <code>PWR-12</code> to jump to it.</p>
+{% endblock %}

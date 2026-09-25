@@ -1,0 +1,64 @@
+{% load static workbench %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{% endblock %}{% if self.title %} · {% endif %}{{ COMPANY_NAME }}</title>
+  <link rel="icon" href="{% static 'img/favicon.svg' %}" type="image/svg+xml">
+  <link rel="stylesheet" href="{% static 'css/app.css' %}">
+  <script src="{% static 'js/app.js' %}" defer></script>
+</head>
+<body>
+{% block body %}
+<div class="app">
+  <aside class="sidebar" aria-label="Main navigation">
+    <a class="brand" href="{% url 'core:dashboard' %}"><span class="brand-mark">{% icon 'chip' 18 %}</span>{{ COMPANY_NAME }}</a>
+    <nav class="nav">
+      <a href="{% url 'core:dashboard' %}" class="{% if section == 'home' %}active{% endif %}">{% icon 'home' %} Home</a>
+      <a href="{% url 'core:my_work' %}" class="{% if section == 'my-work' %}active{% endif %}">{% icon 'check' %} My work</a>
+      <div class="nav-label">Engineering</div>
+      <a href="{% url 'projects:list' %}" class="{% if section == 'projects' %}active{% endif %}">{% icon 'folder' %} Projects</a>
+      <a href="{% url 'chat:index' %}" class="{% if section == 'chat' %}active{% endif %}">{% icon 'chat' %} Chat
+        <span class="count {% if not unread_chat %}hidden{% endif %}" data-chat-badge data-url="{% url 'chat:unread' %}">{{ unread_chat }}</span></a>
+      <a href="{% url 'integrations:overview' %}" class="{% if section == 'integrations' %}active{% endif %}">{% icon 'git' %} GitHub</a>
+      <div class="nav-label">Operations</div>
+      <a href="{% url 'inventory:part_list' %}" class="{% if section == 'parts' %}active{% endif %}">{% icon 'chip' %} Parts &amp; BOM</a>
+      <a href="{% url 'production:build_list' %}" class="{% if section == 'production' %}active{% endif %}">{% icon 'factory' %} Production</a>
+      {% if user.is_admin_role %}
+      <div class="nav-label">Admin</div>
+      <a href="{% url 'accounts:user_list' %}" class="{% if section == 'accounts' and 'users' in request.path %}active{% endif %}">{% icon 'users' %} People</a>
+      <a href="{% url 'core:audit_log' %}" class="{% if section == 'audit' %}active{% endif %}">{% icon 'log' %} Audit log</a>
+      {% endif %}
+      <div class="nav-label">Support</div>
+      <a href="{% url 'core:help' %}" class="{% if section == 'help' %}active{% endif %}">{% icon 'help' %} Help &amp; guides</a>
+    </nav>
+    <div class="sidebar-foot">
+      <div class="me"><span class="avatar">{{ user.initials }}</span><div>{{ user.display_name }}<small>{{ user.get_role_display }}</small></div></div>
+      <nav class="nav">
+        <a href="{% url 'accounts:profile' %}">{% icon 'user' %} Profile</a>
+        <a href="{% url 'accounts:security' %}">{% icon 'lock' %} Security</a>
+        <form method="post" action="{% url 'accounts:logout' %}">{% csrf_token %}
+          <button class="btn btn-ghost nav-logout" type="submit">{% icon 'logout' %} Sign out</button></form>
+      </nav>
+    </div>
+  </aside>
+  <div class="main">
+    <header class="topbar">
+      <button class="icon-btn menu-toggle" data-menu-toggle aria-label="Open menu">{% icon 'menu' 20 %}</button>
+      <form action="{% url 'core:search' %}" method="get" role="search">
+        <span class="search-icon">{% icon 'search' 16 %}</span>
+        <input type="search" name="q" value="{{ request.GET.q|default:'' }}" placeholder="Search tasks, parts, messages — or type a task ID like PWR-12" aria-label="Search">
+      </form>
+      <span class="spacer"></span>
+      <a class="icon-btn" href="{% url 'core:help' %}" title="Help">{% icon 'help' 20 %}</a>
+      <a class="icon-btn" href="{% url 'core:notifications' %}" title="Notifications">{% icon 'bell' 20 %}{% if unread_notifications %}<span class="dot">{{ unread_notifications }}</span>{% endif %}</a>
+    </header>
+    <main class="content {% block content_class %}{% endblock %}" id="content">
+      {% if messages %}<ul class="messages">{% for m in messages %}<li class="alert alert-{{ m.tags }}">{{ m }}</li>{% endfor %}</ul>{% endif %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+{% endblock %}
+</body>
+</html>

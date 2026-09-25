@@ -1,0 +1,31 @@
+{% extends "core/help/_layout.html" %}
+{% block help_title %}Parts &amp; BOMs{% endblock %}
+{% block help %}
+<h1>Parts &amp; BOMs</h1>
+<h2>The parts library</h2>
+<p>Every component the company uses has one entry with its own part number (for example <code>RES-0001</code>), value, KiCad footprint, manufacturer and manufacturer part number (MPN), preferred supplier, unit cost, stock level and storage location.</p>
+<p>Set a <strong>reorder level</strong> on parts you use often. When stock falls below it, the part is highlighted and counted on the Home page.</p>
+
+<h2>Importing a BOM from KiCad</h2>
+<ol>
+  <li>Open the project and choose the revision's <strong>BOM</strong> button.</li>
+  <li>Choose <strong>Import from KiCad</strong>.</li>
+  <li>Upload the CSV:
+    <ul><li>KiCad: <em>Tools → Generate Bill of Materials</em>, export as CSV.</li>
+        <li>KiBot: the BOM CSV from your GitHub Actions run.</li></ul></li>
+  <li>Check the preview. Each row is matched to the library by part number, then MPN, then value + footprint. Rows that don't match become new parts.</li>
+  <li>Choose <strong>Save BOM</strong>.</li>
+</ol>
+<p><strong>Tip:</strong> add an <code>MPN</code> field to your KiCad symbols. Imports then match reliably, and purchasing knows exactly what to buy.</p>
+
+<h2>Reading a BOM page</h2>
+<ul>
+  <li><strong>Cost per board</strong> — the sum of fitted parts at their current unit cost (excluding PCB fab and assembly unless you add them as parts).</li>
+  <li><strong>Boards buildable from stock</strong> — how many complete boards current stock covers, and which parts limit it.</li>
+  <li><strong>Red rows</strong> — not enough stock for one board. <strong>Amber rows</strong> — below reorder level.</li>
+  <li><strong>Compare with…</strong> — shows parts added, removed and changed between revisions.</li>
+</ul>
+
+<h2>Stock</h2>
+<p>Stock changes automatically when a purchase order is received (+) and when a build starts (−). Procurement can also adjust stock by hand on the part page, for example after a stock count. Every change is recorded in the part's stock history.</p>
+{% endblock %}

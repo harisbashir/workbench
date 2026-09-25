@@ -1,0 +1,32 @@
+{% extends "base.html" %}{% load workbench %}
+{% block title %}People{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div class="titles"><h1>People</h1>
+    <p class="intro">Add your team here. Each new person gets a one-time link to choose a password; they then set up two-factor sign-in on their phone. <a href="{% url 'core:help_topic' 'security' %}">How access works →</a></p></div>
+  <div class="actions"><a class="btn btn-primary" href="{% url 'accounts:user_create' %}">{% icon 'plus' 16 %} Add person</a></div>
+</div>
+<div class="card"><div class="table-wrap"><table class="table">
+  <thead><tr><th>Name</th><th>Role</th><th>Two-factor</th><th>Last sign-in</th><th>Status</th><th></th></tr></thead>
+  <tbody>
+  {% for u in users %}
+    <tr class="{% if not u.is_active %}row-muted{% endif %}">
+      <td><span class="person"><span class="avatar sm">{{ u.initials }}</span><span><a href="{% url 'accounts:user_edit' u.pk %}">{{ u.display_name }}</a><br><span class="small faint">{{ u.username }}{% if u.job_title %} · {{ u.job_title }}{% endif %}</span></span></span></td>
+      <td><span class="badge badge-role">{{ u.get_role_display }}</span></td>
+      <td>{% if u.mfa_enabled %}<span class="badge badge-done">On</span>{% else %}<span class="badge badge-high">Not set up</span>{% endif %}</td>
+      <td class="small">{% if u.last_login %}{{ u.last_login|timesince }} ago{% else %}<span class="faint">Never</span>{% endif %}</td>
+      <td>{% if not u.is_active %}<span class="badge badge-cancelled">Deactivated</span>{% elif u.is_locked %}<span class="badge badge-failure">Locked</span>{% else %}<span class="badge badge-active">Active</span>{% endif %}</td>
+      <td class="right nowrap">
+        {% if u.is_locked %}<form class="inline" method="post" action="{% url 'accounts:user_unlock' u.pk %}">{% csrf_token %}<button class="btn btn-sm">Unlock</button></form>{% endif %}
+        <a class="btn btn-sm" href="{% url 'accounts:user_invite' u.pk %}" title="Create a link so they can set a new password">Password link</a>
+        {% if u.mfa_enabled and u != user %}<form class="inline" method="post" action="{% url 'accounts:user_reset_mfa' u.pk %}" data-confirm="Reset two-factor sign-in for {{ u.display_name }}? They'll need to scan a new QR code at their next sign-in.">{% csrf_token %}<button class="btn btn-sm">Reset 2FA</button></form>{% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table></div></div>
+<div class="section-title"><h2>What each role can do</h2></div>
+<div class="card"><div class="card-body">
+  {% for role, text in roles.items %}<div class="kv"><span><span class="badge badge-role">{{ role.label }}</span></span><span>{{ text }}</span></div>{% endfor %}
+</div></div>
+{% endblock %}

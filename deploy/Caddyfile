@@ -1,0 +1,13 @@
+# Caddy gets and renews a Let's Encrypt certificate for the domain automatically.
+{$WORKBENCH_DOMAIN} {
+	encode gzip
+	request_body {
+		max_size 30MB
+	}
+	reverse_proxy web:8000 {
+		header_up X-Forwarded-Proto {scheme}
+	}
+	header {
+		-Server
+	}
+}

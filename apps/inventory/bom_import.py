@@ -14,7 +14,7 @@ COLUMN_ALIASES = {
     "value": ["value", "val", "comment"],
     "footprint": ["footprint", "package", "pcb footprint"],
     "quantity": ["quantity", "qty", "quantity per pcb", "qty per board", "count"],
-    "mpn": ["mpn", "manufacturer part number", "manufacturer_part_number", "mfr part", "mfr. no", "part number", "mfn"],
+    "mpn": ["mpn", "manf", "mfr pn", "mfr part number", "manufacturer part number", "manufacturer_part_number", "mfr part", "mfr. no", "part number", "mfn"],
     "manufacturer": ["manufacturer", "mfr", "mfg", "manufacturer name"],
     "datasheet": ["datasheet"],
     "description": ["description", "desc"],

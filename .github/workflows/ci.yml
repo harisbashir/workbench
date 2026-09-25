@@ -1,0 +1,29 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt ruff
+      - name: Lint
+        run: ruff check apps config --select F,E9
+      - name: Tests
+        env:
+          WORKBENCH_DEBUG: "1"
+        run: python manage.py test apps
+      - name: Production settings check
+        env:
+          WORKBENCH_SECRET_KEY: ci-only-${{ github.run_id }}-not-a-real-secret-key-0123456789abcdef
+          WORKBENCH_ALLOWED_HOSTS: example.com
+        run: python manage.py check --deploy --fail-level WARNING
+      - name: Dependency audit
+        run: pip install pip-audit && pip-audit -r requirements.txt

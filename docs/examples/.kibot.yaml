@@ -1,0 +1,39 @@
+# KiBot configuration used by docs/examples/kibot.yml.
+# Check the KiBot documentation for the exact option names of your KiBot version.
+kibot:
+  version: 1
+
+preflight:
+  erc: true
+  drc: true
+  update_xml: true
+
+outputs:
+  - name: schematic_pdf
+    comment: Schematic as PDF for reviewers
+    type: pdf_sch_print
+    dir: docs
+
+  - name: gerbers
+    type: gerber
+    dir: gerbers
+
+  - name: drill
+    type: excellon
+    dir: gerbers
+
+  - name: bom_csv
+    comment: BOM for import into Workbench (Parts & BOM -> Import from KiCad)
+    type: bom
+    dir: bom
+    options:
+      format: CSV
+      columns:
+        - References
+        - Value
+        - Footprint
+        - field: Quantity Per PCB
+          name: Qty
+        - field: MPN
+        - field: Manufacturer
+        - field: Datasheet

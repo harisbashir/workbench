@@ -1,0 +1,49 @@
+# Production stack: Caddy (automatic HTTPS) -> Workbench (gunicorn) -> PostgreSQL.
+# Usage:  cp .env.example .env  (fill it in)  &&  docker compose up -d --build
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${WORKBENCH_DB_NAME}
+      POSTGRES_USER: ${WORKBENCH_DB_USER}
+      POSTGRES_PASSWORD: ${WORKBENCH_DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${WORKBENCH_DB_USER}"]
+      interval: 10s
+      retries: 5
+
+  web:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - media:/app/media
+    expose:
+      - "8000"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      WORKBENCH_DOMAIN: ${WORKBENCH_DOMAIN}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+
+volumes:
+  pgdata:
+  media:
+  caddy_data:
+  caddy_config:

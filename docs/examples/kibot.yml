@@ -1,0 +1,34 @@
+# GitHub Actions workflow for KiCad hardware repositories.
+# Copy to .github/workflows/kibot.yml in each hardware repo, and copy
+# docs/examples/.kibot.yaml to the repo root. Adjust the file paths below.
+#
+# On every pull request it:
+#   * runs ERC and DRC (the check fails if either has errors)
+#   * produces a schematic PDF, Gerbers + drill files, and a BOM CSV
+# Workbench shows the pass/fail result on the linked task and posts failures to chat.
+# Download the "fab-outputs" artifact to review the PDF or import the BOM into Workbench.
+name: KiBot
+on:
+  pull_request:
+    paths: ["hardware/**", ".kibot.yaml"]
+  push:
+    branches: [main]
+    paths: ["hardware/**", ".kibot.yaml"]
+
+jobs:
+  kibot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run KiBot (KiCad 8)
+        uses: INTI-CMNB/KiBot@v2_k8
+        with:
+          config: .kibot.yaml
+          dir: output
+          schema: hardware/board.kicad_sch
+          board: hardware/board.kicad_pcb
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fab-outputs
+          path: output

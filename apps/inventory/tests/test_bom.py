@@ -34,6 +34,7 @@ class ParserTests(TestCase):
         self.assertEqual(len(rows), 2)
         self.assertEqual(rows[0]["references"], "C1, C2")
         self.assertEqual(rows[0]["quantity"], 2)
+        self.assertEqual(rows[0]["mpn"], "CL10B104KB8NNNC")
 
     def test_rejects_unrelated_csv(self):
         rows, warnings = bom_import.parse(b"name,email\nali,a@b.c\n")

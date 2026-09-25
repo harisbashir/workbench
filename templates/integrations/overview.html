@@ -1,0 +1,53 @@
+{% extends "base.html" %}{% load workbench humanize %}
+{% block title %}GitHub{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles"><h1>GitHub</h1>
+  <p class="intro">Workbench listens to your repositories. Put a task ID such as <code>PWR-12</code> in a branch name, pull request title or commit message, and the work is linked to that task automatically. <a href="{% url 'core:help_topic' 'github' %}">Full setup guide →</a></p></div></div>
+
+<div class="grid grid-main">
+  <div class="stack">
+    <div class="card"><div class="card-head"><h2>Open pull requests</h2></div>
+      {% if pulls %}<div class="table-wrap"><table class="table">
+        <thead><tr><th>Pull request</th><th>Project</th><th>Tasks</th><th>Author</th><th>Checks</th><th>Review</th></tr></thead>
+        <tbody>{% for pr in pulls %}<tr><td><a href="{{ pr.url }}" target="_blank" rel="noopener">#{{ pr.number }} {{ pr.title }}</a>{% if pr.state == 'draft' %} {% status_badge 'draft' 'Draft' %}{% endif %}<br><span class="small faint mono">{{ pr.branch }}</span></td>
+          <td><span class="key">{{ pr.project.key }}</span></td>
+          <td>{% for t in pr.tasks.all %}<a class="task-ref" href="{{ t.get_absolute_url }}">{{ t.key }}</a> {% empty %}<span class="faint small">none</span>{% endfor %}</td>
+          <td>{{ pr.author_login }}</td><td>{% if pr.checks %}{% status_badge pr.checks pr.get_checks_display %}{% else %}—{% endif %}</td>
+          <td>{% if pr.review_state %}{% status_badge pr.review_state pr.review_state|cut:"_"|capfirst %}{% else %}<span class="faint small">waiting</span>{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+      {% else %}<div class="card-body muted">No open pull requests yet.</div>{% endif %}
+    </div>
+
+    {% if deliveries %}
+    <div class="card"><div class="card-head"><h2>Recent webhook deliveries</h2><span class="small faint">for troubleshooting</span></div>
+      <div class="table-wrap"><table class="table"><thead><tr><th>Received</th><th>Event</th><th>Repository</th><th>Result</th><th>Details</th></tr></thead><tbody>
+      {% for d in deliveries %}<tr><td class="small nowrap">{{ d.received_at|naturaltime }}</td><td><code>{{ d.event }}</code></td><td class="small">{{ d.repository }}</td><td>{% status_badge d.status d.status|capfirst %}</td><td class="small">{{ d.message }}</td></tr>{% endfor %}
+      </tbody></table></div></div>
+    {% endif %}
+  </div>
+
+  <div class="stack">
+    <div class="card"><div class="card-head"><h3>Connection</h3>{% if secret_set %}<span class="badge badge-done">Secret configured</span>{% else %}<span class="badge badge-failure">Not configured</span>{% endif %}</div>
+      <div class="card-body small">
+        {% if not secret_set %}<div class="alert alert-warning">The server administrator must set <code>WORKBENCH_GITHUB_WEBHOOK_SECRET</code> before GitHub events are accepted. Until then every delivery is rejected.</div>{% endif %}
+        <p>In each GitHub repository go to <strong>Settings → Webhooks → Add webhook</strong> and enter:</p>
+        <div class="field"><label class="field-label">Payload URL</label><div class="copy-box"><input id="hook" type="text" readonly value="{{ webhook_url }}"><button class="btn btn-sm" type="button" data-copy="#hook">Copy</button></div></div>
+        <div class="kv"><span>Content type</span><code>application/json</code></div>
+        <div class="kv"><span>Secret</span><span>the same value as the server setting</span></div>
+        <div class="kv"><span>Events</span><span>Pull requests, Pull request reviews, Pushes, Workflow runs</span></div>
+      </div></div>
+    <div class="card"><div class="card-head"><h3>Linked repositories</h3></div><div class="card-body">
+      {% for p in projects %}<div class="kv"><span><a href="{{ p.get_absolute_url }}">{{ p.key }}</a></span>
+        <span>{% if p.github_repo %}<a href="{{ p.github_url }}" target="_blank" rel="noopener">{{ p.github_repo }}</a>{% elif user.can_manage_projects %}<a href="{% url 'projects:edit' p.key %}">Link a repository</a>{% else %}<span class="faint">none</span>{% endif %}</span></div>
+      {% empty %}<p class="muted small">No projects yet.</p>{% endfor %}
+    </div></div>
+    <div class="card"><div class="card-head"><h3>What happens automatically</h3></div><div class="card-body small">
+      <ul class="list-plain">
+        <li>PR opened → linked tasks move to <strong>In review</strong> and the reviewer is notified</li>
+        <li>Changes requested → task goes back to <strong>In progress</strong></li>
+        <li>PR merged → linked tasks move to <strong>Done</strong></li>
+        <li>CI (e.g. KiBot ERC/DRC) fails → assignee notified, message in project chat</li>
+        <li>Pushes to the main branch → summary in project chat</li>
+      </ul></div></div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,16 @@
+{% extends "base.html" %}{% load workbench %}
+{% block title %}Production{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles"><h1>Production</h1>
+  <p class="intro">A build is a run of boards for one revision. Workbench checks the BOM against stock, orders what's short, takes parts out of stock when the build starts, and records test yield. <a href="{% url 'core:help_topic' 'production' %}">How production works →</a></p></div>
+  {% if user.can_manage_procurement %}<div class="actions"><a class="btn btn-primary" href="{% url 'production:build_create' %}">{% icon 'plus' 16 %} Plan a build</a></div>{% endif %}</div>
+{% include "production/_tabs.html" with tab="builds" %}
+<div class="card">{% if builds %}<div class="table-wrap"><table class="table">
+  <thead><tr><th>Build</th><th>Board</th><th class="num">Quantity</th><th>Built by</th><th>Due</th><th>Status</th><th class="num">Yield</th></tr></thead>
+  <tbody>{% for b in builds %}<tr><td><a href="{{ b.get_absolute_url }}"><strong>{{ b.number }}</strong></a></td>
+    <td>{{ b.revision.project.name }} · {{ b.revision.name }}</td><td class="num">{{ b.quantity }}</td>
+    <td>{{ b.manufacturer|default:"In-house" }}</td><td>{{ b.due_date|default:"—" }}</td><td>{% status_badge b.status b.get_status_display %}</td>
+    <td class="num">{% if b.yield_percent is not None %}{{ b.yield_percent }}%{% else %}—{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+{% else %}<div class="empty">{% icon 'factory' 40 %}<h3>No builds yet</h3><p>When a revision's BOM is ready, plan a build to check parts availability and track the run through to test.</p>
+  {% if user.can_manage_procurement %}<a class="btn btn-primary" href="{% url 'production:build_create' %}">Plan a build</a>{% endif %}</div>{% endif %}</div>
+{% endblock %}

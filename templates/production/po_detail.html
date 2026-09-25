@@ -1,0 +1,41 @@
+{% extends "base.html" %}{% load workbench humanize %}
+{% block title %}{{ po.number }}{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles"><div class="crumbs"><a href="{% url 'production:po_list' %}">Purchase orders</a> /</div>
+  <h1>{{ po.number }} · {{ po.supplier }} {% status_badge po.status po.get_status_display %}</h1>
+  <p class="intro">{% if po.reference %}Supplier ref {{ po.reference }} · {% endif %}{% if po.expected_date %}Expected {{ po.expected_date|naturalday }} · {% endif %}Created {{ po.created_at|naturalday }}{% if po.ordered_at %} · Ordered {{ po.ordered_at|naturalday }}{% endif %}</p></div>
+  {% if can_edit %}<div class="actions">
+    {% if po.status == 'draft' %}<form method="post" action="{% url 'production:po_action' po.pk %}">{% csrf_token %}<button class="btn btn-primary" name="action" value="order">{% icon 'send' 16 %} Mark as ordered</button></form>{% endif %}
+    {% if po.status == 'draft' or po.status == 'ordered' %}<form method="post" action="{% url 'production:po_action' po.pk %}" data-confirm="Cancel {{ po.number }}?">{% csrf_token %}<button class="btn btn-ghost" name="action" value="cancel">Cancel order</button></form>{% endif %}
+  </div>{% endif %}
+</div>
+
+{% if po.status == 'draft' %}<div class="tip"><strong>Draft.</strong> Add parts below, send the order to {{ po.supplier }} the usual way (their website or email), then press <em>Mark as ordered</em>.</div>{% endif %}
+{% if po.status == 'ordered' or po.status == 'partial' %}<div class="tip"><strong>Waiting for delivery.</strong> When a box arrives, type what you received in the <em>Receive now</em> column and press <em>Receive into stock</em>.</div>{% endif %}
+
+<form method="post" action="{% url 'production:po_action' po.pk %}">{% csrf_token %}
+<div class="card"><div class="table-wrap"><table class="table">
+  <thead><tr><th>Part</th><th>Description</th><th class="num">Qty</th><th class="num">Unit cost</th><th class="num">Line total</th><th class="num">Received</th>
+    {% if receiving %}<th class="num">Receive now</th>{% endif %}{% if can_edit and po.status == 'draft' %}<th></th>{% endif %}</tr></thead>
+  <tbody>{% for l in lines %}<tr class="{% if l.received_qty >= l.quantity and po.status != 'draft' %}row-good{% endif %}">
+    <td class="key"><a href="{{ l.part.get_absolute_url }}">{{ l.part.ipn }}</a></td><td>{{ l.part.description }}<br><span class="small faint">{{ l.part.supplier_sku|default:l.part.mpn }}</span></td>
+    <td class="num">{{ l.quantity }}</td><td class="num">{{ l.unit_cost|floatformat:4 }}</td><td class="num">{{ l.line_total|floatformat:2 }}</td><td class="num">{{ l.received_qty }}</td>
+    {% if receiving %}<td class="num">{% if l.outstanding %}<input type="number" min="0" max="{{ l.outstanding }}" name="recv_{{ l.pk }}" placeholder="{{ l.outstanding }}" class="qty-input" aria-label="Quantity received for {{ l.part.ipn }}">{% else %}✓{% endif %}</td>{% endif %}
+    {% if can_edit and po.status == 'draft' %}<td class="right"><button class="btn btn-sm btn-ghost" name="remove_line" value="{{ l.pk }}">Remove</button></td>{% endif %}</tr>
+  {% empty %}<tr><td colspan="8" class="muted">No parts on this order yet.</td></tr>{% endfor %}</tbody>
+  <tfoot><tr><td colspan="4">Subtotal</td><td class="num">{{ po.subtotal|floatformat:2 }}</td><td colspan="3"></td></tr>
+    <tr><td colspan="4">Shipping</td><td class="num">{{ po.shipping_cost|floatformat:2 }}</td><td colspan="3"></td></tr>
+    <tr><td colspan="4">Total</td><td class="num">{{ po.total|money }}</td><td colspan="3"></td></tr></tfoot>
+</table></div>
+{% if receiving %}<div class="card-foot btn-row">
+  <button class="btn btn-primary" name="action" value="receive">{% icon 'box' 16 %} Receive into stock</button>
+  <button class="btn" name="action" value="receive_all">Everything arrived</button></div>{% endif %}
+</div>
+</form>
+
+{% if line_form and can_edit %}<p></p>
+<div class="card form-card"><div class="card-head"><h3>Add a part</h3></div><div class="card-body">
+  <form method="post" novalidate>{% csrf_token %}{% include "partials/form.html" with form=line_form grid=True %}
+    <button class="btn btn-primary">{% icon 'plus' 16 %} Add to order</button></form></div></div>{% endif %}
+{% if po.notes %}<p></p><div class="card"><div class="card-body">{{ po.notes|linebreaksbr }}</div></div>{% endif %}
+{% endblock %}

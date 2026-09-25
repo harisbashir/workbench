@@ -1,0 +1,4 @@
+{% load workbench %}<nav class="tabs">
+  <a href="{% url 'production:build_list' %}" class="{% if tab == 'builds' %}active{% endif %}">{% icon 'factory' 15 %} Builds</a>
+  <a href="{% url 'production:po_list' %}" class="{% if tab == 'orders' %}active{% endif %}">{% icon 'truck' 15 %} Purchase orders</a>
+</nav>

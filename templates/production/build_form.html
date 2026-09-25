@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Plan a build{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles"><div class="crumbs"><a href="{% url 'production:build_list' %}">Production</a> /</div><h1>Plan a build</h1>
+  <p class="intro">Choose the revision and how many boards. On the next page you'll see which parts are short and can create purchase orders for them in one click.</p></div></div>
+<div class="card form-card"><div class="card-body">
+  <form method="post" novalidate>{% csrf_token %}
+    {% include "partials/form.html" with grid=True %}
+    <div class="form-actions"><button class="btn btn-primary">Create build</button><a class="btn btn-ghost" href="{% url 'production:build_list' %}">Cancel</a></div>
+  </form>
+</div></div>
+{% endblock %}

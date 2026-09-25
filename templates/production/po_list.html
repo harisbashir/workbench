@@ -1,0 +1,18 @@
+{% extends "base.html" %}{% load workbench humanize %}
+{% block title %}Purchase orders{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles"><h1>Production</h1>
+  <p class="intro">Purchase orders move from <em>Draft</em> → <em>Ordered</em> → <em>Received</em>. Receiving an order adds the parts to stock.</p></div>
+  {% if user.can_manage_procurement %}<div class="actions"><a class="btn btn-primary" href="{% url 'production:po_create' %}">{% icon 'plus' 16 %} New purchase order</a></div>{% endif %}</div>
+{% include "production/_tabs.html" with tab="orders" %}
+<form class="filters" method="get"><select name="status" data-autosubmit aria-label="Status">
+  <option value="open" {% if status == 'open' %}selected{% endif %}>Open (draft, ordered, partly received)</option>
+  <option value="all" {% if status == 'all' %}selected{% endif %}>All</option>
+  {% for s, label in statuses %}<option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></form>
+<div class="card">{% if orders %}<div class="table-wrap"><table class="table">
+  <thead><tr><th>Order</th><th>Supplier</th><th>Status</th><th class="num">Lines</th><th class="num">Total</th><th>Expected</th><th>Created</th></tr></thead>
+  <tbody>{% for po in orders %}<tr><td><a href="{{ po.get_absolute_url }}"><strong>{{ po.number }}</strong></a>{% if po.reference %} <span class="small faint">{{ po.reference }}</span>{% endif %}</td>
+    <td>{{ po.supplier }}</td><td>{% status_badge po.status po.get_status_display %}</td><td class="num">{{ po.lines.all|length }}</td>
+    <td class="num">{{ po.total|money }}</td><td>{{ po.expected_date|default:"—" }}</td><td class="small">{{ po.created_at|naturalday }}</td></tr>{% endfor %}</tbody></table></div>
+{% else %}<div class="empty">{% icon 'truck' 40 %}<h3>No purchase orders</h3><p>Create one by hand, or use <em>Order missing parts</em> on a build to create them automatically.</p></div>{% endif %}</div>
+{% endblock %}

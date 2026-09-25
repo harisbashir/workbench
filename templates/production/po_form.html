@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}New purchase order{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles"><div class="crumbs"><a href="{% url 'production:po_list' %}">Purchase orders</a> /</div><h1>New purchase order</h1>
+  <p class="intro">Pick the supplier first. You'll add parts on the next screen.</p></div></div>
+<div class="card form-card"><div class="card-body">
+  <form method="post" novalidate>{% csrf_token %}
+    {% include "partials/form.html" with grid=True %}
+    <div class="form-actions"><button class="btn btn-primary">Create draft</button><a class="btn btn-ghost" href="{% url 'production:po_list' %}">Cancel</a></div>
+  </form>
+</div></div>
+{% endblock %}

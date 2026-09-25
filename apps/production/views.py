@@ -1,0 +1,264 @@
+from collections import defaultdict
+
+from django import forms
+from django.contrib import messages
+from django.contrib.auth.decorators import login_required
+from django.core.exceptions import PermissionDenied
+from django.db import transaction
+from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
+from django.views.decorators.http import require_POST
+
+from apps.chat.models import post_system_message
+from apps.core.utils import audit, notify, procurement_required
+from apps.inventory.models import Part, Supplier
+from apps.projects.models import Project, Revision, log_activity
+
+from .models import BuildOrder, PurchaseOrder, PurchaseOrderLine
+
+
+class DateInput(forms.DateInput):
+    input_type = "date"
+
+
+class POForm(forms.ModelForm):
+    class Meta:
+        model = PurchaseOrder
+        fields = ["supplier", "reference", "expected_date", "shipping_cost", "notes"]
+        widgets = {"expected_date": DateInput(), "notes": forms.Textarea(attrs={"rows": 2})}
+
+
+class POLineForm(forms.ModelForm):
+    class Meta:
+        model = PurchaseOrderLine
+        fields = ["part", "quantity", "unit_cost"]
+        help_texts = {"unit_cost": "Leave as 0 to use the part's current cost."}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["unit_cost"].required = False
+
+
+class BuildForm(forms.ModelForm):
+    class Meta:
+        model = BuildOrder
+        fields = ["revision", "quantity", "manufacturer", "due_date", "serial_prefix", "notes"]
+        widgets = {"due_date": DateInput(), "notes": forms.Textarea(attrs={"rows": 3})}
+
+    def __init__(self, user, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["revision"].queryset = Revision.objects.filter(
+            project__in=Project.objects.visible_to(user)).exclude(status=Revision.Status.OBSOLETE).select_related("project")
+        self.fields["manufacturer"].queryset = Supplier.objects.filter(kind__in=["assembly", "pcb", "other"])
+        self.fields["manufacturer"].empty_label = "In-house"
+
+
+class CompleteForm(forms.Form):
+    passed = forms.IntegerField(min_value=0, label="Boards that passed test")
+    failed = forms.IntegerField(min_value=0, initial=0, label="Boards that failed test")
+
+
+# --- Purchase orders ---------------------------------------------------------
+
+@login_required
+def po_list(request):
+    status = request.GET.get("status", "open")
+    qs = PurchaseOrder.objects.select_related("supplier", "created_by").prefetch_related("lines")
+    if status == "open":
+        qs = qs.filter(status__in=["draft", "ordered", "partial"])
+    elif status in dict(PurchaseOrder.Status.choices):
+        qs = qs.filter(status=status)
+    return render(request, "production/po_list.html", {"orders": qs, "status": status, "statuses": PurchaseOrder.Status.choices})
+
+
+@procurement_required
+def po_create(request):
+    initial = {}
+    if request.GET.get("supplier", "").isdigit():
+        initial["supplier"] = int(request.GET["supplier"])
+    form = POForm(request.POST or None, initial=initial)
+    if request.method == "POST" and form.is_valid():
+        po = form.save(commit=False)
+        po.created_by = request.user
+        po.save()
+        audit(request, "po.created", po)
+        messages.success(request, f"{po.number} created as a draft. Add the parts you want to order.")
+        return redirect(po)
+    return render(request, "production/po_form.html", {"form": form})
+
+
+@login_required
+def po_detail(request, pk):
+    po = get_object_or_404(PurchaseOrder.objects.select_related("supplier"), pk=pk)
+    can_edit = request.user.can_manage_procurement
+    line_form = POLineForm(request.POST or None) if po.is_editable else None
+    if request.method == "POST" and line_form is not None:
+        if not can_edit:
+            raise PermissionDenied
+        if line_form.is_valid():
+            line = line_form.save(commit=False)
+            line.order = po
+            if not line.unit_cost:
+                line.unit_cost = line.part.unit_cost
+            existing = po.lines.filter(part=line.part).first()
+            if existing:
+                existing.quantity += line.quantity
+                existing.save()
+            else:
+                line.save()
+            return redirect(po)
+    if line_form is not None:
+        line_form.fields["part"].queryset = Part.objects.order_by("supplier_id", "ipn")
+    return render(request, "production/po_detail.html", {
+        "po": po, "lines": po.lines.select_related("part"), "line_form": line_form, "can_edit": can_edit,
+        "receiving": can_edit and po.status in (PurchaseOrder.Status.ORDERED, PurchaseOrder.Status.PARTIAL),
+    })
+
+
+@procurement_required
+@require_POST
+def po_action(request, pk):
+    po = get_object_or_404(PurchaseOrder, pk=pk)
+    action = request.POST.get("action")
+    if request.POST.get("remove_line") and po.is_editable:
+        action = "remove_line"
+        po.lines.filter(pk=request.POST["remove_line"]).delete()
+    elif action == "order" and po.is_editable:
+        if not po.lines.exists():
+            messages.error(request, "Add at least one part before marking the order as sent.")
+            return redirect(po)
+        po.status = PurchaseOrder.Status.ORDERED
+        po.ordered_at = timezone.now()
+        po.save()
+        audit(request, "po.ordered", po, total=po.total)
+        messages.success(request, f"{po.number} marked as ordered. Record deliveries here when they arrive.")
+    elif action == "receive" and po.status in (PurchaseOrder.Status.ORDERED, PurchaseOrder.Status.PARTIAL):
+        received = 0
+        with transaction.atomic():
+            for line in po.lines.select_related("part"):
+                raw = request.POST.get(f"recv_{line.pk}", "").strip()
+                if raw.isdigit() and int(raw) > 0:
+                    received += line.receive(int(raw), request.user)
+            po.refresh_status()
+        audit(request, "po.received", po, items=received)
+        messages.success(request, f"Received {received} items into stock." if received else "Nothing received — enter quantities first.")
+    elif action == "receive_all" and po.status in (PurchaseOrder.Status.ORDERED, PurchaseOrder.Status.PARTIAL):
+        with transaction.atomic():
+            n = sum(line.receive(line.outstanding, request.user) for line in po.lines.select_related("part"))
+            po.refresh_status()
+        audit(request, "po.received", po, items=n)
+        messages.success(request, f"Received everything outstanding ({n} items) into stock.")
+    elif action == "cancel" and po.status in (PurchaseOrder.Status.DRAFT, PurchaseOrder.Status.ORDERED):
+        po.status = PurchaseOrder.Status.CANCELLED
+        po.save(update_fields=["status"])
+        audit(request, "po.cancelled", po)
+        messages.info(request, f"{po.number} cancelled.")
+    return redirect(po)
+
+
+# --- Builds ------------------------------------------------------------------------
+
+@login_required
+def build_list(request):
+    visible = Project.objects.visible_to(request.user)
+    builds = BuildOrder.objects.filter(revision__project__in=visible).select_related("revision__project", "manufacturer")
+    return render(request, "production/build_list.html", {"builds": builds})
+
+
+@procurement_required
+def build_create(request):
+    initial = {}
+    if request.GET.get("revision", "").isdigit():
+        initial["revision"] = int(request.GET["revision"])
+    form = BuildForm(request.user, request.POST or None, initial=initial)
+    if request.method == "POST" and form.is_valid():
+        b = form.save(commit=False)
+        b.created_by = request.user
+        b.save()
+        log_activity(b.revision.project, f"planned build {b.number}: {b.quantity} × {b.revision.name}", actor=request.user, url=b.get_absolute_url())
+        audit(request, "build.created", b)
+        if not b.revision.bom_lines.exists():
+            messages.warning(request, f"{b.revision} has no BOM yet, so Workbench can't check parts. Import the BOM first.")
+        return redirect(b)
+    return render(request, "production/build_form.html", {"form": form})
+
+
+@login_required
+def build_detail(request, pk):
+    b = get_object_or_404(BuildOrder.objects.select_related("revision__project", "manufacturer"), pk=pk)
+    if not b.revision.project.can_view(request.user):
+        raise PermissionDenied
+    reqs = b.requirements()
+    return render(request, "production/build_detail.html", {
+        "b": b, "reqs": reqs, "short": [r for r in reqs if r["short"]],
+        "complete_form": CompleteForm(initial={"passed": b.quantity, "failed": 0}),
+        "can_edit": request.user.can_manage_procurement,
+    })
+
+
+@procurement_required
+@require_POST
+def build_action(request, pk):
+    b = get_object_or_404(BuildOrder.objects.select_related("revision__project"), pk=pk)
+    action = request.POST.get("action")
+    project = b.revision.project
+    if action == "start" and b.status == BuildOrder.Status.PLANNED:
+        if b.shortage_count and "force" not in request.POST:
+            messages.error(request, "Some parts are short. Order them first, or tick “start anyway”.")
+            return redirect(b)
+        b.start()
+        b.consume_stock(request.user)
+        log_activity(project, f"started build {b.number}", actor=request.user, url=b.get_absolute_url())
+        post_system_message(project, f"Build {b.number} ({b.quantity} × {b.revision.name}) has started. Parts have been taken from stock.", b.get_absolute_url())
+        messages.success(request, f"{b.number} started. Parts for {b.quantity} boards were taken out of stock.")
+    elif action == "complete" and b.status in (BuildOrder.Status.PLANNED, BuildOrder.Status.IN_PROGRESS):
+        form = CompleteForm(request.POST)
+        if form.is_valid():
+            b.complete(request.user, form.cleaned_data["passed"], form.cleaned_data["failed"])
+            text = f"Build {b.number} completed: {b.completed_qty} passed, {b.failed_qty} failed"
+            if b.yield_percent is not None:
+                text += f" ({b.yield_percent}% yield)"
+            log_activity(project, text[0].lower() + text[1:], actor=request.user, url=b.get_absolute_url())
+            post_system_message(project, text + ".", b.get_absolute_url())
+            if project.lead:
+                notify(project.lead, text, b.get_absolute_url())
+            messages.success(request, text + ".")
+    elif action == "cancel" and b.status == BuildOrder.Status.PLANNED:
+        b.status = BuildOrder.Status.CANCELLED
+        b.save(update_fields=["status"])
+        messages.info(request, f"{b.number} cancelled.")
+    elif action == "order_shortages":
+        created = _order_shortages(request, b)
+        if created:
+            messages.success(request, "Draft purchase orders created: " + ", ".join(po.number for po in created) + ". Review and send them.")
+            return redirect("production:po_list")
+        messages.info(request, "Nothing is short — no orders needed.")
+    audit(request, f"build.{action}", b)
+    return redirect(b)
+
+
+def _order_shortages(request, build):
+    by_supplier = defaultdict(list)
+    missing_supplier = []
+    for r in build.requirements():
+        if r["short"]:
+            if r["part"].supplier_id:
+                by_supplier[r["part"].supplier].append(r)
+            else:
+                missing_supplier.append(r["part"].ipn)
+    created = []
+    with transaction.atomic():
+        for supplier, rows in by_supplier.items():
+            po = PurchaseOrder.objects.filter(supplier=supplier, status=PurchaseOrder.Status.DRAFT).first()
+            if po is None:
+                po = PurchaseOrder.objects.create(supplier=supplier, created_by=request.user,
+                                                  notes=f"Shortages for build {build.number}")
+            for r in rows:
+                line, made = po.lines.get_or_create(part=r["part"], defaults={"quantity": r["short"], "unit_cost": r["part"].unit_cost})
+                if not made:
+                    line.quantity = max(line.quantity, r["short"])
+                    line.save()
+            created.append(po)
+    if missing_supplier:
+        messages.warning(request, "These parts have no supplier set, so they weren't added to an order: " + ", ".join(missing_supplier))
+    return created

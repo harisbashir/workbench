@@ -1,0 +1,60 @@
+{% extends "base.html" %}{% load workbench humanize %}
+{% block title %}{{ b.number }}{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles"><div class="crumbs"><a href="{% url 'production:build_list' %}">Production</a> /</div>
+  <h1>{{ b.number }} · {{ b.quantity }} × {{ b.revision }} {% status_badge b.status b.get_status_display %}</h1>
+  <p class="intro">Built by {{ b.manufacturer|default:"in-house team" }}{% if b.due_date %} · due {{ b.due_date|naturalday }}{% endif %}{% if b.serial_prefix %} · serials {{ b.serial_prefix }}0001–{{ b.serial_prefix }}{{ b.quantity|stringformat:"04d" }}{% endif %}</p></div>
+  <div class="actions"><a class="btn" href="{% url 'inventory:bom' b.revision.pk %}">{% icon 'list' 16 %} View BOM</a></div></div>
+
+<div class="grid grid-main">
+  <div class="stack">
+    {% if b.status == 'planned' %}
+      {% if short %}<div class="alert alert-warning">{% icon 'alert' 18 %}<div><strong>{{ short|length }} part{{ short|length|pluralize }} short</strong> for {{ b.quantity }} boards.
+        {% if can_edit %}Create draft purchase orders for exactly what's missing, grouped by supplier.{% endif %}</div></div>
+      {% elif reqs %}<div class="alert alert-success">{% icon 'check' 18 %} All parts are in stock for this build.</div>
+      {% else %}<div class="alert alert-warning">{% icon 'alert' 18 %} This revision has no BOM, so parts can't be checked. <a href="{% url 'inventory:bom_import' b.revision.pk %}">Import the BOM</a>.</div>{% endif %}
+    {% endif %}
+    <div class="card"><div class="card-head"><h2>Parts needed</h2>
+      {% if can_edit and short and b.status == 'planned' %}<form method="post" action="{% url 'production:build_action' b.pk %}">{% csrf_token %}<button class="btn btn-sm btn-primary" name="action" value="order_shortages">{% icon 'truck' 14 %} Order missing parts</button></form>{% endif %}</div>
+      {% if reqs %}<div class="table-wrap"><table class="table">
+        <thead><tr><th>Part</th><th>Description</th><th class="num">Per board</th><th class="num">Needed</th><th class="num">In stock</th><th class="num">Short</th><th>Supplier</th></tr></thead>
+        <tbody>{% for r in reqs %}<tr class="{% if r.short %}row-bad{% endif %}"><td class="key"><a href="{{ r.part.get_absolute_url }}">{{ r.part.ipn }}</a></td><td>{{ r.part.description }}</td>
+          <td class="num">{{ r.line.quantity }}</td><td class="num">{{ r.need }}</td><td class="num">{{ r.have }}</td><td class="num">{% if r.short %}<strong>{{ r.short }}</strong>{% else %}—{% endif %}</td><td>{{ r.part.supplier|default:"—" }}</td></tr>{% endfor %}</tbody></table></div>
+      {% else %}<div class="card-body muted">No BOM lines.</div>{% endif %}
+      {% if b.stock_consumed %}<div class="card-foot small muted">Parts for this build have been taken out of stock.</div>{% endif %}
+    </div>
+    {% if b.notes %}<div class="card"><div class="card-head"><h3>Notes</h3></div><div class="card-body">{{ b.notes|linebreaksbr }}</div></div>{% endif %}
+  </div>
+
+  <div class="stack">
+    {% if b.status == 'completed' %}
+    <div class="card"><div class="card-body">
+      <div class="kv"><span>Passed test</span><strong>{{ b.completed_qty }}</strong></div>
+      <div class="kv"><span>Failed test</span><strong>{{ b.failed_qty }}</strong></div>
+      <div class="kv"><span>Yield</span><strong>{{ b.yield_percent|default:"—" }}%</strong></div>
+      <div class="kv"><span>Completed</span><span>{{ b.completed_at|naturalday }}</span></div>
+    </div></div>
+    {% elif can_edit and b.status != 'cancelled' %}
+    <div class="card"><div class="card-head"><h3>Next step</h3></div><div class="card-body">
+      {% if b.status == 'planned' %}
+        <p class="small">Starting the build takes the parts for {{ b.quantity }} boards out of stock{% if b.manufacturer %} (for example, when you ship a kit to {{ b.manufacturer }}){% endif %}.</p>
+        <form method="post" action="{% url 'production:build_action' b.pk %}">{% csrf_token %}
+          {% if short %}<label class="check-label small"><input type="checkbox" name="force" value="1"> Start anyway, even though parts are short</label><p></p>{% endif %}
+          <button class="btn btn-primary" name="action" value="start">{% icon 'factory' 16 %} Start build</button></form>
+        <p></p>
+        <form method="post" action="{% url 'production:build_action' b.pk %}" data-confirm="Cancel {{ b.number }}?">{% csrf_token %}<button class="btn btn-sm btn-ghost" name="action" value="cancel">Cancel build</button></form>
+      {% else %}
+        <p class="small">When boards come back from assembly and testing, record the results.</p>
+        <form method="post" action="{% url 'production:build_action' b.pk %}" novalidate>{% csrf_token %}
+          {% include "partials/form.html" with form=complete_form %}
+          <button class="btn btn-primary" name="action" value="complete">{% icon 'check' 16 %} Mark complete</button></form>
+      {% endif %}
+    </div></div>
+    {% endif %}
+    <div class="card"><div class="card-body small">
+      <div class="kv"><span>Created</span><span>{{ b.created_at|naturalday }} by {{ b.created_by|default:"—" }}</span></div>
+      {% if b.started_at %}<div class="kv"><span>Started</span><span>{{ b.started_at|naturalday }}</span></div>{% endif %}
+    </div></div>
+  </div>
+</div>
+{% endblock %}

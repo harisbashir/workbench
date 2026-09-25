@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}{% if task %}Edit {{ task.key }}{% else %}New task{% endif %}{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles">
+  <div class="crumbs"><a href="{% url 'projects:list' %}">Projects</a> / <a href="{{ project.get_absolute_url }}">{{ project.name }}</a> /{% if task %} <a href="{{ task.get_absolute_url }}">{{ task.key }}</a> /{% endif %}</div>
+  <h1>{% if task %}Edit {{ task.key }}{% else %}New task in {{ project.name }}{% endif %}</h1>
+  {% if not task %}<p class="intro">Tip: set a <strong>reviewer</strong> for schematic, PCB and firmware tasks. When the task moves to <em>In review</em>, they're notified automatically.</p>{% endif %}
+</div></div>
+<div class="card form-card"><div class="card-body">
+  <form method="post" novalidate>{% csrf_token %}
+    {% include "partials/form.html" with grid=True full_fields="title description" %}
+    <div class="form-actions">
+      <button class="btn btn-primary" type="submit">{% if task %}Save changes{% else %}Create task{% endif %}</button>
+      {% if not task %}<button class="btn" type="submit" name="add_another" value="1">Create and add another</button>{% endif %}
+      <a class="btn btn-ghost" href="{% if task %}{{ task.get_absolute_url }}{% else %}{% url 'projects:board' project.key %}{% endif %}">Cancel</a>
+    </div>
+  </form>
+</div></div>
+{% endblock %}

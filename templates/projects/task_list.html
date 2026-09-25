@@ -1,0 +1,17 @@
+{% extends "base.html" %}{% load workbench humanize %}
+{% block title %}Tasks · {{ project.name }}{% endblock %}
+{% block content %}
+{% include "projects/_head.html" with tab="list" %}
+<form class="filters" method="get"><select name="status" data-autosubmit aria-label="Status">
+  <option value="open" {% if status == 'open' %}selected{% endif %}>All unfinished</option>
+  <option value="all" {% if status == 'all' %}selected{% endif %}>Everything</option>
+  {% for s, label in statuses %}<option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></form>
+<div class="card">{% if tasks %}<div class="table-wrap"><table class="table">
+  <thead><tr><th>ID</th><th>Title</th><th>Type</th><th>Status</th><th>Assignee</th><th>Reviewer</th><th>Revision</th><th>Due</th></tr></thead>
+  <tbody>{% for t in tasks %}<tr>
+    <td class="key"><span class="prio prio-{{ t.priority }}"></span>{{ t.key }}</td><td><a href="{{ t.get_absolute_url }}">{{ t.title }}</a></td>
+    <td class="kind">{{ t.get_kind_display }}</td><td>{% status_badge t.status t.get_status_display %}</td>
+    <td>{{ t.assignee|default:"—" }}</td><td>{{ t.reviewer|default:"—" }}</td><td>{{ t.revision.name|default:"—" }}</td>
+    <td class="nowrap {% if t.is_overdue %}overdue{% endif %}">{{ t.due_date|default:"—" }}</td></tr>{% endfor %}</tbody></table></div>
+{% else %}<div class="empty"><h3>No tasks here</h3>{% if can_edit %}<a class="btn btn-primary" href="{% url 'projects:task_create' project.key %}">Create a task</a>{% endif %}</div>{% endif %}</div>
+{% endblock %}

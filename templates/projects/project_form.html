@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}{% if project %}Settings · {{ project.name }}{% else %}New project{% endif %}{% endblock %}
+{% block content %}
+{% if project %}{% include "projects/_head.html" with tab="settings" can_edit=True %}{% else %}
+<div class="page-head"><div class="titles"><div class="crumbs"><a href="{% url 'projects:list' %}">Projects</a> /</div><h1>New project</h1>
+  <p class="intro">A project gets a task board, a chat channel (created automatically) and revisions for its BOMs.</p></div></div>{% endif %}
+<div class="card form-card"><div class="card-body">
+  <form method="post" novalidate>{% csrf_token %}
+    {% include "partials/form.html" with grid=True %}
+    <div class="form-actions"><button class="btn btn-primary">{% if project %}Save changes{% else %}Create project{% endif %}</button>
+      <a class="btn btn-ghost" href="{% if project %}{{ project.get_absolute_url }}{% else %}{% url 'projects:list' %}{% endif %}">Cancel</a></div>
+  </form>
+</div></div>
+{% endblock %}

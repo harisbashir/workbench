@@ -1,0 +1,16 @@
+{% load workbench %}
+<div class="page-head"><div class="titles">
+  <div class="crumbs"><a href="{% url 'projects:list' %}">Projects</a> / <span class="key">{{ project.key }}</span></div>
+  <h1>{{ project.name }} {% if project.status != 'active' %}{% status_badge project.status project.get_status_display %}{% endif %}</h1>
+</div>
+<div class="actions">
+  {% if project.github_repo %}<a class="btn" href="{{ project.github_url }}" target="_blank" rel="noopener">{% icon 'git' 16 %} {{ project.github_repo }}</a>{% endif %}
+  {% if project.channel %}<a class="btn" href="{{ project.channel.get_absolute_url }}">{% icon 'chat' 16 %} Chat</a>{% endif %}
+  {% if can_edit %}<a class="btn btn-primary" href="{% url 'projects:task_create' project.key %}">{% icon 'plus' 16 %} New task</a>{% endif %}
+</div></div>
+<nav class="tabs">
+  <a href="{% url 'projects:detail' project.key %}" class="{% if tab == 'overview' %}active{% endif %}">{% icon 'home' 15 %} Overview</a>
+  <a href="{% url 'projects:board' project.key %}" class="{% if tab == 'board' %}active{% endif %}">{% icon 'board' 15 %} Board</a>
+  <a href="{% url 'projects:task_list' project.key %}" class="{% if tab == 'list' %}active{% endif %}">{% icon 'list' 15 %} Task list</a>
+  {% if user.can_manage_projects %}<a href="{% url 'projects:edit' project.key %}" class="{% if tab == 'settings' %}active{% endif %}">{% icon 'edit' 15 %} Settings &amp; members</a>{% endif %}
+</nav>

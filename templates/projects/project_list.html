@@ -1,0 +1,33 @@
+{% extends "base.html" %}{% load workbench %}
+{% block title %}Projects{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles"><h1>Projects</h1>
+  <p class="intro">One project per product or board. Each has a task board, revisions with BOMs, its own chat channel and an optional GitHub repository. <a href="{% url 'core:help_topic' 'projects' %}">How projects work →</a></p></div>
+  <div class="actions">
+    <a class="btn btn-ghost" href="?show={% if show == 'all' %}active{% else %}all{% endif %}">{% if show == 'all' %}Hide archived{% else %}Show archived{% endif %}</a>
+    {% if user.can_manage_projects %}<a class="btn btn-primary" href="{% url 'projects:create' %}">{% icon 'plus' 16 %} New project</a>{% endif %}</div>
+</div>
+{% if projects %}
+<div class="grid grid-3">
+{% for p in projects %}
+  <div class="card">
+    <div class="card-body">
+      <div class="btn-row"><span class="key">{{ p.key }}</span>{% status_badge p.status p.get_status_display %}</div>
+      <h2><a href="{{ p.get_absolute_url }}">{{ p.name }}</a></h2>
+      <p class="muted small">{{ p.description|truncatewords:25|default:"No description." }}</p>
+      {% with total=p.open_tasks|add:p.done_tasks %}
+      <div class="progress"><span class="w-{% widthratio p.done_tasks total|default:1 100 as pct %}{{ pct|percent_step }}"></span></div>
+      <p class="small muted">{{ p.done_tasks }} of {{ total }} tasks done · {{ p.member_count }} member{{ p.member_count|pluralize }}{% if p.lead %} · lead {{ p.lead }}{% endif %}</p>
+      {% endwith %}
+    </div>
+    <div class="card-foot btn-row"><a class="btn btn-sm" href="{% url 'projects:board' p.key %}">{% icon 'board' 14 %} Board</a>
+      {% if p.github_repo %}<span class="small faint">{% icon 'git' 14 %} {{ p.github_repo }}</span>{% endif %}</div>
+  </div>
+{% endfor %}
+</div>
+{% else %}
+<div class="card"><div class="empty">{% icon 'folder' 40 %}<h3>No projects to show</h3>
+  <p>{% if user.can_manage_projects %}Start by creating a project for the board or product your team is working on.{% else %}You haven't been added to any projects yet. Ask your engineering lead to add you.{% endif %}</p>
+  {% if user.can_manage_projects %}<a class="btn btn-primary" href="{% url 'projects:create' %}">Create a project</a>{% endif %}</div></div>
+{% endif %}
+{% endblock %}

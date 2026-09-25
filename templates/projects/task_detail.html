@@ -1,0 +1,82 @@
+{% extends "base.html" %}{% load workbench humanize %}
+{% block title %}{{ task.key }} {{ task.title }}{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles">
+  <div class="crumbs"><a href="{% url 'projects:list' %}">Projects</a> / <a href="{{ project.get_absolute_url }}">{{ project.name }}</a> / <a href="{% url 'projects:board' project.key %}">Board</a> /</div>
+  <h1><span class="key">{{ task.key }}</span> {{ task.title }}</h1>
+</div>
+{% if can_edit %}<div class="actions"><a class="btn" href="{% url 'projects:task_edit' project.key task.number %}">{% icon 'edit' 16 %} Edit</a></div>{% endif %}
+</div>
+
+<div class="grid grid-main">
+  <div class="stack">
+    <div class="card"><div class="card-body">
+      {% if task.description %}<div class="desc">{{ task.description|chat_format }}</div>{% else %}<p class="muted">No description. {% if can_edit %}<a href="{% url 'projects:task_edit' project.key task.number %}">Add one</a> so the team knows what “done” means.{% endif %}</p>{% endif %}
+    </div></div>
+
+    <div class="card" id="files"><div class="card-head"><h2>Files</h2>
+      {% if can_edit %}<form method="post" enctype="multipart/form-data" action="{% url 'projects:task_attach' project.key task.number %}">{% csrf_token %}
+        <label class="btn btn-sm">{% icon 'upload' 14 %} Upload<input class="hidden" type="file" name="file" data-autoupload></label></form>{% endif %}</div>
+      <div class="card-body">
+      {% if attachments %}<ul class="list-plain">{% for a in attachments %}
+        <li>{% icon 'file' 16 %}<a href="{% url 'core:file' a.pk %}" target="_blank">{{ a.name }}</a><span class="faint small">{{ a.size|filesize }}</span>
+          <span class="right faint small">{{ a.uploaded_by }} · {{ a.uploaded_at|naturaltime }}</span></li>{% endfor %}</ul>
+      {% else %}<p class="muted small">Attach schematic PDFs, screenshots, scope captures or test logs. KiCad files are fine too, but for design work keep the source of truth in GitHub.</p>{% endif %}
+    </div></div>
+
+    <div class="card" id="comments"><div class="card-head"><h2>Discussion</h2><span class="faint small">{{ comments|length }} comment{{ comments|length|pluralize }}</span></div>
+      <div class="card-body">
+        {% for c in comments %}
+          <div class="comment"><span class="avatar">{{ c.author.initials|default:"?" }}</span><div class="body">
+            <div><span class="who">{{ c.author|default:"Former member" }}</span><span class="when" title="{{ c.created_at }}">{{ c.created_at|naturaltime }}</span></div>
+            <div>{{ c.body|chat_format }}</div></div></div>
+        {% empty %}<p class="muted small">No comments yet. Use comments for review feedback, questions and decisions — they stay with the task.</p>{% endfor %}
+        {% if can_edit %}
+        <form method="post" novalidate>{% csrf_token %}
+          {% include "partials/form.html" %}
+          <button class="btn btn-primary">Comment</button> <span class="small faint">Supports **bold**, `code`, links, task IDs and @mentions.</span>
+        </form>{% endif %}
+      </div></div>
+  </div>
+
+  <div class="stack">
+    <div class="card"><div class="card-body">
+      <div class="field-label">Status</div>
+      {% if can_edit %}
+      <form method="post" action="{% url 'projects:task_move' project.key task.number %}" class="status-switch">{% csrf_token %}
+        {% for s, label in statuses %}<button name="status" value="{{ s }}" class="{% if task.status == s %}current{% endif %}">{{ label }}</button>{% endfor %}
+      </form>
+      {% else %}{% status_badge task.status task.get_status_display %}{% endif %}
+      <p></p>
+      <dl class="props">
+        <dt>Assignee</dt><dd>{% if task.assignee %}<span class="person"><span class="avatar sm">{{ task.assignee.initials }}</span>{{ task.assignee }}</span>{% else %}<span class="faint">Unassigned</span>{% endif %}</dd>
+        <dt>Reviewer</dt><dd>{% if task.reviewer %}<span class="person"><span class="avatar sm">{{ task.reviewer.initials }}</span>{{ task.reviewer }}</span>{% else %}<span class="faint">None</span>{% endif %}</dd>
+        <dt>Type</dt><dd>{{ task.get_kind_display }}</dd>
+        <dt>Priority</dt><dd><span class="prio prio-{{ task.priority }}"></span>{{ task.get_priority_display }}</dd>
+        <dt>Revision</dt><dd>{% if task.revision %}<a href="{% url 'inventory:bom' task.revision.pk %}">{{ task.revision.name }}</a>{% else %}—{% endif %}</dd>
+        <dt>Due</dt><dd class="{% if task.is_overdue %}overdue{% endif %}">{{ task.due_date|default:"—" }}</dd>
+        <dt>Created</dt><dd class="small">{{ task.created_at|naturalday }} by {{ task.created_by|default:"—" }}</dd>
+      </dl>
+    </div></div>
+
+    <div class="card"><div class="card-head"><h3>{% icon 'git' 16 %} GitHub</h3></div><div class="card-body">
+      {% if pulls %}<ul class="list-plain">{% for pr in pulls %}
+        <li><div><a href="{{ pr.url }}" target="_blank" rel="noopener">#{{ pr.number }} {{ pr.title }}</a><br><span class="small faint">{{ pr.branch }}</span></div>
+          <span class="right">{% status_badge pr.state pr.get_state_display %}{% if pr.checks %} {% status_badge pr.checks pr.get_checks_display %}{% endif %}{% if pr.review_state %} {% status_badge pr.review_state pr.review_state|cut:"_"|capfirst %}{% endif %}</span></li>{% endfor %}</ul>
+      {% else %}
+        <p class="small muted">Link code or design changes to this task by putting <code>{{ task.key }}</code> in the branch name or pull request title. Suggested branch:</p>
+        <div class="copy-box"><input id="branch" type="text" readonly value="{{ branch_name }}" aria-label="Suggested branch name"><button class="btn btn-sm" type="button" data-copy="#branch">Copy</button></div>
+      {% endif %}
+    </div></div>
+
+    <div class="card"><div class="card-head"><h3>History</h3></div><div class="card-body">
+      <ul class="feed">{% for a in activity %}<li><div class="small"><strong>{{ a.who }}</strong> {{ a.text }}</div><span class="when">{{ a.created_at|naturaltime }}</span></li>
+      {% empty %}<li class="muted small">No history yet.</li>{% endfor %}</ul>
+    </div></div>
+
+    {% if can_edit %}{% if user.can_manage_projects or task.created_by == user %}
+    <form method="post" action="{% url 'projects:task_delete' project.key task.number %}" data-confirm="Delete {{ task.key }} permanently? Comments and files are deleted too.">{% csrf_token %}
+      <button class="btn btn-danger btn-sm">Delete task</button></form>{% endif %}{% endif %}
+  </div>
+</div>
+{% endblock %}

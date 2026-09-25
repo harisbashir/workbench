@@ -1,0 +1,44 @@
+{% extends "base.html" %}{% load workbench humanize %}
+{% block title %}Board · {{ project.name }}{% endblock %}
+{% block content_class %}wide{% endblock %}
+{% block content %}
+{% include "projects/_head.html" with tab="board" %}
+<form class="filters" method="get">
+  <select name="assignee" data-autosubmit aria-label="Filter by person">
+    <option value="">Everyone</option><option value="me" {% if filters.assignee == 'me' %}selected{% endif %}>Assigned to me</option>
+    <option value="none" {% if filters.assignee == 'none' %}selected{% endif %}>Unassigned</option>
+    {% for p in people %}<option value="{{ p.pk }}" {% if filters.assignee == p.pk|stringformat:'s' %}selected{% endif %}>{{ p }}</option>{% endfor %}
+  </select>
+  <select name="kind" data-autosubmit aria-label="Filter by type"><option value="">All types of work</option>
+    {% for k, label in kinds %}<option value="{{ k }}" {% if filters.kind == k %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+  <select name="revision" data-autosubmit aria-label="Filter by revision"><option value="">All revisions</option>
+    {% for r in revisions %}<option value="{{ r.pk }}" {% if filters.revision == r.pk|stringformat:'s' %}selected{% endif %}>{{ r.name }}</option>{% endfor %}</select>
+  <input type="search" name="q" value="{{ filters.q }}" placeholder="Filter tasks…">
+  {% if filtered %}<a class="btn btn-ghost btn-sm" href="{% url 'projects:board' project.key %}">Clear filters</a>{% endif %}
+</form>
+{% if can_edit %}<p class="small muted">Drag cards between columns to change their status. Opening a GitHub pull request that mentions a task ID moves it to <em>In review</em> automatically; merging moves it to <em>Done</em>.</p>{% endif %}
+<div class="board" data-board data-editable="{% if can_edit %}1{% else %}0{% endif %}">
+  {% for col in columns %}
+  <section class="column" data-status="{{ col.status }}" data-label="{{ col.label }}">
+    <div class="column-head">{% status_badge col.status col.label %}<span class="n">{{ col.tasks|length }}</span>
+      {% if can_edit %}<a href="{% url 'projects:task_create' project.key %}?status={{ col.status }}" title="Add a task here">{% icon 'plus' 16 %}</a>{% endif %}</div>
+    {% if col.status == 'done' %}<div class="column-hint">Showing tasks finished in the last 14 days</div>{% endif %}
+    <div class="cards">
+    {% for t in col.tasks %}
+      <a class="tcard" href="{{ t.get_absolute_url }}" data-move-url="{% url 'projects:task_move' project.key t.number %}">
+        <div class="btn-row"><span class="key">{{ t.key }}</span><span class="kind">{{ t.get_kind_display }}</span></div>
+        <div class="t-title">{{ t.title }}</div>
+        <div class="t-meta">
+          <span title="{{ t.get_priority_display }} priority"><span class="prio prio-{{ t.priority }}"></span>{{ t.get_priority_display }}</span>
+          {% if t.revision %}<span>{{ t.revision.name }}</span>{% endif %}
+          {% if t.due_date %}<span class="{% if t.is_overdue %}overdue{% endif %}">{% icon 'clock' 12 %} {{ t.due_date|naturalday:"M j" }}</span>{% endif %}
+          {% for pr in t.pull_requests.all %}<span class="pr-chip" title="{{ pr.title }}">{% icon 'pr' 12 %}#{{ pr.number }}{% if pr.checks == 'failure' %} ✗{% elif pr.checks == 'success' %} ✓{% endif %}</span>{% endfor %}
+          {% if t.assignee %}<span class="avatar sm" title="{{ t.assignee }}">{{ t.assignee.initials }}</span>{% endif %}
+        </div>
+      </a>
+    {% endfor %}
+    </div>
+  </section>
+  {% endfor %}
+</div>
+{% endblock %}

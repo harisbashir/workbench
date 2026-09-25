@@ -1,0 +1,67 @@
+{% extends "base.html" %}{% load workbench humanize %}
+{% block title %}{{ project.name }}{% endblock %}
+{% block content %}
+{% include "projects/_head.html" with tab="overview" %}
+{% if project.description %}<p class="intro">{{ project.description|linebreaksbr }}</p><p></p>{% endif %}
+
+<div class="grid grid-4">
+  <div class="card stat"><div class="label">Progress</div><div class="value">{{ progress }}%</div><div class="progress"><span class="w-{{ progress_step }}"></span></div></div>
+  <div class="card stat"><a href="{% url 'projects:board' project.key %}"><div class="label">To do / in progress</div><div class="value">{{ counts.todo|add:counts.in_progress }}</div></a></div>
+  <div class="card stat"><a href="{% url 'projects:task_list' project.key %}?status=review"><div class="label">In review</div><div class="value {% if counts.review %}warn{% endif %}">{{ counts.review }}</div></a></div>
+  <div class="card stat"><div class="label">Overdue</div><div class="value {% if overdue %}bad{% endif %}">{{ overdue|length }}</div></div>
+</div>
+<p></p>
+<div class="grid grid-main">
+  <div class="stack">
+    <div class="card">
+      <div class="card-head"><h2>Revisions &amp; BOMs</h2>{% if can_edit %}<a class="btn btn-sm" href="{% url 'projects:revision_create' project.key %}">{% icon 'plus' 14 %} Add revision</a>{% endif %}</div>
+      {% if revisions %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Revision</th><th>Status</th><th>Target date</th><th class="num">Tasks</th><th class="num">BOM lines</th><th></th></tr></thead>
+        <tbody>{% for r in revisions %}
+          <tr><td><strong>{{ r.name }}</strong>{% if r.git_ref %} <span class="key">@{{ r.git_ref }}</span>{% endif %}</td>
+            <td>{% status_badge r.status r.get_status_display %}</td>
+            <td>{{ r.target_date|default:"—" }}</td>
+            <td class="num"><a href="{% url 'projects:board' project.key %}?revision={{ r.pk }}">{{ r.task_count }}</a></td>
+            <td class="num">{{ r.bom_count }}</td>
+            <td class="right nowrap"><a class="btn btn-sm" href="{% url 'inventory:bom' r.pk %}">{% icon 'chip' 14 %} BOM</a>
+              {% if can_edit %}<a class="btn btn-sm btn-ghost" href="{% url 'projects:revision_edit' project.key r.pk %}">Edit</a>{% endif %}</td></tr>
+        {% endfor %}</tbody></table></div>
+      {% else %}
+        <div class="empty"><h3>No revisions yet</h3><p>Add a revision (e.g. “Rev A”) for each spin of the board. Each revision has its own BOM, and tasks can be grouped by revision.</p>
+          {% if can_edit %}<a class="btn btn-primary" href="{% url 'projects:revision_create' project.key %}">Add first revision</a>{% endif %}</div>
+      {% endif %}
+    </div>
+
+    {% if overdue %}
+    <div class="card"><div class="card-head"><h2>Overdue</h2></div><div class="card-body"><ul class="list-plain">
+      {% for t in overdue %}<li><span class="key">{{ t.key }}</span><a href="{{ t.get_absolute_url }}">{{ t.title }}</a><span class="right small overdue">due {{ t.due_date|naturalday }}</span><span class="small">{{ t.assignee|default:"Unassigned" }}</span></li>{% endfor %}
+    </ul></div></div>
+    {% endif %}
+
+    <div class="card"><div class="card-head"><h2>Activity</h2></div><div class="card-body">
+      {% if activity %}<ul class="feed">{% for a in activity %}
+        <li><span class="avatar sm {% if a.source == 'github' %}gh{% endif %}">{% if a.actor %}{{ a.actor.initials }}{% else %}GH{% endif %}</span>
+          <div><strong>{{ a.who }}</strong> {% if a.url %}<a href="{{ a.url }}">{{ a.text }}</a>{% else %}{{ a.text }}{% endif %}</div><span class="when">{{ a.created_at|naturaltime }}</span></li>{% endfor %}</ul>
+      {% else %}<p class="muted">Nothing yet. Create a task to get started.</p>{% endif %}
+    </div></div>
+  </div>
+
+  <div class="stack">
+    <div class="card"><div class="card-head"><h2>Open pull requests</h2></div><div class="card-body">
+      {% if pulls %}<ul class="list-plain">{% for pr in pulls %}
+        <li><div><a href="{{ pr.url }}" target="_blank" rel="noopener">#{{ pr.number }} {{ pr.title }}</a><br>
+          <span class="small faint">{{ pr.author_login }} · {{ pr.branch }}</span>
+          {% for t in pr.tasks.all %}<a class="task-ref small" href="{{ t.get_absolute_url }}">{{ t.key }}</a>{% endfor %}</div>
+          <span class="right">{% if pr.checks %}{% status_badge pr.checks pr.get_checks_display %}{% endif %}{% if pr.state == 'draft' %}{% status_badge 'draft' 'Draft' %}{% endif %}</span></li>{% endfor %}</ul>
+      {% elif project.github_repo %}<p class="muted small">No open pull requests. They'll appear here once GitHub sends events.</p>
+      {% else %}<p class="muted small">Link a GitHub repository in <a href="{% url 'projects:edit' project.key %}">project settings</a> to see pull requests here.</p>{% endif %}
+    </div></div>
+    <div class="card"><div class="card-head"><h2>Team</h2></div><div class="card-body">
+      {% if project.lead %}<div class="kv"><span>Lead</span><span class="person"><span class="avatar sm">{{ project.lead.initials }}</span>{{ project.lead }}</span></div>{% endif %}
+      {% for m in members %}{% if m != project.lead %}<div class="kv"><span>{{ m.job_title|default:m.get_role_display }}</span><span class="person"><span class="avatar sm">{{ m.initials }}</span>{{ m }}</span></div>{% endif %}
+      {% empty %}<p class="muted small">No members yet.</p>{% endfor %}
+    </div></div>
+  </div>
+</div>
+{% endblock %}

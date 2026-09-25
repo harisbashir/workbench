@@ -64,7 +64,7 @@ def project_edit(request, key=None):
                 kind=Channel.Kind.PROJECT, project=project, created_by=request.user,
                 topic=f"Discussion for {project.name}. GitHub and task updates are posted here automatically.",
             )
-            log_activity(project, f"created the project", actor=request.user)
+            log_activity(project, "created the project", actor=request.user)
             for m in project.members.exclude(pk=request.user.pk):
                 notify(m, f"You were added to project {project.key} · {project.name}", project.get_absolute_url())
             messages.success(request, f"Project {project.key} created. Next: add a revision (e.g. Rev A), then create tasks.")

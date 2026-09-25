@@ -24,12 +24,12 @@
 <div class="card">
 {% if page %}
 <div class="table-wrap"><table class="table">
-  <thead><tr><th>Part number</th><th>Description</th><th>Value</th><th>Footprint</th><th>MPN</th><th>Supplier</th><th class="num">Unit cost</th><th class="num">In stock</th></tr></thead>
+  <thead><tr><th>Part number</th><th>Description</th><th>Value</th><th>Manufacturer / MPN</th><th>Supplier</th><th class="num">Unit cost</th><th class="num">In stock</th></tr></thead>
   <tbody>{% for p in page %}
     <tr class="{% if p.stock <= 0 and p.min_stock %}row-bad{% elif p.is_low %}row-warn{% endif %}">
       <td class="key"><a href="{{ p.get_absolute_url }}">{{ p.ipn }}</a></td><td>{{ p.description }}{% if p.lifecycle != 'active' %} {% status_badge p.lifecycle p.get_lifecycle_display %}{% endif %}</td>
-      <td>{{ p.value }}</td><td class="small">{{ p.footprint|cut:"Resistor_SMD:"|cut:"Capacitor_SMD:"|truncatechars:32 }}</td>
-      <td class="small">{{ p.manufacturer }} {{ p.mpn }}</td><td>{{ p.supplier|default:"—" }}</td>
+      <td>{{ p.value }}</td>
+      <td class="small">{{ p.manufacturer }}<br><span class="mono">{{ p.mpn }}</span></td><td>{{ p.supplier|default:"—" }}</td>
       <td class="num">{{ p.unit_cost|floatformat:4 }}</td><td class="num"><strong>{{ p.stock }}</strong>{% if p.is_low %} <span class="small">/ {{ p.min_stock }}</span>{% endif %}</td></tr>
   {% endfor %}</tbody></table></div>
   {% if page.has_other_pages %}<div class="card-foot btn-row">

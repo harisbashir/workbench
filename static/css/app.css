@@ -362,3 +362,8 @@ kbd { font-family: var(--mono); font-size: .8em; border: 1px solid var(--border-
 .content.chat-content .messages { margin: 12px 20px 0; }
 .chat-side select { font-size: .85rem; padding: 5px 8px; }
 .qty-input { width: 90px !important; text-align: right; padding: 4px 8px !important; }
+.auth-card form + form { margin-top: 12px; }
+.bullets { margin: 0; padding-left: 18px; }
+.bullets li { margin-bottom: 8px; }
+.kv { gap: 16px; }
+.kv > span:last-child { text-align: right; }

@@ -7,8 +7,11 @@ from django.utils.text import slugify
 
 class ChannelQuerySet(models.QuerySet):
     def visible_to(self, user):
+        from apps.projects.models import Project
+
+        projects = Project.objects.visible_to(user)
         return self.filter(
-            Q(kind=Channel.Kind.PUBLIC) | Q(members=user)
+            Q(kind=Channel.Kind.PUBLIC) | Q(members=user) | Q(kind=Channel.Kind.PROJECT, project__in=projects)
         ).exclude(is_archived=True).distinct()
 
 

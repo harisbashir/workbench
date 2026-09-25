@@ -1,4 +1,3 @@
-import json
 from datetime import datetime
 
 from django import forms
@@ -14,7 +13,6 @@ from django.views.decorators.http import require_POST
 
 from apps.accounts.models import User
 from apps.core.utils import notify
-from apps.projects.models import Project
 
 from .formatting import MENTION_RE, render as render_text
 from .models import Channel, ChannelRead, Message

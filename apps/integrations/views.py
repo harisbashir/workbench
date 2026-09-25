@@ -1,13 +1,15 @@
 import json
 import logging
 import os
+from datetime import timedelta
 
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
 from django.shortcuts import render
 from django.urls import reverse
+from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
@@ -33,20 +35,25 @@ def github_webhook(request):
     delivery = request.headers.get("X-GitHub-Delivery", "")[:64]
     if not github.verify_signature(webhook_secret(), body, request.headers.get("X-Hub-Signature-256", "")):
         log.warning("Rejected GitHub webhook with a bad or missing signature (delivery %s)", delivery)
-        if delivery:
+        # Record a few rejections so admins can spot a mismatched secret, but cap it
+        # so unauthenticated requests can't fill the database.
+        recent = WebhookDelivery.objects.filter(status="rejected", received_at__gte=timezone.now() - timedelta(minutes=10)).count()
+        if delivery and recent < 20:
             WebhookDelivery.objects.get_or_create(delivery_id=f"rejected-{delivery}", defaults={
                 "event": event[:40], "status": "rejected", "message": "Signature didn't match the webhook secret."})
         return HttpResponseForbidden("Invalid signature")
     if not delivery or not event:
         return HttpResponseBadRequest("Missing GitHub headers")
     try:
-        record = WebhookDelivery.objects.create(delivery_id=delivery, event=event[:40], status="received")
+        with transaction.atomic():
+            record = WebhookDelivery.objects.create(delivery_id=delivery, event=event[:40], status="received")
     except IntegrityError:
         return HttpResponse("Duplicate delivery ignored")  # replay protection
     try:
         payload = json.loads(body)
         record.repository = ((payload.get("repository") or {}).get("full_name") or "")[:200]
-        record.status, record.message = github.handle(event, payload)
+        with transaction.atomic():
+            record.status, record.message = github.handle(event, payload)
     except Exception as exc:  # never leak internals to the caller
         log.exception("GitHub webhook failed")
         record.status, record.message = "error", str(exc)[:300]

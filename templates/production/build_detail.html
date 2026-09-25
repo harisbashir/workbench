@@ -18,7 +18,7 @@
       {% if can_edit and short and b.status == 'planned' %}<form method="post" action="{% url 'production:build_action' b.pk %}">{% csrf_token %}<button class="btn btn-sm btn-primary" name="action" value="order_shortages">{% icon 'truck' 14 %} Order missing parts</button></form>{% endif %}</div>
       {% if reqs %}<div class="table-wrap"><table class="table">
         <thead><tr><th>Part</th><th>Description</th><th class="num">Per board</th><th class="num">Needed</th><th class="num">In stock</th><th class="num">Short</th><th>Supplier</th></tr></thead>
-        <tbody>{% for r in reqs %}<tr class="{% if r.short %}row-bad{% endif %}"><td class="key"><a href="{{ r.part.get_absolute_url }}">{{ r.part.ipn }}</a></td><td>{{ r.part.description }}</td>
+        <tbody>{% for r in reqs %}<tr class="{% if r.short %}row-bad{% endif %}"><td class="key"><a href="{{ r.part.get_absolute_url }}">{{ r.part.ipn }}</a></td><td>{{ r.part.description|truncatechars:38 }}</td>
           <td class="num">{{ r.line.quantity }}</td><td class="num">{{ r.need }}</td><td class="num">{{ r.have }}</td><td class="num">{% if r.short %}<strong>{{ r.short }}</strong>{% else %}—{% endif %}</td><td>{{ r.part.supplier|default:"—" }}</td></tr>{% endfor %}</tbody></table></div>
       {% else %}<div class="card-body muted">No BOM lines.</div>{% endif %}
       {% if b.stock_consumed %}<div class="card-foot small muted">Parts for this build have been taken out of stock.</div>{% endif %}

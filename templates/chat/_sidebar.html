@@ -1,0 +1,16 @@
+{% load workbench %}
+<aside class="chat-side" aria-label="Conversations">
+  <h4>Projects</h4>
+  {% for ch in project_channels %}<a class="ch {% if ch == channel %}active{% endif %} {% if ch.unread %}unread{% endif %}" href="{{ ch.get_absolute_url }}">{% icon 'hash' 14 %} {{ ch.name }}{% if ch.unread %}<span class="count">{{ ch.unread }}</span>{% endif %}</a>
+  {% empty %}<p class="small faint">Each project gets a channel automatically.</p>{% endfor %}
+  <h4>Channels {% if not user.is_read_only %}<a href="{% url 'chat:create' %}" title="New channel">{% icon 'plus' 14 %}</a>{% endif %}</h4>
+  {% for ch in joined %}<a class="ch {% if ch == channel %}active{% endif %} {% if ch.unread %}unread{% endif %}" href="{{ ch.get_absolute_url }}">{% if ch.kind == 'private' %}{% icon 'lock' 14 %}{% else %}{% icon 'hash' 14 %}{% endif %} {{ ch.name }}{% if ch.unread %}<span class="count">{{ ch.unread }}</span>{% endif %}</a>{% endfor %}
+  {% for ch in discover %}<a class="ch faint {% if ch == channel %}active{% endif %}" href="{{ ch.get_absolute_url }}" title="You haven't joined this channel">{% icon 'hash' 14 %} {{ ch.name }}</a>{% endfor %}
+  <h4>Direct messages</h4>
+  {% for ch in directs %}<a class="ch {% if ch == channel %}active{% endif %} {% if ch.unread %}unread{% endif %}" href="{{ ch.get_absolute_url }}">{% icon 'user' 14 %} {{ ch.label }}{% if ch.unread %}<span class="count">{{ ch.unread }}</span>{% endif %}</a>{% endfor %}
+  {% if people %}
+  <form method="post" action="{% url 'chat:direct' %}">{% csrf_token %}
+    <select name="user" data-autosubmit aria-label="Message someone"><option value="">Message someone…</option>
+      {% for p in people %}<option value="{{ p.pk }}">{{ p }}</option>{% endfor %}</select></form>
+  {% endif %}
+</aside>

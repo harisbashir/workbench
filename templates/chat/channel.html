@@ -1,0 +1,30 @@
+{% extends "base.html" %}{% load workbench %}
+{% block title %}{{ label }}{% endblock %}
+{% block content_class %}wide chat-content{% endblock %}
+{% block content %}
+<div class="chat" data-chat data-poll-url="{% url 'chat:poll' channel.slug %}" data-edit-base="{% url 'chat:edit_message' 0 %}">
+  {% include "chat/_sidebar.html" %}
+  <section class="chat-main">
+    <div class="chat-head">
+      <h2>{{ label }}</h2>
+      <span class="topic">{% if channel.project %}<a href="{{ channel.project.get_absolute_url }}">{{ channel.project.name }}</a> · {% endif %}{{ channel.topic }}</span>
+      <span class="faint small" title="{% for m in channel_members %}{{ m }}{% if not forloop.last %}, {% endif %}{% endfor %}">{% icon 'users' 14 %} {{ channel_members|length }}</span>
+      {% if channel.kind == 'public' or channel.kind == 'private' %}{% if is_member %}
+        <form method="post" action="{% url 'chat:leave' channel.slug %}">{% csrf_token %}<button class="btn btn-sm btn-ghost">Leave</button></form>{% endif %}{% endif %}
+    </div>
+    <div class="chat-log" aria-live="polite"></div>
+    <div class="chat-compose">
+      {% if channel.kind == 'public' and not is_member %}
+        <form method="post" action="{% url 'chat:join' channel.slug %}">{% csrf_token %}<span class="muted">You're viewing #{{ channel.name }}.</span> <button class="btn btn-primary btn-sm">Join channel</button></form>
+      {% elif can_post %}
+        <form class="compose" method="post" action="{% url 'chat:post' channel.slug %}">{% csrf_token %}
+          <textarea name="body" rows="1" placeholder="Message {{ label }}" aria-label="Message" maxlength="8000"></textarea>
+          <button class="btn btn-primary" type="submit" aria-label="Send">{% icon 'send' 16 %}</button>
+        </form>
+        <div class="hint"><kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line · **bold**, `code`, ```code block``` · type a task ID like <code>{% if channel.project %}{{ channel.project.key }}{% else %}PWR{% endif %}-12</code> to link it · @username to notify someone</div>
+      {% else %}<p class="muted small">You can read this conversation but not post in it.</p>{% endif %}
+    </div>
+  </section>
+</div>
+{{ initial|json_script:"initial-messages" }}
+{% endblock %}

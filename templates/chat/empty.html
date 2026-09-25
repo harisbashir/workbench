@@ -1,0 +1,11 @@
+{% extends "base.html" %}{% load workbench %}
+{% block title %}Chat{% endblock %}
+{% block content_class %}wide chat-content{% endblock %}
+{% block content %}
+<div class="chat">
+  {% include "chat/_sidebar.html" %}
+  <section class="chat-main"><div class="empty">{% icon 'chat' 40 %}<h3>No conversations yet</h3>
+    <p>Each project gets its own channel automatically. You can also create topic channels like <strong>#firmware</strong> or <strong>#suppliers</strong>, or message someone directly.</p>
+    {% if not user.is_read_only %}<a class="btn btn-primary" href="{% url 'chat:create' %}">Create a channel</a>{% endif %}</div></section>
+</div>
+{% endblock %}

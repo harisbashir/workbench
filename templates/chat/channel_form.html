@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}New channel{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles"><div class="crumbs"><a href="{% url 'chat:index' %}">Chat</a> /</div><h1>New channel</h1>
+  <p class="intro">Use channels for topics that cut across projects, like firmware practices, supplier updates or design reviews. Project channels are created automatically.</p></div></div>
+<div class="card form-card"><div class="card-body">
+  <form method="post" novalidate>{% csrf_token %}
+    {% include "partials/form.html" %}
+    <div class="form-actions"><button class="btn btn-primary">Create channel</button><a class="btn btn-ghost" href="{% url 'chat:index' %}">Cancel</a></div>
+  </form>
+</div></div>
+{% endblock %}

@@ -1,0 +1,55 @@
+{% extends "base.html" %}{% load workbench humanize %}
+{% block title %}{{ doc.name }}{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles">
+  <div class="crumbs"><a href="{% url 'files:index' %}">Files</a> / <a href="{% url 'files:space' doc.space %}">{% if doc.project %}{{ doc.project.name }}{% else %}Shared{% endif %}</a> /{% for c in crumbs %} <a href="{{ c.get_absolute_url }}">{{ c.name }}</a> /{% endfor %}</div>
+  <h1>{{ doc.name }} <span class="badge">v{{ doc.version_count }}</span></h1>
+  {% if doc.description %}<p class="intro">{{ doc.description }}</p>{% endif %}
+</div>
+<div class="actions">{% if latest %}<a class="btn btn-primary" href="{% url 'files:download' latest.pk %}">{% icon 'download' 16 %} Download</a>{% endif %}</div></div>
+
+<div class="grid grid-main">
+  <div class="stack">
+    <div class="card preview">
+      {% if not latest %}<div class="empty">No versions.</div>
+      {% elif doc.preview_kind == 'pdf' %}<iframe src="{% url 'files:download' latest.pk %}?inline=1" title="Preview of {{ doc.name }}"></iframe>
+      {% elif doc.preview_kind == 'image' %}<div class="card-body center"><img src="{% url 'files:download' latest.pk %}?inline=1" alt="{{ doc.name }}"></div>
+      {% elif doc.preview_kind == 'text' %}<pre class="text-preview">{{ text }}</pre>{% if text_truncated %}<div class="card-foot small muted">Showing the first 200 KB. Download to see everything.</div>{% endif %}
+      {% else %}<div class="empty">{% icon 'file' 40 %}<h3>No preview for this file type</h3><p>Download it to open it in the right program.</p></div>{% endif %}
+    </div>
+
+    <div class="card"><div class="card-head"><h2>Versions</h2></div>
+      <div class="table-wrap"><table class="table"><thead><tr><th>Version</th><th>Uploaded</th><th>Note</th><th class="num">Size</th><th>SHA-256</th><th></th></tr></thead><tbody>
+      {% for v in versions %}<tr><td><strong>v{{ v.number }}</strong>{% if forloop.first %} <span class="badge badge-done">Latest</span>{% endif %}</td>
+        <td class="small">{{ v.uploaded_at|naturaltime }}<br>{{ v.uploaded_by|default:"—" }}</td><td class="small">{{ v.note }}</td>
+        <td class="num">{{ v.size|filesizeformat }}</td><td class="mono small" title="{{ v.sha256 }}">{{ v.sha256|slice:":12" }}…</td>
+        <td class="right"><a class="btn btn-sm" href="{% url 'files:download' v.pk %}">{% icon 'download' 14 %}</a></td></tr>{% endfor %}
+      </tbody></table></div></div>
+  </div>
+
+  <div class="stack">
+    <div class="card"><div class="card-body">
+      <div class="kv"><span>Size</span><span>{{ doc.size|filesizeformat }}</span></div>
+      <div class="kv"><span>All versions</span><span>{{ doc.total_size|filesizeformat }}</span></div>
+      <div class="kv"><span>Created</span><span>{{ doc.created_at|naturalday }} · {{ doc.created_by|default:"—" }}</span></div>
+      {% if doc.task %}<div class="kv"><span>Linked task</span><a class="task-ref" href="{{ doc.task.get_absolute_url }}">{{ doc.task.key }}</a></div>{% endif %}
+    </div></div>
+
+    {% if can_edit %}
+    <div class="card"><div class="card-head"><h3>Upload a new version</h3></div><div class="card-body">
+      <form method="post" enctype="multipart/form-data" action="{% url 'files:document_new_version' doc.pk %}">{% csrf_token %}
+        <div class="field"><input type="file" name="file" required aria-label="New version"></div>
+        <div class="field"><input type="text" name="note" placeholder="What changed? (optional)" maxlength="200" aria-label="Version note"></div>
+        <button class="btn btn-primary">{% icon 'upload' 16 %} Upload version {{ doc.version_count|add:1 }}</button></form>
+      <p class="small muted">Tip: uploading a file with the same name into the same folder also adds a version.</p>
+    </div></div>
+    <div class="card"><div class="card-head"><h3>Details</h3></div><div class="card-body">
+      <form method="post" action="{% url 'files:document_edit' doc.pk %}" novalidate>{% csrf_token %}
+        {% include "partials/form.html" with form=edit_form %}<button class="btn">Save</button></form>
+    </div></div>
+    <form method="post" action="{% url 'files:document_delete' doc.pk %}" data-confirm="Move {{ doc.name }} to the trash? You can restore it later.">{% csrf_token %}
+      <button class="btn btn-danger btn-sm">{% icon 'trash' 14 %} Move to trash</button></form>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

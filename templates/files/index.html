@@ -1,0 +1,23 @@
+{% extends "base.html" %}{% load workbench humanize %}
+{% block title %}Files{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles"><h1>Files</h1>
+  <p class="intro">Every project has its own file space, plus a <strong>Shared</strong> space for company-wide documents. Uploading a file with the same name as an existing one saves it as a new version, so nothing is overwritten. <a href="{% url 'core:help_topic' 'files' %}">How files work →</a></p></div>
+  <div class="actions"><a class="btn" href="{% url 'files:trash' %}">{% icon 'trash' 16 %} Trash{% if trash_count %} ({{ trash_count }}){% endif %}</a>
+    {% if user.is_admin_role %}<a class="btn" href="{% url 'files:storage' %}">{% icon 'database' 16 %} Storage</a>{% endif %}</div></div>
+<div class="grid grid-3">
+{% for s in spaces %}
+  <a class="card space-card" href="{% url 'files:space' s.key %}"><div class="card-body">
+    <div class="btn-row">{% icon 'folder' 20 %}<strong>{{ s.label }}</strong>{% if s.key != 'shared' %}<span class="key">{{ s.key }}</span>{% endif %}</div>
+    <p class="small muted">{{ s.desc|truncatewords:14|default:"" }}</p>
+    <div class="small faint">{{ s.n }} file{{ s.n|pluralize }} · {{ s.size|filesizeformat }}</div>
+  </div></a>
+{% endfor %}
+</div>
+<div class="section-title"><h2>Recently updated</h2></div>
+<div class="card">{% if recent %}<div class="table-wrap"><table class="table">
+  <thead><tr><th>Name</th><th>Space</th><th class="num">Version</th><th class="num">Size</th><th>Updated</th></tr></thead>
+  <tbody>{% for d in recent %}<tr><td>{% icon 'file' 15 %} <a href="{{ d.get_absolute_url }}">{{ d.name }}</a></td><td>{% if d.project %}<span class="key">{{ d.project.key }}</span>{% else %}Shared{% endif %}</td>
+    <td class="num">v{{ d.version_count }}</td><td class="num">{{ d.size|filesizeformat }}</td><td class="small">{{ d.updated_at|naturaltime }} · {{ d.updated_by|default:"" }}</td></tr>{% endfor %}</tbody></table></div>
+{% else %}<div class="empty">{% icon 'file' 36 %}<h3>No files yet</h3><p>Open a space above and drag files onto the page to upload them.</p></div>{% endif %}</div>
+{% endblock %}

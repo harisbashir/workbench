@@ -1,5 +1,4 @@
 from django import forms
-from django.conf import settings
 
 from apps.accounts.models import User
 
@@ -43,7 +42,7 @@ class RevisionForm(forms.ModelForm):
 class TaskForm(forms.ModelForm):
     class Meta:
         model = Task
-        fields = ["title", "kind", "description", "assignee", "reviewer", "priority", "status", "revision", "due_date"]
+        fields = ["title", "kind", "description", "assignee", "reviewer", "priority", "status", "revision", "due_date", "blocked_reason"]
         widgets = {
             "due_date": DateInput(),
             "description": forms.Textarea(attrs={"rows": 6, "placeholder": "What needs doing, and how will we know it's done?"}),
@@ -74,20 +73,3 @@ class CommentForm(forms.ModelForm):
         fields = ["body"]
         labels = {"body": ""}
         widgets = {"body": forms.Textarea(attrs={"rows": 3, "placeholder": "Write a comment. Mention someone with @username."})}
-
-
-class AttachmentForm(forms.Form):
-    file = forms.FileField(help_text="Schematic PDFs, screenshots, test logs, datasheets. Max 25 MB.")
-
-    ALLOWED = {".pdf", ".png", ".jpg", ".jpeg", ".svg", ".txt", ".log", ".csv", ".zip", ".kicad_sch",
-               ".kicad_pcb", ".kicad_pro", ".step", ".stp", ".gbr", ".drl", ".md", ".json", ".xlsx", ".docx"}
-
-    def clean_file(self):
-        f = self.cleaned_data["file"]
-        import os
-        ext = os.path.splitext(f.name)[1].lower()
-        if ext not in self.ALLOWED:
-            raise forms.ValidationError(f"Files of type {ext or '(none)'} aren't allowed.")
-        if f.size > settings.MAX_UPLOAD_MB * 1024 * 1024:
-            raise forms.ValidationError(f"Files must be under {settings.MAX_UPLOAD_MB} MB.")
-        return f

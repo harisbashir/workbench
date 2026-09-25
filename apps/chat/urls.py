@@ -13,6 +13,7 @@ urlpatterns = [
     path("<slug:slug>/", views.channel_view, name="channel"),
     path("<slug:slug>/poll/", views.poll, name="poll"),
     path("<slug:slug>/post/", views.post_message, name="post"),
+    path("<slug:slug>/upload/", views.upload, name="upload"),
     path("<slug:slug>/join/", views.channel_join, name="join"),
     path("<slug:slug>/leave/", views.channel_leave, name="leave"),
 ]

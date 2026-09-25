@@ -1,0 +1,13 @@
+{% extends "base.html" %}{% load workbench humanize %}
+{% block title %}Trash{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles"><div class="crumbs"><a href="{% url 'files:index' %}">Files</a> /</div><h1>Trash</h1>
+  <p class="intro">Deleted files stay here for {{ days }} days, then they're removed automatically.</p></div></div>
+<div class="card">{% if docs %}<div class="table-wrap"><table class="table">
+  <thead><tr><th>Name</th><th>Space</th><th class="num">Size</th><th>Deleted</th><th>Removed on</th><th></th></tr></thead>
+  <tbody>{% for d in docs %}<tr><td>{% icon 'file' 15 %} {{ d.name }}</td><td>{% if d.project %}<span class="key">{{ d.project.key }}</span>{% else %}Shared{% endif %}</td>
+    <td class="num">{{ d.size|filesizeformat }}</td><td class="small">{{ d.deleted_at|naturaltime }} by {{ d.deleted_by|default:"—" }}</td><td class="small">{{ d.purge_on|date:"M j" }}</td>
+    <td class="right nowrap"><form class="inline" method="post" action="{% url 'files:trash_action' d.pk %}">{% csrf_token %}<button class="btn btn-sm" name="action" value="restore">{% icon 'restore' 14 %} Restore</button></form>
+      {% if user.can_manage_projects %}<form class="inline" method="post" action="{% url 'files:trash_action' d.pk %}" data-confirm="Delete {{ d.name }} permanently? This can't be undone.">{% csrf_token %}<button class="btn btn-sm btn-ghost" name="action" value="purge">Delete now</button></form>{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+{% else %}<div class="empty">{% icon 'trash' 36 %}<h3>The trash is empty</h3></div>{% endif %}</div>
+{% endblock %}

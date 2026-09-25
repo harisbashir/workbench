@@ -21,6 +21,9 @@
           <textarea name="body" rows="1" placeholder="Message {{ label }}" aria-label="Message" maxlength="8000"></textarea>
           <button class="btn btn-primary" type="submit" aria-label="Send">{% icon 'send' 16 %}</button>
         </form>
+        {% if channel.kind == 'project' or channel.kind == 'public' %}
+        <form method="post" enctype="multipart/form-data" action="{% url 'chat:upload' channel.slug %}" class="attach-form">{% csrf_token %}
+          <label class="link-btn small attach">{% icon 'paperclip' 14 %} Share a file<input class="hidden" type="file" name="files" multiple data-autoupload></label></form>{% endif %}
         <div class="hint"><kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line · **bold**, `code`, ```code block``` · type a task ID like <code>{% if channel.project %}{{ channel.project.key }}{% else %}PWR{% endif %}-12</code> to link it · @username to notify someone</div>
       {% else %}<p class="muted small">You can read this conversation but not post in it.</p>{% endif %}
     </div>

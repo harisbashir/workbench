@@ -1,0 +1,53 @@
+{% extends "base.html" %}{% load workbench humanize %}
+{% block title %}{% if folder %}{{ folder.name }}{% else %}{{ space_label }}{% endif %} · Files{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles">
+  <div class="crumbs"><a href="{% url 'files:index' %}">Files</a> / {% if folder %}<a href="{% url 'files:space' space %}">{{ space_label }}</a> /{% for c in crumbs %} <a href="{{ c.get_absolute_url }}">{{ c.name }}</a> /{% endfor %}{% endif %}</div>
+  <h1>{% if folder %}{{ folder.name }}{% else %}{{ space_label }}{% endif %}</h1>
+  {% if project and not folder %}<p class="intro"><a href="{{ project.get_absolute_url }}">Open the {{ project.key }} project</a></p>{% endif %}
+</div>
+<div class="actions">
+  <form method="get" class="btn-row"><input type="search" name="q" value="{{ q }}" placeholder="Search in {{ space_label }}…" aria-label="Search files"></form>
+</div></div>
+
+{% if can_edit %}
+<div class="dropzone" data-dropzone data-upload-url="{% if folder %}{% url 'files:upload' space folder.pk %}{% else %}{% url 'files:upload_root' space %}{% endif %}">
+  <form method="post" enctype="multipart/form-data" action="{% if folder %}{% url 'files:upload' space folder.pk %}{% else %}{% url 'files:upload_root' space %}{% endif %}" class="btn-row">{% csrf_token %}
+    {% icon 'upload' 22 %}<span><strong>Drag files here</strong> or <label class="link-btn">choose files<input class="hidden" type="file" name="files" multiple data-autoupload></label>. Up to {{ max_mb }} MB each.</span>
+  </form>
+  <div class="upload-progress hidden"><div class="progress"><span class="w-0" data-bar></span></div><span class="small" data-status></span></div>
+</div>
+{% endif %}
+
+{% if q %}<p class="muted">Search results for “{{ q }}” in {{ space_label }} · <a href="?">clear</a></p>{% endif %}
+<div class="card">
+  <div class="card-head"><h2>{% if folders %}{{ folders|length }} folder{{ folders|length|pluralize }}, {% endif %}{{ docs|length }} file{{ docs|length|pluralize }}</h2>
+    {% if can_edit and not q %}<form method="post" class="btn-row" action="{% if folder %}{% url 'files:folder_create' space folder.pk %}{% else %}{% url 'files:folder_create_root' space %}{% endif %}">{% csrf_token %}
+      <input type="text" name="name" placeholder="New folder name" required aria-label="New folder name" class="input-sm"><button class="btn btn-sm">{% icon 'folder-plus' 14 %} Add folder</button></form>{% endif %}</div>
+  {% if folders or docs %}
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th>Name</th><th class="num">Version</th><th class="num">Size</th><th>Linked task</th><th>Updated</th></tr></thead>
+    <tbody>
+    {% if folder and not q %}<tr><td colspan="5">{% icon 'arrow-right' 15 %} <a href="{% if folder.parent %}{{ folder.parent.get_absolute_url }}{% else %}{% url 'files:space' space %}{% endif %}">Up one level</a></td></tr>{% endif %}
+    {% for f in folders %}<tr><td>{% icon 'folder' 16 %} <a href="{{ f.get_absolute_url }}"><strong>{{ f.name }}</strong></a></td><td></td><td class="num small faint nowrap">{% if f.subs %}{{ f.subs }} folder{{ f.subs|pluralize }}, {% endif %}{{ f.n }} file{{ f.n|pluralize }}</td><td></td><td></td></tr>{% endfor %}
+    {% for d in docs %}<tr><td>{% icon 'file' 16 %} <a href="{{ d.get_absolute_url }}">{{ d.name }}</a>{% if d.description %}<br><span class="small faint">{{ d.description }}</span>{% endif %}</td>
+      <td class="num">v{{ d.version_count }}</td><td class="num">{{ d.size|filesizeformat }}</td>
+      <td>{% if d.task %}<a class="task-ref" href="{{ d.task.get_absolute_url }}">{{ d.task.key }}</a>{% endif %}</td>
+      <td class="small">{{ d.updated_at|naturaltime }} · {{ d.updated_by|default:"" }}</td></tr>{% endfor %}
+    </tbody></table></div>
+  {% else %}
+    <div class="empty">{% icon 'folder' 36 %}<h3>{% if q %}Nothing matches{% else %}This folder is empty{% endif %}</h3>
+      {% if can_edit and not q %}<p>Drag files onto the box above. Try folders like <em>Datasheets</em>, <em>Test reports</em> or <em>Manufacturing</em>.</p>{% endif %}</div>
+  {% endif %}
+</div>
+
+{% if folder and can_edit %}
+<div class="section-title"><h3>Folder options</h3></div>
+<div class="card"><div class="card-body btn-row">
+  <form method="post" action="{% url 'files:folder_action' space folder.pk %}" class="btn-row">{% csrf_token %}<input type="hidden" name="action" value="rename">
+    <input type="text" name="name" value="{{ folder.name }}" aria-label="Folder name" class="input-sm"><button class="btn btn-sm">Rename</button></form>
+  <form method="post" action="{% url 'files:folder_action' space folder.pk %}" data-confirm="Delete this folder and everything in it? Files go to the trash and can be restored.">{% csrf_token %}
+    <button class="btn btn-sm btn-danger" name="action" value="delete">Delete folder</button></form>
+</div></div>
+{% endif %}
+{% endblock %}

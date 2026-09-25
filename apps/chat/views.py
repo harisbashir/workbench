@@ -236,3 +236,30 @@ def direct(request):
 @login_required
 def unread(request):
     return JsonResponse({"unread_total": unread_total(request.user)})
+
+
+@login_required
+@require_POST
+def upload(request, slug):
+    """Share a file in a channel. It's stored in the project's Files (or Shared for public channels)."""
+    from apps.files.models import Folder
+    from apps.files.views import store_upload, validate_upload
+
+    channel = get_object_or_404(Channel.objects.select_related("project"), slug=slug)
+    if not channel.can_post(request.user):
+        raise PermissionDenied
+    if channel.kind not in (Channel.Kind.PROJECT, Channel.Kind.PUBLIC):
+        messages.error(request, "Files can be shared in project and public channels. For private conversations, upload to the project's Files and paste the link.")
+        return redirect(channel)
+    project = channel.project if channel.kind == Channel.Kind.PROJECT else None
+    folder = Folder.get_or_create_path(project, "Chat uploads", *([] if project else [channel.name]), user=request.user)
+    for f in request.FILES.getlist("files")[:10]:
+        err = validate_upload(f)
+        if err:
+            messages.error(request, err)
+            continue
+        doc, v, _ = store_upload(f, project=project, folder=folder, user=request.user, request=request)
+        size = f"{doc.size / 1024 / 1024:.1f} MB" if doc.size > 1024 * 1024 else f"{max(doc.size // 1024, 1)} KB"
+        Message.objects.create(channel=channel, author=request.user, body=f"shared a file: **{doc.name}** ({size})",
+                               url=doc.get_absolute_url())
+    return redirect(channel)

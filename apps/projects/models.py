@@ -98,7 +98,44 @@ class Revision(models.Model):
         return f"{self.project.key} {self.name}"
 
     def get_absolute_url(self):
-        return reverse("inventory:bom", args=[self.pk])
+        return reverse("projects:revision", args=[self.project.key, self.pk])
+
+    @property
+    def checklist_done(self):
+        items = list(self.checks.all())
+        return bool(items) and all(c.done_at for c in items)
+
+    def add_default_checks(self):
+        for i, text in enumerate(DEFAULT_REVIEW_CHECKS):
+            RevisionCheck.objects.get_or_create(revision=self, text=text, defaults={"order": i})
+
+
+DEFAULT_REVIEW_CHECKS = [
+    "ERC passes with no unexplained errors",
+    "DRC passes with no unexplained errors",
+    "Every part has a manufacturer part number and is in the parts library",
+    "No obsolete or not-recommended parts on the BOM",
+    "Footprints and pinouts checked against datasheets",
+    "Power, decoupling and ESD protection reviewed",
+    "Test points and programming/debug header accessible",
+    "Fabrication notes, stack-up and board outline reviewed",
+    "Firmware builds and runs on this revision",
+    "BOM compared with the previous revision and changes explained",
+]
+
+
+class RevisionCheck(models.Model):
+    """One item of a revision's release checklist (design review sign-off)."""
+
+    revision = models.ForeignKey(Revision, on_delete=models.CASCADE, related_name="checks")
+    text = models.CharField(max_length=200)
+    order = models.PositiveIntegerField(default=0)
+    note = models.CharField(max_length=200, blank=True)
+    done_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    done_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["order", "id"]
 
 
 class Task(models.Model):
@@ -139,6 +176,9 @@ class Task(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     completed_at = models.DateTimeField(null=True, blank=True)
+    blocked_reason = models.CharField(
+        "Blocked by", max_length=200, blank=True,
+        help_text="If this task can't move forward, say why (e.g. waiting for parts, waiting on PWR-3). Leave empty when not blocked.")
 
     class Meta:
         ordering = ["-priority", "due_date", "number"]
@@ -164,6 +204,10 @@ class Task(models.Model):
         super().save(*args, **kwargs)
 
     @property
+    def is_blocked(self):
+        return bool(self.blocked_reason)
+
+    @property
     def is_overdue(self):
         from django.utils import timezone
         return bool(self.due_date and self.status != self.Status.DONE and self.due_date < timezone.localdate())
@@ -179,20 +223,8 @@ class TaskComment(models.Model):
         ordering = ["created_at"]
 
 
-def attachment_path(instance, filename):
+def attachment_path(instance, filename):  # kept for migration 0001
     return f"tasks/{instance.task.project.key}/{instance.task.number}/{filename}"
-
-
-class TaskAttachment(models.Model):
-    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="attachments")
-    file = models.FileField(upload_to=attachment_path)
-    name = models.CharField(max_length=255)
-    size = models.PositiveIntegerField(default=0)
-    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
-    uploaded_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ["-uploaded_at"]
 
 
 class Activity(models.Model):

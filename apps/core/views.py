@@ -144,7 +144,7 @@ def audit_log(request):
 
 @login_required
 def help_page(request, topic="start"):
-    topics = ["start", "projects", "reviews", "chat", "files", "time", "parts", "production", "github", "security", "install"]
+    topics = ["start", "projects", "reviews", "firmware", "chat", "files", "time", "parts", "production", "github", "security", "install"]
     if topic not in topics:
         raise Http404
     return render(request, f"core/help/{topic}.html", {"topic": topic, "topics": topics})
@@ -227,17 +227,22 @@ def system_page(request, tab="overview"):
             messages.success(request, "Settings saved.")
             return redirect("core:system_tab", tab=tab)
     ctx = {"tab": tab, "form": form, "site": site}
+    if tab == "general":
+        from .forms import LogoForm
+        ctx["logo_form"] = LogoForm()
     if tab == "overview":
         from django.db.models import Sum as S
         ctx.update({
             "health": system.health(), "disk": system.disk_usage(), "db_size": system.database_size(),
             "files_size": DocumentVersion.objects.aggregate(s=S("size"))["s"] or 0,
-            "backups": system.list_backups()[:1], "data_dir": dj.DATA_DIR, "https": dj.HTTPS, "domain": dj.DOMAIN,
+            "backups": system.list_backups()[:1], "data_dir": dj.DATA_DIR, "storage": __import__("apps.core.storage", fromlist=["x"]).storage_info(), "https": dj.HTTPS, "domain": dj.DOMAIN,
             "version": system.VERSION, "db_vendor": "SQLite" if system.is_sqlite() else "PostgreSQL",
             "user_count": __import__("apps.accounts.models", fromlist=["User"]).User.objects.filter(is_active=True).count(),
         })
     elif tab == "backups":
-        ctx.update({"backups": system.list_backups(), "backup_dir": dj.BACKUP_DIR})
+        from .models import ExportJob
+        ctx.update({"backups": system.list_backups(), "backup_dir": dj.BACKUP_DIR,
+                    "exports": ExportJob.objects.select_related("requested_by")[:8]})
     elif tab == "github":
         import os
         ctx.update({"webhook_url": site.absolute_url(reverse("integrations:github_webhook"), request),
@@ -265,6 +270,30 @@ def system_action(request):
         except Exception as e:  # disk full, permissions…
             messages.error(request, f"Backup failed: {e}")
         return redirect("core:system_tab", tab="backups")
+    if action == "request_export":
+        from . import export as exporter
+        from .models import ExportJob
+        if ExportJob.objects.filter(status__in=["pending", "running"]).exists():
+            messages.info(request, "An export is already being prepared.")
+            return redirect("/system/backups/#exports")
+        job = ExportJob.objects.create(requested_by=request.user, include_versions=bool(request.POST.get("include_versions")))
+        audit(request, "export.requested", None, include_versions=job.include_versions)
+        beat = system.health().get("scheduler_seen")
+        if not beat or (timezone.now() - timezone.datetime.fromisoformat(beat)).total_seconds() > 180:
+            exporter.run_job(job)  # no background worker running (e.g. development): do it now
+            exporter.prune_exports()
+            messages.success(request, "Export ready." if job.status == "ready" else f"Export failed: {job.message}")
+        else:
+            messages.success(request, "Preparing your export. It takes a minute or two for large installations — you'll get a notification when it's ready.")
+        return redirect("/system/backups/#exports")
+    if action == "download_export":
+        from .export import export_dir
+        name = request.POST.get("name", "")
+        p = export_dir() / name
+        if not (name.startswith("workbench-export-") and name.endswith(".zip") and "/" not in name and p.exists()):
+            raise Http404
+        audit(request, "export.downloaded", None, file=name)
+        return FileResponse(open(p, "rb"), as_attachment=True, filename=name)
     if action in ("download_backup", "delete_backup"):
         p = system.backup_path(request.POST.get("name", ""))
         if p is None:
@@ -286,6 +315,36 @@ def system_action(request):
             except Exception as e:
                 messages.error(request, f"Couldn't send: {e}")
         return redirect("core:system_tab", tab="email")
+    if action in ("upload_logo", "remove_logo"):
+        from django.core.files.base import ContentFile
+
+        from .forms import LogoForm
+        if action == "remove_logo":
+            field = request.POST.get("which") if request.POST.get("which") in ("logo", "logo_dark") else "logo"
+            getattr(site, field).delete(save=False)
+            setattr(site, field, "")
+        else:
+            form = LogoForm(request.POST, request.FILES)
+            if not form.is_valid():
+                for errs in form.errors.values():
+                    for e in errs:
+                        messages.error(request, e)
+                return redirect("core:system_tab", tab="general")
+            changed = False
+            for field in ("logo", "logo_dark"):
+                if form.cleaned_data.get(field):
+                    data, ext = form.cleaned_data[field]
+                    getattr(site, field).delete(save=False)
+                    getattr(site, field).save(f"{field}-{pysecrets.token_hex(4)}.{ext}", ContentFile(data), save=False)
+                    changed = True
+            if not changed:
+                messages.error(request, "Choose a logo file first.")
+                return redirect("core:system_tab", tab="general")
+        site.logo_updated_at = timezone.now()
+        site.save()
+        audit(request, f"branding.{action}", site)
+        messages.success(request, "Logo updated." if action == "upload_logo" else "Logo removed.")
+        return redirect("core:system_tab", tab="general")
     if action == "rotate_github_secret":
         site.github_secret = pysecrets.token_hex(32)
         site.save(update_fields=["_github_secret"])
@@ -293,3 +352,27 @@ def system_action(request):
         messages.success(request, "New webhook secret generated. Update it in GitHub's webhook settings now.")
         return redirect("core:system_tab", tab="github")
     return redirect("core:system")
+
+
+def logo(request, variant):
+    """Serves the company logo (public: it's shown on the sign-in page)."""
+    from django.http import HttpResponse
+
+    from .models import SiteSettings
+    site = SiteSettings.load()
+    f = site.logo_dark if variant == "dark" and site.logo_dark else site.logo
+    if not f:
+        raise Http404
+    try:
+        with f.storage.open(f.name, "rb") as fh:
+            data = fh.read()
+    except Exception:
+        raise Http404
+    ext = f.name.rsplit(".", 1)[-1].lower()
+    ctype = {"svg": "image/svg+xml", "png": "image/png", "jpg": "image/jpeg", "webp": "image/webp"}.get(ext, "application/octet-stream")
+    resp = HttpResponse(data, content_type=ctype)
+    # Even a cleaned SVG is served in a sandbox so nothing in it can run.
+    resp["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+    resp["X-Content-Type-Options"] = "nosniff"
+    resp["Cache-Control"] = "public, max-age=31536000, immutable" if request.GET.get("v") else "no-cache"
+    return resp

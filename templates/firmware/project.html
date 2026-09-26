@@ -1,0 +1,35 @@
+{% extends "base.html" %}{% load workbench humanize %}
+{% block title %}Firmware · {{ project.name }}{% endblock %}
+{% block content %}
+{% include "projects/_head.html" %}
+<div class="page-head"><div class="titles">
+  <p class="intro">Each firmware image this product runs (application, bootloader…) has numbered releases with their binaries, release notes and the board revisions they run on. <a href="{% url 'core:help_topic' 'firmware' %}">How firmware releases work →</a></p></div>
+  {% if can_edit %}<div class="actions"><a class="btn btn-primary" href="{% url 'firmware:create' project.key %}">{% icon 'plus' 16 %} Add firmware</a></div>{% endif %}</div>
+
+{% if firmwares %}
+<div class="grid grid-3">
+{% for fw in firmwares %}
+  <a class="card space-card" href="{{ fw.get_absolute_url }}"><div class="card-body">
+    <div class="btn-row">{% icon 'cpu' 20 %}<strong>{{ fw.name }}</strong></div>
+    <p class="small muted">{{ fw.target|default:"" }}{% if fw.target and fw.description %} · {% endif %}{{ fw.description|truncatewords:12 }}</p>
+    <div class="kv"><span>Latest released</span><span>{% if fw.latest %}<strong>{{ fw.latest.version }}</strong> <span class="small faint">{{ fw.latest.released_at|naturalday }}</span>{% else %}<span class="faint">none yet</span>{% endif %}</span></div>
+    <div class="kv"><span>In testing</span><span>{% if fw.in_testing %}{{ fw.in_testing.version }}{% else %}<span class="faint">—</span>{% endif %}</span></div>
+    <div class="kv"><span>Releases</span><span>{{ fw.n }}</span></div>
+  </div></a>
+{% endfor %}
+</div>
+
+<div class="section-title"><h2>Which firmware goes on which board</h2></div>
+<div class="card">{% if matrix %}<div class="table-wrap"><table class="table">
+  <thead><tr><th>Board revision</th>{% for fw in firmwares %}<th>{{ fw.name }}</th>{% endfor %}</tr></thead>
+  <tbody>{% for row in matrix %}<tr><td><a href="{{ row.rev.get_absolute_url }}"><strong>{{ row.rev.name }}</strong></a> {% status_badge row.rev.status row.rev.get_status_display %}</td>
+    {% for rel in row.cells %}<td>{% if rel %}<a href="{{ rel.get_absolute_url }}"><strong>{{ rel.version }}</strong></a>{% else %}<span class="faint small">no released version</span>{% endif %}</td>{% endfor %}</tr>{% endfor %}</tbody>
+</table></div>
+<div class="card-foot small muted">Shows the newest <em>released</em> version marked compatible with each revision — that's the one to flash.</div>
+{% else %}<div class="card-body muted small">Add board revisions to the project to see which firmware each one should run.</div>{% endif %}</div>
+{% else %}
+<div class="card"><div class="empty">{% icon 'cpu' 40 %}<h3>No firmware yet</h3>
+  <p>Add the firmware images this product runs — for example “Main application” and “Bootloader”. Then create releases with their binaries.</p>
+  {% if can_edit %}<a class="btn btn-primary" href="{% url 'firmware:create' project.key %}">Add firmware</a>{% endif %}</div></div>
+{% endif %}
+{% endblock %}

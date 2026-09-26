@@ -33,7 +33,7 @@
         <div class="field"><label class="field-label">Payload URL</label><div class="copy-box"><input id="hook" type="text" readonly value="{{ webhook_url }}"><button class="btn btn-sm" type="button" data-copy="#hook">Copy</button></div></div>
         <div class="kv"><span>Content type</span><code>application/json</code></div>
         <div class="kv"><span>Secret</span><span>shown to administrators in System → GitHub</span></div>
-        <div class="kv"><span>Events</span><span>Pull requests, Pull request reviews, Pushes, Workflow runs</span></div>
+        <div class="kv"><span>Events</span><span>Pull requests, Pull request reviews, Pushes, Workflow runs, Releases</span></div>
       </div></div>
     <div class="card"><div class="card-head"><h3>Linked repositories</h3></div><div class="card-body">
       {% for p in projects %}<div class="kv"><span><a href="{{ p.get_absolute_url }}">{{ p.key }}</a></span>

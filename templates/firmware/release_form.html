@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}{% if rel %}Edit {{ fw.name }} {{ rel.version }}{% else %}New {{ fw.name }} release{% endif %}{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles">
+  <div class="crumbs"><a href="{{ project.get_absolute_url }}">{{ project.name }}</a> / <a href="{% url 'firmware:project' project.key %}">Firmware</a> / <a href="{{ fw.get_absolute_url }}">{{ fw.name }}</a> /</div>
+  <h1>{% if rel %}Edit {{ rel.version }}{% else %}New {{ fw.name }} release{% endif %}</h1>
+  {% if not rel %}<p class="intro">{% if previous %}The last release was <strong>{{ previous.version }}</strong>. {% endif %}Bump the <strong>patch</strong> number for fixes (1.4.2 → 1.4.3), <strong>minor</strong> for new features (1.4.2 → 1.5.0), and <strong>major</strong> for changes that break compatibility (1.4.2 → 2.0.0).</p>{% endif %}
+</div></div>
+<div class="card form-card"><div class="card-body">
+  <form method="post" enctype="multipart/form-data" novalidate>{% csrf_token %}
+    {% include "partials/form.html" with grid=True full_fields="notes" %}
+    <div class="field full"><label class="field-label" for="artifacts">Files {% if rel %}to add{% endif %} <span class="faint small">(optional now — you can add them later)</span></label>
+      <input id="artifacts" type="file" name="artifacts" multiple>
+      <div class="help">The image to flash (.bin, .hex, .uf2, .dfu…), plus debug symbols (.elf, .map) if you have them. A SHA-256 checksum is recorded for each file.</div></div>
+    <div class="form-actions">
+      {% if rel %}<button class="btn btn-primary">Save</button>
+      {% else %}<button class="btn btn-primary" name="to_testing" value="1">Create and send to testing</button>
+      <button class="btn">Save as draft</button>{% endif %}
+      <a class="btn btn-ghost" href="{% if rel %}{{ rel.get_absolute_url }}{% else %}{{ fw.get_absolute_url }}{% endif %}">Cancel</a>
+    </div>
+  </form>
+</div></div>
+{% endblock %}

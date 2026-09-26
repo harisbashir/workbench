@@ -2,10 +2,11 @@
 {% block title %}Storage{% endblock %}
 {% block content %}
 <div class="page-head"><div class="titles"><div class="crumbs"><a href="{% url 'files:index' %}">Files</a> /</div><h1>Storage</h1>
-  <p class="intro">Uploaded files are stored on the server in <code>{{ files_dir }}</code>, one folder per project. Use this page to see what's taking space and to clean up.</p></div>
+  <p class="intro">{% if storage.kind == 's3' %}Uploaded files are stored in {{ storage.label }}, bucket <code>{{ storage.bucket }}</code>{% if storage.prefix %} under <code>{{ storage.prefix }}/</code>{% endif %}.{% else %}Uploaded files are stored on the server in <code>{{ storage.path }}</code>, one folder per project.{% endif %} Use this page to see what's taking space and to clean up. <a href="{% url 'core:help_topic' 'install' %}#storage">Change where files are stored →</a></p></div>
   <div class="actions"><a class="btn" href="{% url 'core:system_tab' 'backups' %}">{% icon 'box' 16 %} Backups</a></div></div>
 <div class="grid grid-4">
-  <div class="card stat"><div class="label">Disk free</div><div class="value {% if disk.percent > 85 %}bad{% elif disk.percent > 70 %}warn{% endif %}">{{ disk.free|filesizeformat }}</div><div class="progress"><span class="w-{{ disk.percent|percent_step }}"></span></div></div>
+  {% if storage.kind == 's3' %}<div class="card stat"><div class="label">Storage</div><div class="value">S3</div><div class="small muted">{{ storage.bucket }}</div></div>
+  {% else %}<div class="card stat"><div class="label">Disk free</div><div class="value {% if disk.percent > 85 %}bad{% elif disk.percent > 70 %}warn{% endif %}">{{ disk.free|filesizeformat }}</div><div class="progress"><span class="w-{{ disk.percent|percent_step }}"></span></div></div>{% endif %}
   <div class="card stat"><div class="label">All files, all versions</div><div class="value">{{ total|filesizeformat }}</div><div class="small muted">{{ doc_count }} files · {{ version_count }} versions</div></div>
   <div class="card stat"><div class="label">Older versions</div><div class="value">{{ old_versions_size|filesizeformat }}</div></div>
   <div class="card stat"><div class="label">In the trash</div><div class="value">{{ trash_size|filesizeformat }}</div></div>

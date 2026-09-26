@@ -25,7 +25,7 @@ class SmokeTests(TestCase):
             c = signed_in(make_user(f"u-{role}", role=role))
             for url in ["/", "/my-work/", "/projects/", "/chat/", "/parts/", "/parts/boms/", "/parts/suppliers/",
                         "/production/", "/production/orders/", "/integrations/", "/help/", "/help/github/",
-                        "/help/files/", "/help/time/", "/help/install/", "/files/", "/files/shared/", "/files/trash/",
+                        "/help/files/", "/help/time/", "/help/install/", "/help/firmware/", "/firmware/", "/files/", "/files/shared/", "/files/trash/",
                         "/time/", "/time/report/", "/notifications/", "/search/?q=pwr", "/accounts/profile/", "/accounts/security/"]:
                 r = c.get(url, follow=True)
                 self.assertEqual(r.status_code, 200, f"{role} {url}")

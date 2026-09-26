@@ -1,14 +1,11 @@
-import mimetypes
 import os
-from pathlib import Path
 
 from django import forms
-from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.db.models import Count, F, Q, Sum
-from django.http import FileResponse, Http404, JsonResponse
+from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
@@ -283,21 +280,17 @@ def document_delete(request, pk):
 
 
 def _serve(request, version, inline):
+    from apps.core.storage import file_response
     doc = version.document
-    path = Path(version.file.path).resolve()
-    root = Path(settings.MEDIA_ROOT).resolve()
-    if root not in path.parents or not path.exists():
-        raise Http404("The file is missing from storage.")
-    ctype = mimetypes.guess_type(version.original_name)[0] or "application/octet-stream"
+    ctype = None
     safe_inline = inline and doc.preview_kind in ("pdf", "image")
     if inline and doc.preview_kind == "text":
         ctype, safe_inline = "text/plain; charset=utf-8", True
     name = doc.name if version.number == doc.version_count else f"v{version.number}-{doc.name}"
-    resp = FileResponse(open(path, "rb"), content_type=ctype, as_attachment=not safe_inline, filename=name)
-    resp["X-Content-Type-Options"] = "nosniff"
+    resp = file_response(version.file, filename=name, inline=safe_inline, content_type=ctype)
     if safe_inline:
         # Allow our own pages to show the preview in a frame, and sandbox it.
-        resp["Content-Security-Policy"] = "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; plugin-types application/pdf; frame-ancestors 'self'; sandbox allow-same-origin allow-downloads"
+        resp["Content-Security-Policy"] = "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; frame-ancestors 'self'; sandbox allow-same-origin allow-downloads"
         resp["X-Frame-Options"] = "SAMEORIGIN"
     if not inline:
         audit(request, "file.downloaded", doc, version=version.number)
@@ -342,6 +335,7 @@ def trash_action(request, pk):
 
 @admin_required
 def storage(request):
+    from apps.core.storage import storage_info
     from apps.core.system import disk_usage
     alive = Document.objects.alive()
     by_space = []
@@ -357,7 +351,7 @@ def storage(request):
         "old_versions_size": DocumentVersion.objects.exclude(number=F("document__version_count")).aggregate(s=Sum("size"))["s"] or 0,
         "by_space": by_space, "by_user": by_user,
         "largest": alive.select_related("project").order_by("-size")[:15],
-        "disk": disk_usage(), "files_dir": settings.FILES_DIR,
+        "disk": disk_usage(), "storage": storage_info(),
     })
 
 

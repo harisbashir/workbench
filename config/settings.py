@@ -38,7 +38,9 @@ if TESTING:
 else:
     DATA_DIR = Path(env("WORKBENCH_DATA_DIR", BASE_DIR / "data")).resolve()
 DB_DIR = DATA_DIR / "db"
-FILES_DIR = DATA_DIR / "files"
+# Uploaded files: a folder (default <data>/files — point it at a NAS or a
+# separate disk with WORKBENCH_FILES_DIR) or Amazon S3 (see STORAGE below).
+FILES_DIR = Path(env("WORKBENCH_FILES_DIR", DATA_DIR / "files")).resolve() if not TESTING else DATA_DIR / "files"
 BACKUP_DIR = DATA_DIR / "backups"
 for _d in (DATA_DIR, DB_DIR, FILES_DIR, BACKUP_DIR):
     _d.mkdir(parents=True, exist_ok=True)
@@ -100,6 +102,7 @@ INSTALLED_APPS = [
     "apps.projects",
     "apps.chat",
     "apps.files",
+    "apps.firmware",
     "apps.inventory",
     "apps.production",
     "apps.integrations",
@@ -108,6 +111,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",  # outermost, so every response gets it
     "apps.core.middleware.SecurityHeadersMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -117,17 +121,60 @@ MIDDLEWARE = [
     "apps.accounts.middleware.MFARequiredMiddleware",
     "apps.accounts.middleware.UserTimezoneMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
-    "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
+
+# --- Where uploaded files are stored --------------------------------------
+#   WORKBENCH_STORAGE=local  (default) files in FILES_DIR on this server
+#   WORKBENCH_STORAGE=s3     Amazon S3 or any S3-compatible service
+#                            (Wasabi, Backblaze B2, Cloudflare R2, MinIO…)
+# Move existing files between the two with:  manage migrate_storage --to s3
+STORAGE_KIND = env("WORKBENCH_STORAGE", "local").lower()
+S3 = {
+    "bucket": env("WORKBENCH_S3_BUCKET", ""),
+    "region": env("WORKBENCH_S3_REGION", ""),
+    "endpoint": env("WORKBENCH_S3_ENDPOINT_URL", ""),  # only for non-AWS services
+    "prefix": env("WORKBENCH_S3_PREFIX", "workbench"),
+}
+
+
+def storage_backend(kind):
+    if kind == "s3":
+        options = {
+            "bucket_name": S3["bucket"],
+            "location": S3["prefix"],
+            "default_acl": None,                    # objects stay private
+            "querystring_auth": True,
+            "file_overwrite": True,                 # paths are unique (document id + version)
+            "object_parameters": {"ServerSideEncryption": "AES256"},
+        }
+        if S3["region"]:
+            options["region_name"] = S3["region"]
+        if S3["endpoint"]:
+            options["endpoint_url"] = S3["endpoint"]
+        # Keys are optional: on AWS, prefer an IAM role (EC2 instance profile / ECS task role).
+        if env("WORKBENCH_S3_ACCESS_KEY_ID"):
+            options["access_key"] = env("WORKBENCH_S3_ACCESS_KEY_ID")
+            options["secret_key"] = env("WORKBENCH_S3_SECRET_ACCESS_KEY", "")
+        return {"BACKEND": "storages.backends.s3.S3Storage", "OPTIONS": options}
+    return {"BACKEND": "django.core.files.storage.FileSystemStorage",
+            "OPTIONS": {"location": str(FILES_DIR)}}
+
+
+if STORAGE_KIND == "s3" and not S3["bucket"]:
+    raise RuntimeError("WORKBENCH_STORAGE=s3 needs WORKBENCH_S3_BUCKET.")
+
+# Both configurations, so files can be copied between them (migrate_storage).
+STORAGE_CONFIGS = {"local": storage_backend("local"), "s3": storage_backend("s3") if S3["bucket"] else None}
+STORAGES = {
+    "default": storage_backend(STORAGE_KIND),
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+}
 
 try:  # WhiteNoise serves CSS/JS efficiently from the same container.
     import whitenoise  # noqa: F401
     MIDDLEWARE.insert(1, "whitenoise.middleware.WhiteNoiseMiddleware")
     if not DEBUG and not TESTING:
-        STORAGES = {
-            "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
-            "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
-        }
+        STORAGES["staticfiles"] = {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"}
 except ImportError:
     pass
 

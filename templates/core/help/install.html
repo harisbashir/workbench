@@ -18,6 +18,38 @@ docker compose --profile https up -d</code></pre>
 <p>A small Caddy web server is added that fetches and renews a free certificate automatically. Ports 80 and 443 must be open.</p>
 <p>Without a domain, Workbench still works, for example inside a company VPN or over Tailscale. Administrators see a reminder banner about HTTPS.</p>
 
+<h2 id="storage">Where uploaded files are stored</h2>
+<p>By default, files live in <code>data/files</code> on the server. There are two alternatives:</p>
+<ul>
+  <li><strong>Another folder or disk</strong>, such as a larger drive, a NAS mount or an AWS EBS volume. Mount it into the container and set <code>WORKBENCH_FILES_DIR</code>:
+<pre><code># docker-compose.override.yml
+services:
+  workbench:
+    environment:
+      WORKBENCH_FILES_DIR: /files
+    volumes:
+      - /mnt/nas/workbench-files:/files</code></pre></li>
+  <li><strong>Amazon S3</strong>, or any S3-compatible service such as Wasabi, Backblaze B2, Cloudflare R2 or MinIO. Add to <code>.env</code>:
+<pre><code>WORKBENCH_STORAGE=s3
+WORKBENCH_S3_BUCKET=acme-workbench-files
+WORKBENCH_S3_REGION=ca-central-1
+# Leave the keys out on AWS EC2/ECS and use an IAM role instead:
+WORKBENCH_S3_ACCESS_KEY_ID=...
+WORKBENCH_S3_SECRET_ACCESS_KEY=...
+# Only for non-AWS services:
+# WORKBENCH_S3_ENDPOINT_URL=https://s3.eu-central-1.wasabisys.com</code></pre>
+  Keep the bucket private (block all public access). Files are stored encrypted (SSE-S3) and only ever downloaded through Workbench, which checks permissions. Nightly backups are also copied to <code>backups/</code> in the bucket.</li>
+</ul>
+<p><strong>Moving existing files.</strong> To copy the files you already have into S3, run this with S3 configured, then set <code>WORKBENCH_STORAGE=s3</code> and restart:</p>
+<pre><code>docker compose exec workbench manage migrate_storage --to s3 --dry-run   # see what will be copied
+docker compose exec workbench manage migrate_storage --to s3
+docker compose up -d                                                     # after changing .env</code></pre>
+<p>The command copies files and never deletes them, so you can run it again safely. <code>--to local</code> copies the other way.</p>
+<p>The IAM policy needs <code>s3:GetObject</code>, <code>s3:PutObject</code>, <code>s3:DeleteObject</code> and <code>s3:ListBucket</code> on the bucket.</p>
+
+<h2>Download everything</h2>
+<p><em>System &amp; backups → Download everything</em> creates a zip organised for people: every file in its folders, each firmware release with binaries and notes, BOMs and tasks as spreadsheets, and chat transcripts. Use it for handovers, audits or an archive. Restoring Workbench itself needs a backup instead.</p>
+
 <h2>Backups</h2>
 <ul>
   <li>A backup is taken <strong>every night</strong> automatically (the time is set in <a href="{% url 'core:system_tab' 'backups' %}">System → Backups</a>). The newest 14 are kept.</li>

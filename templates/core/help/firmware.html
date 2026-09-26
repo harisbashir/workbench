@@ -1,0 +1,45 @@
+{% extends "core/help/_layout.html" %}
+{% block help_title %}Firmware releases{% endblock %}
+{% block help %}
+<h1>Firmware releases</h1>
+<p>Workbench records every firmware version you ship, with its binaries, release notes and the board revisions it runs on. It always knows which firmware belongs on which board and which version went into which production build.</p>
+
+<h2>Firmware and releases</h2>
+<ul>
+  <li>A <strong>firmware</strong> is one image the product runs, for example <em>Main application</em>, <em>Bootloader</em> or <em>Radio co-processor</em>. Add them under the project's <em>Firmware</em> tab.</li>
+  <li>A <strong>release</strong> is one version of that firmware, such as <code>1.4.2</code>. It has the files to flash, release notes, the git tag or commit it was built from, and the <strong>compatible board revisions</strong>.</li>
+</ul>
+
+<h2>Version numbers</h2>
+<p>Workbench uses semantic versioning, <code>MAJOR.MINOR.PATCH</code>:</p>
+<table>
+  <tr><th>Change</th><th>Example</th><th>When</th></tr>
+  <tr><td>Patch</td><td>1.4.2 → 1.4.3</td><td>Bug fixes only</td></tr>
+  <tr><td>Minor</td><td>1.4.3 → 1.5.0</td><td>New features, still compatible</td></tr>
+  <tr><td>Major</td><td>1.5.0 → 2.0.0</td><td>Breaking changes, e.g. a new flash layout or protocol</td></tr>
+  <tr><td>Pre-release</td><td>2.0.0-rc.1</td><td>Candidates for testing before the final 2.0.0</td></tr>
+</table>
+<p>Every release needs a new number, and a released version never changes. That's what makes firmware traceable.</p>
+
+<h2>From draft to production</h2>
+<ol>
+  <li><strong>Draft:</strong> create the release, upload the image (<code>.bin</code>, <code>.hex</code>, <code>.uf2</code>…) and, ideally, the <code>.elf</code> with debug symbols. Write release notes and mention task IDs such as <code>PWR-12</code>.</li>
+  <li><strong>Testing:</strong> the team flashes it on test boards. Files can still be replaced.</li>
+  <li><strong>Released:</strong> the project lead (or an administrator) approves it. It needs at least one file and its compatible board revisions. The files are then locked, and older released versions for the same boards are marked <em>deprecated</em> automatically.</li>
+  <li><strong>Deprecated</strong> means a newer version replaced it. <strong>Recalled</strong> means it must not be used: give a reason, and everyone on the project is notified. Builds using it can't be started.</li>
+</ol>
+
+<h2>Board revisions and firmware</h2>
+<p>Each release lists the board revisions it runs on, so Rev A and Rev B can have different firmware. The project's <em>Firmware</em> tab has a table showing the recommended version for each revision: the newest <em>released</em> version marked compatible with it. The revision page shows the same.</p>
+
+<h2>Production builds</h2>
+<p>On a build, choose the firmware to flash. The build page shows each file's SHA-256 checksum and warns if a version isn't released, isn't marked compatible with the board, has a newer release, or has been recalled.</p>
+
+<h2>Checking a downloaded file</h2>
+<pre><code>sha256sum firmware.bin                      # Linux / macOS
+certutil -hashfile firmware.bin SHA256      # Windows</code></pre>
+<p>The result must match the checksum on the release page.</p>
+
+<h2>Automatic releases from GitHub</h2>
+<p>When you publish a GitHub release with a tag like <code>v1.4.2</code>, Workbench creates release 1.4.2 in <em>Testing</em>, with the GitHub release notes. Then attach the binaries. Each firmware has a <em>tag prefix</em>, so tags like <code>boot-v1.0.0</code> can go to the bootloader instead. This needs the <strong>Releases</strong> event ticked on the GitHub webhook.</p>
+{% endblock %}

@@ -12,6 +12,7 @@ import os
 import re
 
 from django.conf import settings
+from django.core.files.storage import default_storage
 from django.db import models
 from django.db.models import Q, Sum
 from django.urls import reverse
@@ -191,12 +192,15 @@ class Document(models.Model):
     def purge(self):
         for v in self.versions.all():
             v.file.delete(save=False)
-        folder = os.path.join(settings.MEDIA_ROOT, self.space, str(self.pk))
+        space, pk = self.space, self.pk
         self.delete()
-        try:
-            os.rmdir(folder)
-        except OSError:
-            pass
+        # Tidy the now-empty folder when files are stored locally.
+        location = getattr(getattr(default_storage, "_wrapped", default_storage), "location", None)
+        if location:
+            try:
+                os.rmdir(os.path.join(location, space, str(pk)))
+            except OSError:
+                pass
 
 
 def version_path(instance, filename):

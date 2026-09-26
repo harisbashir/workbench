@@ -88,3 +88,22 @@ class StorageSettingsForm(forms.ModelForm):
         if not 0 <= h <= 23:
             raise forms.ValidationError("Use an hour from 0 to 23.")
         return h
+
+
+class LogoForm(forms.Form):
+    logo = forms.FileField(required=False, label="Logo (for light backgrounds)",
+                           help_text="SVG, or PNG/WebP with a transparent background. Wide logos work best, e.g. 400×100 px. Max 1 MB.")
+    logo_dark = forms.FileField(required=False, label="Logo for the dark menu bar",
+                                help_text="A light/white version of your logo. If you don't add one, the main logo is shown on a white badge.")
+
+    def clean(self):
+        from .branding import validate_logo
+        data = super().clean()
+        for field in ("logo", "logo_dark"):
+            f = data.get(field)
+            if f:
+                try:
+                    data[field] = validate_logo(f)
+                except forms.ValidationError as e:
+                    self.add_error(field, e)
+        return data

@@ -42,7 +42,7 @@ class POLineForm(forms.ModelForm):
 class BuildForm(forms.ModelForm):
     class Meta:
         model = BuildOrder
-        fields = ["revision", "quantity", "manufacturer", "due_date", "serial_prefix", "notes"]
+        fields = ["revision", "quantity", "manufacturer", "due_date", "serial_prefix", "firmware_releases", "notes"]
         widgets = {"due_date": DateInput(), "notes": forms.Textarea(attrs={"rows": 3})}
 
     def __init__(self, user, *args, **kwargs):
@@ -51,6 +51,20 @@ class BuildForm(forms.ModelForm):
             project__in=Project.objects.visible_to(user)).exclude(status=Revision.Status.OBSOLETE).select_related("project")
         self.fields["manufacturer"].queryset = Supplier.objects.filter(kind__in=["assembly", "pcb", "other"])
         self.fields["manufacturer"].empty_label = "In-house"
+        from apps.firmware.models import FirmwareRelease
+        self.fields["firmware_releases"].queryset = FirmwareRelease.objects.filter(
+            firmware__project__in=Project.objects.visible_to(user), status__in=["released", "testing"]
+        ).select_related("firmware__project").order_by("firmware__project__key", "firmware__name", "-sort_key")
+        self.fields["firmware_releases"].label_from_instance = lambda r: f"{r.firmware.project.key} · {r.firmware.name} {r.version}" + (" (testing)" if r.status == "testing" else "")
+        self.fields["firmware_releases"].widget = forms.CheckboxSelectMultiple(choices=self.fields["firmware_releases"].choices)
+
+    def clean(self):
+        data = super().clean()
+        rev = data.get("revision")
+        for r in data.get("firmware_releases") or []:
+            if rev and r.firmware.project_id != rev.project_id:
+                self.add_error("firmware_releases", f"{r} belongs to a different project.")
+        return data
 
 
 class CompleteForm(forms.Form):
@@ -189,8 +203,27 @@ def build_detail(request, pk):
     if not b.revision.project.can_view(request.user):
         raise PermissionDenied
     reqs = b.requirements()
+    firmware = []
+    for r in b.firmware_releases.select_related("firmware").prefetch_related("artifacts", "revisions"):
+        issues = []
+        if r.status == "recalled":
+            issues.append(("bad", "RECALLED — do not flash"))
+        elif r.status != "released":
+            issues.append(("warn", f"{r.get_status_display()} — not released yet"))
+        if not r.revisions.filter(pk=b.revision_id).exists():
+            issues.append(("warn", f"not marked compatible with {b.revision.name}"))
+        newer = r.firmware.recommended_for(b.revision)
+        if newer and newer.sort_key > r.sort_key:
+            issues.append(("warn", f"newer release {newer.version} is available"))
+        firmware.append({"rel": r, "issues": issues})
+    from apps.firmware.models import FirmwareRelease
+    fw_choices = list(FirmwareRelease.objects.filter(firmware__project=b.revision.project, status__in=["released", "testing"])
+                      .select_related("firmware").order_by("firmware__name", "-sort_key"))
+    recommended = {fw.pk: fw.recommended_for(b.revision) for fw in {r.firmware for r in fw_choices}}
+    for r in fw_choices:
+        r.recommended = recommended.get(r.firmware_id) == r
     return render(request, "production/build_detail.html", {
-        "b": b, "reqs": reqs, "short": [r for r in reqs if r["short"]],
+        "b": b, "reqs": reqs, "short": [r for r in reqs if r["short"]], "firmware": firmware, "fw_choices": fw_choices,
         "complete_form": CompleteForm(initial={"passed": b.quantity, "failed": 0}),
         "can_edit": request.user.can_manage_procurement,
     })
@@ -202,6 +235,9 @@ def build_action(request, pk):
     b = get_object_or_404(BuildOrder.objects.select_related("revision__project"), pk=pk)
     action = request.POST.get("action")
     project = b.revision.project
+    if action == "start" and b.status == BuildOrder.Status.PLANNED and b.firmware_releases.filter(status="recalled").exists():
+        messages.error(request, "This build uses recalled firmware. Choose a different firmware version before starting.")
+        return redirect(b)
     if action == "start" and b.status == BuildOrder.Status.PLANNED:
         if b.shortage_count and "force" not in request.POST:
             messages.error(request, "Some parts are short. Order them first, or tick “start anyway”.")
@@ -227,6 +263,12 @@ def build_action(request, pk):
         b.status = BuildOrder.Status.CANCELLED
         b.save(update_fields=["status"])
         messages.info(request, f"{b.number} cancelled.")
+    elif action == "set_firmware" and b.status in (BuildOrder.Status.PLANNED, BuildOrder.Status.IN_PROGRESS):
+        from apps.firmware.models import FirmwareRelease
+        chosen = FirmwareRelease.objects.filter(pk__in=request.POST.getlist("firmware"), firmware__project=project)
+        b.firmware_releases.set(chosen)
+        log_activity(project, f"set firmware for build {b.number}: " + (", ".join(str(r) for r in chosen) or "none"), actor=request.user, url=b.get_absolute_url())
+        messages.success(request, "Firmware for this build saved.")
     elif action == "order_shortages":
         created = _order_shortages(request, b)
         if created:

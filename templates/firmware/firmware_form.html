@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}{% if fw %}Edit {{ fw.name }}{% else %}Add firmware{% endif %}{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles">
+  <div class="crumbs"><a href="{{ project.get_absolute_url }}">{{ project.name }}</a> / <a href="{% url 'firmware:project' project.key %}">Firmware</a> /</div>
+  <h1>{% if fw %}Edit {{ fw.name }}{% else %}Add firmware{% endif %}</h1>
+  {% if not fw %}<p class="intro">A firmware is one image the product runs. Most boards have one (“Main application”); add another for a bootloader or a second processor.</p>{% endif %}
+</div></div>
+<div class="card form-card"><div class="card-body">
+  <form method="post" novalidate>{% csrf_token %}
+    {% include "partials/form.html" with grid=True %}
+    <div class="form-actions"><button class="btn btn-primary">Save</button>
+      <a class="btn btn-ghost" href="{% if fw %}{{ fw.get_absolute_url }}{% else %}{% url 'firmware:project' project.key %}{% endif %}">Cancel</a></div>
+  </form>
+</div></div>
+{% endblock %}

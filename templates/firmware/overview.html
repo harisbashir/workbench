@@ -1,0 +1,17 @@
+{% extends "base.html" %}{% load workbench humanize %}
+{% block title %}Firmware{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles"><h1>Firmware</h1>
+  <p class="intro">Firmware across all your projects. Open a project's <em>Firmware</em> tab to add firmware and releases. <a href="{% url 'core:help_topic' 'firmware' %}">How firmware releases work →</a></p></div></div>
+<div class="card">{% if firmwares %}<div class="table-wrap"><table class="table">
+  <thead><tr><th>Firmware</th><th>Project</th><th>Target</th><th>Latest released</th><th class="num">In testing</th><th class="num">Releases</th></tr></thead>
+  <tbody>{% for fw in firmwares %}<tr><td><a href="{{ fw.get_absolute_url }}"><strong>{{ fw.name }}</strong></a></td><td><span class="key">{{ fw.project.key }}</span></td><td class="small">{{ fw.target }}</td>
+    <td>{% if fw.latest %}<a class="mono" href="{{ fw.latest.get_absolute_url }}">{{ fw.latest.version }}</a> <span class="small faint">{{ fw.latest.released_at|naturalday }}</span>{% else %}<span class="faint">—</span>{% endif %}</td>
+    <td class="num">{{ fw.testing }}</td><td class="num">{{ fw.n }}</td></tr>{% endfor %}</tbody></table></div>
+{% else %}<div class="empty">{% icon 'cpu' 40 %}<h3>No firmware yet</h3><p>Open a project and choose the <em>Firmware</em> tab to add its firmware.</p><a class="btn" href="{% url 'projects:list' %}">Go to projects</a></div>{% endif %}</div>
+{% if recent %}
+<div class="section-title"><h2>Recent releases</h2></div>
+<div class="card"><div class="card-body"><ul class="list-plain">
+  {% for r in recent %}<li><span class="key">{{ r.firmware.project.key }}</span><a href="{{ r.get_absolute_url }}">{{ r.firmware.name }} <span class="mono">{{ r.version }}</span></a>{% status_badge r.status r.get_status_display %}<span class="right small faint">{{ r.created_at|naturaltime }}</span></li>{% endfor %}
+</ul></div></div>{% endif %}
+{% endblock %}

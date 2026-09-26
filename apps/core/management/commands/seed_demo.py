@@ -230,6 +230,38 @@ class Command(BaseCommand):
         put(pwr, ["Task files", "PWR-4"], "pvd-flush-timing.csv", b"run,pvd_to_flush_ms\n1,2.9\n2,3.1\n3,3.0\n", u["bilal"],
             task=Task.objects.get(project=pwr, number=4))
 
+        # Firmware
+        from apps.firmware.models import Firmware, FirmwareArtifact, FirmwareRelease
+        FR = FirmwareRelease.Status
+        app_fw = Firmware.objects.create(project=pwr, name="Main application", target="STM32G031K8", created_by=u["bilal"],
+                                         description="Power supervisor: PVD brown-out handling, fuel gauge, logging over UART.")
+        boot_fw = Firmware.objects.create(project=pwr, name="Bootloader", target="STM32G031K8", tag_prefix="boot-v", created_by=u["bilal"],
+                                          description="UART/USB DFU bootloader with image CRC check.")
+        def fw_release(fw, version, status, revs, notes, days_ago, files):
+            r = FirmwareRelease.objects.create(firmware=fw, version=version, status=status, notes=notes, created_by=u["bilal"],
+                                               git_ref=f"{fw.tag_prefix}{version}")
+            r.revisions.set(revs)
+            if status in (FR.RELEASED, FR.DEPRECATED):
+                r.released_at, r.released_by = now - timedelta(days=days_ago - 1), u["ayesha"]
+                if status == FR.DEPRECATED:
+                    r.status_note = "Superseded"
+                r.save()
+            for name, size in files:
+                blob = (f"{fw.name} {version} ".encode() * (size // 20 + 1))[:size]
+                FirmwareArtifact.store(r, SimpleUploadedFile(name, blob), u["bilal"])
+            FirmwareRelease.objects.filter(pk=r.pk).update(created_at=now - timedelta(days=days_ago))
+            return r
+        fw_release(app_fw, "1.2.0", FR.DEPRECATED, [rev_a], "### Changes\n- First field release for Rev A\n- UART logging at 115200", 70,
+                   [("pwr-app-1.2.0.bin", 41200), ("pwr-app-1.2.0.elf", 380000)])
+        fw_app_13 = fw_release(app_fw, "1.3.0", FR.RELEASED, [rev_a, rev_b],
+                               "### Changes\n- Support Rev B feedback divider (PWR-2)\n- Fuel gauge polling every 5 s\n\n### Fixes\n- Watchdog reset during flash writes", 20,
+                               [("pwr-app-1.3.0.bin", 43800), ("pwr-app-1.3.0.hex", 123400), ("pwr-app-1.3.0.elf", 402000)])
+        fw_release(app_fw, "1.4.0-rc.1", FR.TESTING, [rev_b],
+                   "### Changes\n- Brown-out detection and safe shutdown (PWR-4)\n- I2C fuel gauge with DMA (PWR-5)\n\n### Known issues\n- Log flush can take 3.1 ms at -20 °C", 2,
+                   [("pwr-app-1.4.0-rc.1.bin", 45100), ("pwr-app-1.4.0-rc.1.elf", 415000)])
+        fw_boot = fw_release(boot_fw, "1.0.0", FR.RELEASED, [rev_a, rev_b], "### Changes\n- DFU over USB and UART\n- CRC32 image check before jump", 80,
+                             [("pwr-boot-1.0.0.bin", 12288)])
+
         # Purchasing and production
         po = PurchaseOrder.objects.create(supplier=s["LCSC"], created_by=u["fatima"], reference="LC-20260918-7731",
                                           expected_date=(now + timedelta(days=5)).date(), shipping_cost=Decimal("18.00"))
@@ -241,9 +273,10 @@ class Command(BaseCommand):
         pcb_po = PurchaseOrder.objects.create(supplier=s["JLCPCB"], created_by=u["fatima"], notes="Rev A bare boards")
         pcb_po.lines.create(part=pcb_b, quantity=20, unit_cost=Decimal("1.20"))
 
-        BuildOrder.objects.create(revision=rev_b, quantity=25, manufacturer=s["Lahore Electronics Assembly"], created_by=u["fatima"],
+        evt = BuildOrder.objects.create(revision=rev_b, quantity=25, manufacturer=s["Lahore Electronics Assembly"], created_by=u["fatima"],
                                   due_date=(now + timedelta(days=30)).date(), serial_prefix="PWRB-26-",
                                   notes="EVT build for field trials. 5 units go to Toronto.")
+        evt.firmware_releases.set([fw_app_13, fw_boot])
         done = BuildOrder.objects.create(revision=rev_a, quantity=10, created_by=u["fatima"], status=BuildOrder.Status.COMPLETED,
                                          completed_qty=9, failed_qty=1, stock_consumed=True,
                                          started_at=now - timedelta(days=40), completed_at=now - timedelta(days=33),

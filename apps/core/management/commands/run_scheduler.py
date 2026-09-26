@@ -31,6 +31,10 @@ def tick(now=None):
     local = now.astimezone(tz)
     if email.send_pending_notifications():
         done.append("emails")
+    from apps.core import export
+    if export.run_pending():
+        export.prune_exports()
+        done.append("export")
     last = site.last_backup_at.astimezone(tz).date() if site.last_backup_at else None
     if site.backup_enabled and local.hour == site.backup_hour and last != local.date():
         system.create_backup("nightly")

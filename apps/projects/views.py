@@ -363,6 +363,8 @@ def revision_detail(request, key, pk):
         "builds": BuildOrder.objects.filter(revision=rev),
         "can_edit": project.can_edit(request.user),
         "revisions": project.revisions.all(),
+        "firmware": [(fw, fw.recommended_for(rev), fw.releases.filter(revisions=rev, status="testing").order_by("-sort_key").first())
+                     for fw in project.firmwares.all()],
     })
 
 

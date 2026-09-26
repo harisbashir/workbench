@@ -1,0 +1,42 @@
+{% extends "base.html" %}{% load workbench humanize %}
+{% block title %}{{ fw.name }} · Firmware{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles">
+  <div class="crumbs"><a href="{{ project.get_absolute_url }}">{{ project.name }}</a> / <a href="{% url 'firmware:project' project.key %}">Firmware</a> /</div>
+  <h1>{% icon 'cpu' 22 %} {{ fw.name }}</h1>
+  <p class="intro">{% if fw.target %}<span class="meta-item">Target {{ fw.target }}</span>{% endif %}{% if fw.repo %}<span class="meta-item"><a href="https://github.com/{{ fw.repo }}" target="_blank" rel="noopener">{{ fw.repo }}</a></span>{% endif %}<span class="meta-item">tags <code>{{ fw.tag_prefix }}1.2.3</code></span></p>
+  {% if fw.description %}<p class="intro">{{ fw.description }}</p>{% endif %}</div>
+  <div class="actions">{% if can_edit %}<a class="btn" href="{% url 'firmware:edit' project.key fw.slug %}">{% icon 'edit' 16 %} Edit</a>
+    <a class="btn btn-primary" href="{% url 'firmware:release_create' project.key fw.slug %}">{% icon 'plus' 16 %} New release</a>{% endif %}</div></div>
+
+<div class="grid grid-main">
+  <div class="card">
+    <div class="card-head"><h2>Releases</h2>
+      <form method="get"><select name="status" data-autosubmit aria-label="Status"><option value="">All statuses</option>
+        {% for s, label in statuses %}<option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></form></div>
+    {% if releases %}<div class="table-wrap"><table class="table">
+      <thead><tr><th>Version</th><th>Status</th><th>Board revisions</th><th class="num">Files</th><th>Date</th></tr></thead>
+      <tbody>{% for r in releases %}<tr class="{% if r.status == 'recalled' %}row-bad{% elif r.status == 'deprecated' %}row-muted{% endif %}">
+        <td><a href="{{ r.get_absolute_url }}"><strong class="mono">{{ r.version }}</strong></a>{% if r.git_ref %}<br><span class="small faint mono">{{ r.git_ref }}</span>{% endif %}</td>
+        <td>{% status_badge r.status r.get_status_display %}</td>
+        <td class="small">{% for rev in r.revisions.all %}{{ rev.name }}{% if not forloop.last %}, {% endif %}{% empty %}<span class="warn-text">not set</span>{% endfor %}</td>
+        <td class="num">{{ r.n_art }}</td>
+        <td class="small nowrap">{% if r.released_at %}{{ r.released_at|naturalday }}{% else %}{{ r.created_at|naturalday }}{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+    {% else %}<div class="empty">{% icon 'tag' 36 %}<h3>No releases{% if status %} with this status{% endif %}</h3>
+      {% if can_edit and not status %}<p>Create the first release and upload its binary (.bin, .hex, .elf, .uf2…).</p><a class="btn btn-primary" href="{% url 'firmware:release_create' project.key fw.slug %}">New release</a>{% endif %}</div>{% endif %}
+  </div>
+  <div class="stack">
+    <div class="card"><div class="card-head"><h3>Recommended per board</h3></div><div class="card-body">
+      {% for rev in revisions %}{% with rec=fw|recommended:rev %}<div class="kv"><a href="{{ rev.get_absolute_url }}">{{ rev.name }}</a><span>{% if rec %}<a href="{{ rec.get_absolute_url }}"><strong>{{ rec.version }}</strong></a>{% else %}<span class="faint">none released</span>{% endif %}</span></div>{% endwith %}
+      {% empty %}<p class="muted small">No board revisions yet.</p>{% endfor %}
+    </div></div>
+    <div class="card"><div class="card-head"><h3>Release statuses</h3></div><div class="card-body small">
+      <p>{% status_badge 'draft' 'Draft' %} being prepared</p>
+      <p>{% status_badge 'testing' 'Testing' %} on test hardware</p>
+      <p>{% status_badge 'released' 'Released' %} approved for production — locked</p>
+      <p>{% status_badge 'deprecated' 'Deprecated' %} superseded by a newer version</p>
+      <p>{% status_badge 'recalled' 'Recalled' %} must not be used</p>
+    </div></div>
+  </div>
+</div>
+{% endblock %}

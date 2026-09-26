@@ -1,0 +1,3 @@
+-r requirements.txt
+moto[s3]>=5    # fake S3 for the storage tests
+ruff

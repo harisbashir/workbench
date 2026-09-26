@@ -19,9 +19,12 @@ from datetime import datetime, timezone as dt_timezone
 from pathlib import Path
 
 from django.conf import settings
+from django.core.files.storage import default_storage
 from django.core.management import call_command
 from django.db import connection
 from django.utils import timezone
+
+from .storage import is_s3, storage_info, stored_files, write_exact
 
 log = logging.getLogger("workbench")
 
@@ -104,16 +107,36 @@ def create_backup(reason="manual"):
             if secrets_file.exists():
                 z.write(secrets_file, "secrets.json")
             n = 0
-            for root, _dirs, files in os.walk(settings.FILES_DIR):
-                for f in files:
-                    full = Path(root) / f
-                    arc = "files/" + str(full.relative_to(settings.FILES_DIR)).replace(os.sep, "/")
-                    method = zipfile.ZIP_STORED if full.suffix.lower() in STORED else zipfile.ZIP_DEFLATED
-                    z.write(full, arc, compress_type=method)
-                    n += 1
+            if not is_s3():
+                for root, _dirs, files in os.walk(settings.FILES_DIR):
+                    for f in files:
+                        full = Path(root) / f
+                        arc = "files/" + str(full.relative_to(settings.FILES_DIR)).replace(os.sep, "/")
+                        method = zipfile.ZIP_STORED if full.suffix.lower() in STORED else zipfile.ZIP_DEFLATED
+                        z.write(full, arc, compress_type=method)
+                        n += 1
+            else:
+                # S3: copy every file Workbench references into the zip.
+                missing = []
+                for name, _size in stored_files():
+                    try:
+                        with default_storage.open(name, "rb") as src, z.open("files/" + name, "w", force_zip64=True) as dst:
+                            shutil.copyfileobj(src, dst, 1024 * 1024)
+                        n += 1
+                    except Exception:
+                        missing.append(name)
+                manifest["missing_files"] = missing
             manifest["files"] = n
+            manifest["storage"] = storage_info()["kind"]
             z.writestr("manifest.json", json.dumps(manifest, indent=2))
     tmp.replace(final)
+    if is_s3():
+        # Also keep an off-server copy next to the files in the bucket.
+        try:
+            with open(final, "rb") as fh:
+                write_exact(f"backups/{final.name}", fh)
+        except Exception:
+            log.exception("Couldn't copy backup %s to S3", final.name)
     from .models import SiteSettings
     SiteSettings.objects.filter(pk=1).update(last_backup_at=timezone.now())
     log.info("Backup created: %s (%s)", final.name, reason)
@@ -126,6 +149,13 @@ def prune_backups(keep):
     for item in list_backups()[keep:]:
         (Path(settings.BACKUP_DIR) / item["name"]).unlink(missing_ok=True)
         removed.append(item["name"])
+    if is_s3():
+        try:
+            _dirs, remote = default_storage.listdir("backups")
+            for name in sorted((n for n in remote if n.startswith("workbench-")), reverse=True)[keep:]:
+                default_storage.delete(f"backups/{name}")
+        except Exception:
+            log.exception("Couldn't prune backups in S3")
     return removed
 
 
@@ -143,19 +173,27 @@ def restore_backup(zip_path):
         stamp = timezone.now().strftime("%Y%m%d-%H%M%S")
         safety = Path(settings.DATA_DIR) / f"pre-restore-{stamp}"
         safety.mkdir()
-        # Keep the current data aside so a mistaken restore can be undone.
-        if Path(settings.FILES_DIR).exists():
-            shutil.move(str(settings.FILES_DIR), safety / "files")
-        Path(settings.FILES_DIR).mkdir(parents=True, exist_ok=True)
         secrets_file = Path(settings.DATA_DIR) / "secrets.json"
         if secrets_file.exists():
             shutil.copy2(secrets_file, safety / "secrets.json")
-        for n in names:
-            if n.startswith("files/") and not n.endswith("/"):
-                target = Path(settings.FILES_DIR) / n[len("files/"):]
-                target.parent.mkdir(parents=True, exist_ok=True)
-                with z.open(n) as src, open(target, "wb") as dst:
-                    shutil.copyfileobj(src, dst)
+        if not is_s3():
+            # Keep the current files aside so a mistaken restore can be undone.
+            if Path(settings.FILES_DIR).exists():
+                shutil.move(str(settings.FILES_DIR), safety / "files")
+            Path(settings.FILES_DIR).mkdir(parents=True, exist_ok=True)
+            for n in names:
+                if n.startswith("files/") and not n.endswith("/"):
+                    target = Path(settings.FILES_DIR) / n[len("files/"):]
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    with z.open(n) as src, open(target, "wb") as dst:
+                        shutil.copyfileobj(src, dst)
+        else:
+            # S3: upload each file back under its original key (versions are
+            # immutable paths, so existing objects are simply replaced).
+            for n in names:
+                if n.startswith("files/") and not n.endswith("/"):
+                    with z.open(n) as src:
+                        write_exact(n[len("files/"):], src)
         if "secrets.json" in names:
             secrets_file.write_bytes(z.read("secrets.json"))
             os.chmod(secrets_file, 0o600)

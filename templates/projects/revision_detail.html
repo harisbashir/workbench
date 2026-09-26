@@ -40,6 +40,11 @@
       {% else %}<p class="muted small">Nothing open for this revision.</p>{% endif %}
       {% if can_edit %}<a class="btn btn-sm" href="{% url 'projects:task_create' project.key %}?revision={{ rev.pk }}">{% icon 'plus' 14 %} Task for {{ rev.name }}</a>{% endif %}
     </div></div>
+    <div class="card"><div class="card-head"><h3>{% icon 'cpu' 16 %} Firmware for {{ rev.name }}</h3></div><div class="card-body">
+      {% for fw, rec, testing in firmware %}<div class="kv"><a href="{{ fw.get_absolute_url }}">{{ fw.name }}</a>
+        <span>{% if rec %}<a class="mono" href="{{ rec.get_absolute_url }}"><strong>{{ rec.version }}</strong></a>{% else %}<span class="faint">none released</span>{% endif %}{% if testing %} <a class="small" href="{{ testing.get_absolute_url }}">({{ testing.version }} testing)</a>{% endif %}</span></div>
+      {% empty %}<p class="muted small">No firmware yet. <a href="{% url 'firmware:project' project.key %}">Add firmware</a></p>{% endfor %}
+    </div></div>
     <div class="card"><div class="card-head"><h3>Builds</h3></div><div class="card-body">
       {% for b in builds %}<div class="kv"><a href="{{ b.get_absolute_url }}">{{ b.number }} × {{ b.quantity }}</a>{% status_badge b.status b.get_status_display %}</div>
       {% empty %}<p class="muted small">No builds yet.</p>{% endfor %}

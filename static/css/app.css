@@ -406,3 +406,29 @@ kbd { font-family: var(--mono); font-size: .8em; border: 1px solid var(--border-
   body { background: #fff; }
 }
 .meta-item + .meta-item::before { content: " · "; color: var(--text-3); }
+.warn-text { color: var(--warning); }
+.ok-text { color: var(--accent-text); }
+.changelog-entry { padding: 10px 0; border-bottom: 1px solid var(--border); }
+.changelog-entry:last-child { border-bottom: 0; }
+.changelog-entry h3 { margin-bottom: 4px; }
+details.recall { margin: 8px 0 12px; }
+details.recall summary { cursor: pointer; color: var(--danger); list-style: none; }
+details.recall form { margin-top: 8px; display: grid; gap: 8px; justify-items: start; }
+.brand-logo { display: block; max-height: 36px; max-width: 180px; width: auto; height: auto; }
+.auth-card .brand-logo { max-height: 56px; max-width: 260px; }
+.brand-badge { background: #fff; border-radius: 8px; padding: 6px 10px; display: inline-block; }
+.logo-preview { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+.logo-preview > div { flex: 1; min-width: 200px; border: 1px solid var(--border); border-radius: 10px; padding: 16px; display: grid; gap: 10px; justify-items: start; }
+.logo-preview .on-light { background: #fff; }
+.logo-preview .on-dark { background: var(--sidebar); color: var(--sidebar-text); }
+.logo-preview img { max-height: 56px; max-width: 220px; }
+.logo-preview .caption { font-size: .8rem; color: var(--text-3); }
+.logo-preview .on-dark .caption { color: #8a95a6; }
+.badge-ready { background: var(--accent-soft); color: var(--accent-text); }
+.badge-running { background: var(--info-soft); color: var(--info); }
+.badge-failed { background: var(--danger-soft); color: var(--danger); }
+.badge-recalled { background: var(--danger-soft); color: var(--danger); font-weight: 700; }
+.badge-deprecated { background: var(--surface-2); color: var(--text-3); }
+.badge-testing { background: var(--purple-soft); color: var(--purple); }
+.md-h { display: inline-block; margin-top: 4px; font-size: 1.02em; }
+.logo-preview .on-dark .link-btn { color: #8fe0c7; }

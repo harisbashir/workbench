@@ -24,6 +24,7 @@
 <div class="grid grid-2">
   <div class="card"><div class="card-head"><h2>Installation</h2></div><div class="card-body">
     <div class="kv"><span>Data folder</span><code>{{ data_dir }}</code></div>
+    <div class="kv"><span>Uploaded files</span><span>{% if storage.kind == 's3' %}{{ storage.label }}: <code>{{ storage.bucket }}/{{ storage.prefix }}</code>{% else %}<code>{{ storage.path }}</code>{% endif %}</span></div>
     <div class="kv"><span>Database</span><span>{{ db_vendor }}</span></div>
     <div class="kv"><span>Address</span><span>{{ site.site_url|default:"not set" }}</span></div>
     <div class="kv"><span>HTTPS</span><span>{% if https %}<span class="badge badge-done">On</span> {{ domain }}{% else %}<span class="badge badge-high">Off</span>{% endif %}</span></div>
@@ -56,6 +57,18 @@
       {% else %}<div class="empty"><h3>No backups yet</h3><p>Press <em>Back up now</em>, or wait for tonight's automatic backup.</p></div>{% endif %}
       <div class="card-foot small muted">Stored on the server in <code>data/backups</code> (next to <code>docker-compose.yml</code>). Each backup holds the database, every file and the encryption keys — keep downloads somewhere safe.</div>
     </div>
+    <div class="card" id="exports"><div class="card-head"><h2>Download everything</h2></div><div class="card-body">
+      <p class="small">An organised copy of all your data for people to read — every file in its folders, all firmware releases with binaries and notes, BOMs, tasks, chat transcripts, parts and orders as spreadsheets. Opens without Workbench.</p>
+      <form method="post" action="{% url 'core:system_action' %}" class="btn-row">{% csrf_token %}
+        <label class="check-label small"><input type="checkbox" name="include_versions" value="1"> Include older file versions</label>
+        <button class="btn btn-primary btn-sm" name="action" value="request_export">{% icon 'download' 14 %} Prepare download</button></form>
+      {% if exports %}<p></p><div class="table-wrap"><table class="table"><thead><tr><th>Requested</th><th>By</th><th>Status</th><th class="num">Size</th><th></th></tr></thead><tbody>
+      {% for e in exports %}<tr><td class="small">{{ e.created_at|naturaltime }}</td><td class="small">{{ e.requested_by|default:"—" }}</td>
+        <td>{% status_badge e.status e.get_status_display %}{% if e.message %}<br><span class="small faint">{{ e.message }}</span>{% endif %}</td>
+        <td class="num">{% if e.size %}{{ e.size|filesizeformat }}{% endif %}</td>
+        <td class="right">{% if e.status == 'ready' %}<form method="post" action="{% url 'core:system_action' %}">{% csrf_token %}<input type="hidden" name="name" value="{{ e.file_name }}"><button class="btn btn-sm" name="action" value="download_export">{% icon 'download' 14 %} Download</button></form>{% endif %}</td></tr>{% endfor %}
+      </tbody></table></div>{% endif %}
+    </div></div>
     <div class="card"><div class="card-head"><h3>Restoring a backup</h3></div><div class="card-body small">
       <p>Restoring replaces everything with the backup's contents. Your current data is kept in a <code>pre-restore-…</code> folder just in case. On the server:</p>
       <pre><code>docker compose stop workbench
@@ -95,7 +108,7 @@ docker compose start workbench</code></pre>
       {% if env_override %}<p class="small muted">Set by the server's <code>WORKBENCH_GITHUB_WEBHOOK_SECRET</code> environment variable.</p>
       {% else %}<div class="copy-box"><input id="secret" type="text" readonly value="{{ secret }}"><button class="btn btn-sm" type="button" data-copy="#secret">Copy</button></div>{% endif %}</div>
     <div class="kv"><span>Content type</span><code>application/json</code></div>
-    <div class="kv"><span>Events</span><span>Pull requests, Pull request reviews, Pushes, Workflow runs</span></div>
+    <div class="kv"><span>Events</span><span>Pull requests, Pull request reviews, Pushes, Workflow runs, Releases</span></div>
     <p></p>
     {% if not env_override %}<form method="post" action="{% url 'core:system_action' %}" data-confirm="Generate a new secret? GitHub deliveries will be rejected until you paste it into GitHub.">{% csrf_token %}
       <button class="btn btn-sm btn-danger" name="action" value="rotate_github_secret">Generate a new secret</button></form>{% endif %}
@@ -107,8 +120,22 @@ docker compose start workbench</code></pre>
 </div>
 
 {% else %}
-<div class="card form-card"><div class="card-body">
+<div class="grid grid-main">
+<div class="card"><div class="card-head"><h2>Company</h2></div><div class="card-body">
   <form method="post" novalidate>{% csrf_token %}{% include "partials/form.html" %}<button class="btn btn-primary">Save</button></form>
 </div></div>
+<div class="card"><div class="card-head"><h2>{% icon 'image' 16 %} Logo</h2></div><div class="card-body">
+  <div class="logo-preview">
+    <div class="on-light">{% if site.logo %}<img src="{% url 'core:logo' 'light' %}?v={{ site.logo_version }}" alt="Current logo">{% else %}<span class="muted small">No logo — the company name is shown.</span>{% endif %}<span class="caption">Sign-in page and printouts</span>
+      {% if site.logo %}<form method="post" action="{% url 'core:system_action' %}">{% csrf_token %}<input type="hidden" name="which" value="logo"><button class="link-btn small" name="action" value="remove_logo">Remove</button></form>{% endif %}</div>
+    <div class="on-dark">{% include "partials/brand.html" with dark=True SITE=site %}<span class="caption">Menu bar</span>
+      {% if site.logo_dark %}<form method="post" action="{% url 'core:system_action' %}">{% csrf_token %}<input type="hidden" name="which" value="logo_dark"><button class="link-btn small" name="action" value="remove_logo">Remove</button></form>{% endif %}</div>
+  </div>
+  <form method="post" action="{% url 'core:system_action' %}" enctype="multipart/form-data" novalidate>{% csrf_token %}
+    {% include "partials/form.html" with form=logo_form %}
+    <button class="btn btn-primary" name="action" value="upload_logo">{% icon 'upload' 16 %} Upload</button></form>
+  <p class="small muted">SVG files are cleaned on upload (scripts and external links removed) before they're used.</p>
+</div></div>
+</div>
 {% endif %}
 {% endblock %}

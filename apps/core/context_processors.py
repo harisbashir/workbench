@@ -14,7 +14,7 @@ def workbench(request):
         ctx["unread_chat"] = unread_total(user)
         path = request.path
         for section in ("projects", "chat", "parts", "production", "integrations", "help", "accounts", "audit", "my-work",
-                        "files", "time", "system"):
+                        "files", "time", "system", "firmware"):
             if path.startswith(f"/{section}"):
                 ctx["section"] = section
                 break

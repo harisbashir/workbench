@@ -3,7 +3,7 @@ from django.shortcuts import redirect
 from django.urls import reverse
 
 # Paths a signed-in user may visit before finishing two-factor authentication.
-ALLOWED_PREFIXES = ("/static/", "/integrations/github/webhook")
+ALLOWED_PREFIXES = ("/static/", "/integrations/github/webhook", "/branding/", "/healthz")
 
 
 class MFARequiredMiddleware:

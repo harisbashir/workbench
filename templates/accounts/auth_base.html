@@ -2,7 +2,7 @@
 {% block body %}
 <div class="auth">
   <div class="auth-card">
-    <div class="brand"><span class="brand-mark">{% icon 'chip' 18 %}</span>{{ COMPANY_NAME }}</div>
+    <div class="brand">{% include "partials/brand.html" %}</div>
     {% if messages %}<ul class="messages">{% for m in messages %}<li class="alert alert-{{ m.tags }}">{{ m }}</li>{% endfor %}</ul>{% endif %}
     <div class="card"><div class="card-body">{% block auth %}{% endblock %}</div></div>
     {% block below %}{% endblock %}

@@ -124,6 +124,9 @@ class BuildOrder(models.Model):
     completed_qty = models.PositiveIntegerField(default=0, help_text="Boards that passed test.")
     failed_qty = models.PositiveIntegerField(default=0, help_text="Boards that failed test.")
     serial_prefix = models.CharField(max_length=20, blank=True, help_text="Optional, e.g. PWRB-2026-")
+    firmware_releases = models.ManyToManyField(
+        "firmware.FirmwareRelease", blank=True, related_name="builds", verbose_name="Firmware to flash",
+        help_text="Which firmware versions go on these boards. Recorded so every build is traceable.")
     notes = models.TextField(blank=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+")
     created_at = models.DateTimeField(auto_now_add=True)

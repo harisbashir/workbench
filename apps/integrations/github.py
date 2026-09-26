@@ -63,6 +63,8 @@ def handle(event, payload):
     repo = (payload.get("repository") or {}).get("full_name", "")
     if event == "ping":
         return "processed", "Ping received — the webhook is working."
+    if event == "release":
+        return on_release(repo, payload)
     projects = list(Project.objects.filter(github_repo__iexact=repo)) if repo else []
     if not projects:
         return "ignored", f"No project is linked to {repo or 'this repository'}."
@@ -188,6 +190,42 @@ def on_workflow_run(project, p):
                     notify(t.assignee, f"{name} failed on PR #{pr.number} ({t.key})", run.get("html_url", ""))
     elif status == PullRequest.Checks.SUCCESS and prs:
         _say(project, f"✓ {name} passed on " + ", ".join(f"PR #{pr.number}" for pr in prs), run.get("html_url", ""))
+
+
+def on_release(repo, p):
+    """A published GitHub release whose tag matches a firmware's tag prefix
+    becomes a firmware release in Testing, ready for binaries and sign-off."""
+    from django.db.models import Q
+
+    from apps.firmware.models import Firmware, FirmwareRelease, parse_version
+
+    if p.get("action") not in ("published", "prereleased", "released"):
+        return "ignored", f"Release action “{p.get('action')}” isn't used."
+    rel = p.get("release") or {}
+    tag = rel.get("tag_name", "")
+    candidates = Firmware.objects.filter(
+        Q(github_repo__iexact=repo) | Q(github_repo="", project__github_repo__iexact=repo)).select_related("project")
+    # Longest matching prefix wins, so "boot-v1.0.0" goes to the bootloader, not to "v…".
+    matches = sorted((fw for fw in candidates if tag.startswith(fw.tag_prefix)), key=lambda fw: -len(fw.tag_prefix))
+    if not matches:
+        return "ignored", f"No firmware in Workbench uses tags like “{tag}” for {repo}."
+    fw = matches[0]
+    version = tag[len(fw.tag_prefix):]
+    if parse_version(version) is None:
+        return "ignored", f"Tag “{tag}” isn't a semantic version."
+    obj, created = FirmwareRelease.objects.get_or_create(firmware=fw, version=version.lstrip("vV"), defaults={
+        "status": FirmwareRelease.Status.TESTING, "git_ref": tag, "source_url": rel.get("html_url", "")[:200],
+        "notes": (rel.get("body") or "")[:20000],
+    })
+    if not created:
+        return "ignored", f"{fw.name} {obj.version} already exists."
+    previous = fw.releases.exclude(pk=obj.pk).order_by("-sort_key").first()
+    if previous:
+        obj.revisions.set(previous.revisions.all())
+    login = (rel.get("author") or {}).get("login", "")
+    _act(fw.project, f"published {fw.name} {obj.version} on GitHub (now in Testing — upload the binaries)", login, url=obj.get_absolute_url())
+    _say(fw.project, f"{login} published {fw.name} {obj.version} on GitHub. It's in Testing in Workbench — attach the binaries and sign it off.", obj.get_absolute_url())
+    return "processed", f"Created {fw.name} {obj.version}"
 
 
 HANDLERS = {

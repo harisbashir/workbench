@@ -51,6 +51,8 @@ def render(text, known_keys=None):
             parts[i] = part
     html = "".join(parts)
     html = re.sub("\x01(\\d+)\x01", lambda m: codes[int(m.group(1))], html)
+    # Markdown-style headings ("## Changes") in notes and descriptions.
+    html = re.sub(r"(?m)^#{1,3} +(.+)$", r'<strong class="md-h">\1</strong>', html)
     html = html.replace("\n", "<br>")
     html = re.sub("\x00(\\d+)\x00", lambda m: blocks[int(m.group(1))], html)
     return mark_safe(html)

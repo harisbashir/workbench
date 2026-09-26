@@ -35,7 +35,7 @@ class FirstRunSetupMiddleware:
     """Until the first administrator exists, every page leads to the setup page."""
 
     _done = False  # cached once setup is complete, so it costs nothing afterwards
-    OPEN_PREFIXES = ("/setup/", "/static/", "/healthz")
+    OPEN_PREFIXES = ("/setup/", "/static/", "/healthz", "/branding/")
 
     def __init__(self, get_response):
         self.get_response = get_response

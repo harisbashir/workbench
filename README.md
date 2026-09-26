@@ -6,6 +6,7 @@ Workbench is one web app for a remote embedded-hardware team. It covers:
 - projects and task boards
 - design and code reviews linked to GitHub
 - a file library
+- firmware releases per board revision, with version control and checksums
 - a parts library with KiCad BOM import
 - purchasing and production builds
 - timesheets and weekly reports
@@ -76,7 +77,30 @@ Everything Workbench stores lives in `./data` next to `docker-compose.yml`:
   Your data from before the restore is kept in `data/pre-restore-…` until you delete it.
 - **Move to a new server:** stop Workbench, copy the `data` folder across, run `docker compose up -d`.
 - **Update:** `git pull && docker compose up -d --build`. Database changes apply automatically on start.
+- **Download everything:** *System & backups → Download everything* builds one zip organised for people rather than for restoring: `Projects/<project>/Files`, `Firmware/<name>/<version>`, `Revisions` (BOMs as CSV), `Tasks.csv`, chat transcripts of public channels, parts, orders and builds as CSV files. Private channels, direct messages and keys are left out. Use a backup zip to restore; use this to hand files to someone or archive them.
 - **Storage housekeeping:** *Files → Storage* shows usage by project and the largest files. It can also delete old versions or empty the trash. Deleted files stay in the trash for 30 days first.
+
+### Where uploaded files are kept
+
+By default files sit in `data/files`. Two settings in `.env` change that (see `.env.example`):
+
+| Option | Settings |
+|---|---|
+| Another folder or disk | `WORKBENCH_FILES_DIR=/files`, and mount the disk into the container at `/files` |
+| **Amazon S3** (or Wasabi, Cloudflare R2, MinIO, Backblaze B2) | `WORKBENCH_STORAGE=s3`, `WORKBENCH_S3_BUCKET`, `WORKBENCH_S3_REGION`; plus `WORKBENCH_S3_ACCESS_KEY_ID`/`SECRET_ACCESS_KEY` unless the server has an IAM role; `WORKBENCH_S3_ENDPOINT_URL` for non-AWS services |
+
+With S3, objects are private and encrypted (SSE-S3); downloads still go through Workbench's permission checks. Nightly backups include the S3 files and a copy of each backup zip is also stored in the bucket under `backups/`. *Files → Storage* shows which storage is in use.
+
+To move existing files, set the new storage in `.env`, restart, then copy:
+
+```bash
+docker compose exec workbench manage migrate_storage --to s3 --from local --dry-run   # preview
+docker compose exec workbench manage migrate_storage --to s3 --from local             # copy (safe to re-run)
+```
+
+The source files are not deleted; remove them yourself after checking. Moving back works the same way (`--to local --from s3`).
+
+The minimum IAM policy for the bucket is `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject` on `arn:aws:s3:::<bucket>/<prefix>/*` and `s3:ListBucket` on the bucket.
 
 Useful commands:
 
@@ -97,18 +121,19 @@ curl http://localhost:8000/healthz               # health check for monitoring
 | **Chat** | A channel for each project (automatic), topic channels, private channels, direct messages, file sharing, GitHub/task updates posted automatically |
 | **Files** | Project and company-wide spaces, folders, drag-and-drop upload with progress, **every version kept**, previews for PDFs, images and text/CSV/KiCad files, trash with restore, storage dashboard |
 | **GitHub** | Signed webhooks link PRs and commits to tasks by ID (`PWR-12`). PR opened → *In review*, changes requested → *In progress*, merged → *Done*; CI (e.g. KiBot ERC/DRC) results shown and failures announced |
+| **Firmware** | Per project: firmware components (main app, bootloader…), releases with **semantic versions** (`1.4.0`, `1.4.0-rc.1`), release notes and a **changelog between any two versions**, files with **SHA-256 checksums**, and the **board revisions each release is compatible with**. Draft → Testing → **Released** (leads approve; released files are locked) → Deprecated / **Recalled** (with a reason; everyone is notified and builds using it are blocked). Each revision shows its recommended firmware; builds record which firmware was flashed; a GitHub release tag can create a Testing release automatically |
 | **Parts & BOM** | Parts library with stock history, suppliers, KiCad/KiBot BOM import with matching, cost per board, boards buildable from stock, BOM comparison between revisions |
 | **Production** | Purchase orders (draft → ordered → received, updating stock and cost), builds with shortage check, one-click orders for missing parts, test yield |
 | **Timesheets & reports** | Log hours per task; a **weekly report** of hours by person and project, finished work, reviews, blockers and builds, printable or as CSV |
 | **Home** | Your tasks, reviews waiting for you, blocked and overdue work, low stock, and a **team clock** showing who's in working hours (Toronto ↔ Karachi) |
-| **Administration** | People and roles, invite links (or email them), *System & backups* for settings, SMTP email, GitHub secret, backups and health, audit log |
+| **Administration** | People and roles, invite links (or email them), *System & backups* for settings, **company logo** (SVG or transparent PNG, with an optional version for the dark menu bar), SMTP email, GitHub secret, backups and health, audit log |
 | **Help** | Built-in guides for every area, a getting-started checklist, and a short explanation on every page |
 
 ## Security
 
 - **Sign-in:** a password of 12+ characters plus **mandatory authenticator-app 2FA**. Each code works only once, and there are single-use recovery codes. Accounts lock after 5 failed attempts.
 - **Access:** five roles. Engineers see only their projects. Released revisions are locked to leads. Every page and file download is permission-checked on the server.
-- **Protection at rest:** 2FA, SMTP and webhook secrets are encrypted in the database. Uploaded files are never served directly, and files that could run in a browser (`.html`, `.js`, `.exe`…) are refused.
+- **Protection at rest:** 2FA, SMTP and webhook secrets are encrypted in the database. Uploaded files are never served directly, and files that could run in a browser (`.html`, `.js`, `.exe`…) are refused. Uploaded SVG logos are cleaned (scripts, event handlers and external links removed) and served with a sandboxing policy.
 - **Browser protections:** HTTPS with HSTS (in HTTPS mode), secure cookies, CSRF protection, and a strict Content-Security-Policy. No third-party scripts, fonts or trackers are loaded.
 - **GitHub webhook:** HMAC-SHA256 signatures, replay protection, and capped logging of rejected requests.
 - **Audit log:** sign-ins (including failures), permission changes, uploads, downloads, backups, BOM imports, stock changes and orders, each with its IP address.
@@ -122,11 +147,11 @@ Report security issues privately to the maintainer.
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 export WORKBENCH_DEBUG=1
 python manage.py migrate && python manage.py seed_demo
 python manage.py runserver                     # http://localhost:8000 — haris / Workbench-demo-2026!
-python manage.py test apps                     # 92 tests
+python manage.py test apps                     # 112 tests (S3 is tested against a local mock)
 ```
 
 The demo users are `haris` (admin), `ayesha` (lead), `bilal`, `sana` and `usman` (engineers), and `fatima` (procurement). They all use the password `Workbench-demo-2026!`.
@@ -144,11 +169,12 @@ The demo users are `haris` (admin), `ayesha` (lead), `bilal`, `sana` and `usman`
 config/              settings (zero-config; data folder, generated secrets)
 apps/accounts/       users, roles, 2FA, invites, lockout
 apps/core/           dashboard, search, notifications, audit log, help, setup wizard,
-                     system page, backups, scheduler, email
+                     system page, backups, export, storage, logo, scheduler, email
 apps/projects/       projects, revisions & release checklists, tasks, activity
 apps/chat/           channels, messages, file sharing
 apps/files/          file library: spaces, folders, versions, trash, storage
 apps/inventory/      parts, suppliers, stock, BOMs, KiCad import
+apps/firmware/       firmware components, releases, artifacts
 apps/production/     purchase orders, builds
 apps/timesheets/     time entries, weekly report
 apps/integrations/   GitHub webhook

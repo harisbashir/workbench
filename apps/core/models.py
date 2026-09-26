@@ -61,6 +61,13 @@ class SiteSettings(models.Model):
     trash_days = models.PositiveSmallIntegerField("Empty trash after (days)", default=30)
     max_upload_mb = models.PositiveIntegerField("Largest upload (MB)", default=200)
 
+    # Branding
+    logo = models.FileField(upload_to="branding/", blank=True, max_length=200,
+                            help_text="Shown on light backgrounds (sign-in page, printouts).")
+    logo_dark = models.FileField(upload_to="branding/", blank=True, max_length=200,
+                                 help_text="Optional version for the dark menu bar, e.g. a white logo.")
+    logo_updated_at = models.DateTimeField(null=True, blank=True)
+
     setup_completed_at = models.DateTimeField(null=True, blank=True)
     last_backup_at = models.DateTimeField(null=True, blank=True)
 
@@ -101,8 +108,34 @@ class SiteSettings(models.Model):
     def email_ready(self):
         return self.email_enabled and bool(self.smtp_host and self.email_from)
 
+    @property
+    def logo_version(self):
+        return int(self.logo_updated_at.timestamp()) if self.logo_updated_at else 0
+
     def absolute_url(self, path, request=None):
         base = (self.site_url or "").rstrip("/")
         if not base and request is not None:
             base = f"{request.scheme}://{request.get_host()}"
         return base + path
+
+
+class ExportJob(models.Model):
+    """A request for an organised 'download everything' zip (built in the background)."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Waiting"
+        RUNNING = "running", "Preparing"
+        READY = "ready", "Ready"
+        FAILED = "failed", "Failed"
+
+    requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
+    include_versions = models.BooleanField(default=False)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    file_name = models.CharField(max_length=200, blank=True)
+    size = models.BigIntegerField(default=0)
+    message = models.CharField(max_length=300, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]

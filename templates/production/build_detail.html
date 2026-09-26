@@ -14,6 +14,20 @@
       {% elif reqs %}<div class="alert alert-success">{% icon 'check' 18 %} All parts are in stock for this build.</div>
       {% else %}<div class="alert alert-warning">{% icon 'alert' 18 %} This revision has no BOM, so parts can't be checked. <a href="{% url 'inventory:bom_import' b.revision.pk %}">Import the BOM</a>.</div>{% endif %}
     {% endif %}
+    <div class="card"><div class="card-head"><h2>{% icon 'chip' 16 %} Firmware to flash</h2></div>
+      {% if firmware %}<div class="table-wrap"><table class="table"><thead><tr><th>Firmware</th><th>Version</th><th>Files</th><th>Check</th></tr></thead><tbody>
+      {% for f in firmware %}<tr class="{% for lvl, t in f.issues %}{% if lvl == 'bad' %}row-bad{% endif %}{% endfor %}">
+        <td>{{ f.rel.firmware.name }}</td><td><a href="{{ f.rel.get_absolute_url }}"><strong>{{ f.rel.version }}</strong></a> {% status_badge f.rel.status f.rel.get_status_display %}</td>
+        <td class="small">{% for a in f.rel.artifacts.all %}{% if a.kind != 'debug' %}<a href="{% url 'firmware:artifact' a.pk %}">{{ a.name }}</a> <span class="mono faint" title="SHA-256 {{ a.sha256 }}">{{ a.sha256|slice:":10" }}</span><br>{% endif %}{% endfor %}</td>
+        <td class="small">{% for lvl, t in f.issues %}<span class="{% if lvl == 'bad' %}overdue{% else %}warn-text{% endif %}">{{ t }}</span><br>{% empty %}<span class="ok-text">✓ Released and compatible</span>{% endfor %}</td></tr>{% endfor %}
+      </tbody></table></div>
+      {% else %}<div class="card-body small muted">No firmware recorded for this build yet.</div>{% endif %}
+      {% if can_edit and b.status != 'completed' and b.status != 'cancelled' and fw_choices %}
+      <div class="card-foot"><form method="post" action="{% url 'production:build_action' b.pk %}">{% csrf_token %}
+        <div class="field-label">Choose the firmware for this build</div>
+        <div class="checks">{% for r in fw_choices %}<label><input type="checkbox" name="firmware" value="{{ r.pk }}" {% if r in b.firmware_releases.all %}checked{% endif %}> {{ r.firmware.name }} {{ r.version }}{% if r.status != 'released' %} ({{ r.get_status_display|lower }}){% endif %}{% if r.recommended %} — recommended{% endif %}</label>{% endfor %}</div>
+        <p></p><button class="btn btn-sm" name="action" value="set_firmware">Save firmware</button></form></div>{% endif %}
+    </div>
     <div class="card"><div class="card-head"><h2>Parts needed</h2>
       {% if can_edit and short and b.status == 'planned' %}<form method="post" action="{% url 'production:build_action' b.pk %}">{% csrf_token %}<button class="btn btn-sm btn-primary" name="action" value="order_shortages">{% icon 'truck' 14 %} Order missing parts</button></form>{% endif %}</div>
       {% if reqs %}<div class="table-wrap"><table class="table">

@@ -13,7 +13,7 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -r requirements.txt ruff
+      - run: pip install -r requirements-dev.txt
       - name: Lint
         run: ruff check apps config --select F,E9
       - name: Tests

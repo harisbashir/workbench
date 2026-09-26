@@ -1,0 +1,81 @@
+{% extends "base.html" %}{% load workbench humanize %}
+{% block title %}{{ fw.name }} {{ rel.version }}{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles">
+  <div class="crumbs"><a href="{{ project.get_absolute_url }}">{{ project.name }}</a> / <a href="{% url 'firmware:project' project.key %}">Firmware</a> / <a href="{{ fw.get_absolute_url }}">{{ fw.name }}</a> /</div>
+  <h1>{{ fw.name }} <span class="mono">{{ rel.version }}</span> {% status_badge rel.status rel.get_status_display %}{% if rel.is_prerelease %} <span class="badge">pre-release</span>{% endif %}</h1>
+  <p class="intro">{{ rel.status_help }}{% if rel.status_note %} <strong>{{ rel.status_note }}</strong>{% endif %}</p>
+</div>
+<div class="actions">
+  {% if can_edit %}<a class="btn" href="{% url 'firmware:release_edit' project.key fw.slug rel.version %}">{% icon 'edit' 16 %} Edit</a>{% endif %}
+</div></div>
+
+{% if rel.status == 'recalled' %}<div class="alert alert-error">{% icon 'alert' 18 %}<div><strong>Recalled — do not flash this firmware.</strong> {{ rel.status_note }}{% if newer_released %} Use <a href="{{ newer_released.get_absolute_url }}">{{ newer_released.version }}</a> instead.{% endif %}</div></div>
+{% elif rel.status == 'deprecated' and newer_released %}<div class="alert alert-warning">{% icon 'alert' 18 %}<div>A newer version is released: <a href="{{ newer_released.get_absolute_url }}">{{ newer_released.version }}</a>.</div></div>{% endif %}
+
+<div class="grid grid-main">
+  <div class="stack">
+    <div class="card"><div class="card-head"><h2>Files</h2>
+      {% if can_edit %}<form method="post" enctype="multipart/form-data" action="{% url 'firmware:release_upload' project.key fw.slug rel.version %}">{% csrf_token %}
+        <label class="btn btn-sm">{% icon 'upload' 14 %} Add files<input class="hidden" type="file" name="artifacts" multiple data-autoupload></label></form>{% endif %}</div>
+      {% if artifacts %}<div class="table-wrap"><table class="table">
+        <thead><tr><th>File</th><th>Type</th><th class="num">Size</th><th>SHA-256</th><th></th></tr></thead><tbody>
+        {% for a in artifacts %}<tr><td>{% icon 'file' 15 %} <a href="{% url 'firmware:artifact' a.pk %}">{{ a.name }}</a></td><td class="small">{{ a.get_kind_display }}</td>
+          <td class="num">{{ a.size|filesizeformat }}</td>
+          <td><div class="copy-box"><input id="sha-{{ a.pk }}" type="text" readonly value="{{ a.sha256 }}" class="mono small" aria-label="SHA-256 of {{ a.name }}"><button class="btn btn-sm" type="button" data-copy="#sha-{{ a.pk }}">Copy</button></div></td>
+          <td class="right nowrap">{% if can_edit %}<form method="post" action="{% url 'firmware:artifact_delete' project.key fw.slug rel.version a.pk %}" data-confirm="Remove {{ a.name }}?">{% csrf_token %}<button class="btn btn-sm btn-ghost" aria-label="Remove">{% icon 'x' 14 %}</button></form>{% endif %}</td></tr>{% endfor %}
+      </tbody></table></div>
+      <div class="card-foot small muted">Check a download with <code>sha256sum &lt;file&gt;</code> (Linux/macOS) or <code>certutil -hashfile &lt;file&gt; SHA256</code> (Windows) — the result must match.</div>
+      {% else %}<div class="card-body muted small">No files yet.{% if can_edit %} Add the image to flash{% if rel.status != 'released' %} before releasing{% endif %}.{% endif %}</div>{% endif %}
+    </div>
+
+    <div class="card"><div class="card-head"><h2>Release notes</h2></div><div class="card-body">
+      {% if rel.notes %}<div class="desc">{{ rel.notes|chat_format }}</div>{% else %}<p class="muted">No notes.</p>{% endif %}
+      {% if tasks %}<p></p><div class="field-label">Tasks in this release</div><ul class="list-plain">{% for t in tasks %}<li><span class="key">{{ t.key }}</span><a href="{{ t.get_absolute_url }}">{{ t.title }}</a>{% status_badge t.status t.get_status_display %}</li>{% endfor %}</ul>{% endif %}
+    </div></div>
+
+    {% if older %}<div class="card" id="changes"><div class="card-head"><h2>What changed since…</h2>
+      <form method="get" action="#changes"><select name="since" data-autosubmit aria-label="Compare with an older version"><option value="">choose an older version</option>
+        {% for o in older %}<option value="{{ o.version }}" {% if compare_to == o %}selected{% endif %}>{{ o.version }} ({{ o.get_status_display|lower }})</option>{% endfor %}</select></form></div>
+      {% if compare_to %}<div class="card-body">{% for r in changelog %}<div class="changelog-entry"><h3><a href="{{ r.get_absolute_url }}" class="mono">{{ r.version }}</a> {% status_badge r.status r.get_status_display %}</h3>{% if r.notes %}<div class="desc small">{{ r.notes|chat_format }}</div>{% else %}<p class="small muted">No notes.</p>{% endif %}</div>{% endfor %}</div>
+      {% else %}<div class="card-body small muted">Pick a version to see every release note between it and {{ rel.version }} — handy when updating boards in the field.</div>{% endif %}
+    </div>{% endif %}
+  </div>
+
+  <div class="stack">
+    <div class="card"><div class="card-head"><h3>Status</h3></div><div class="card-body">
+      {% if rel.status == 'draft' and can_edit %}<form method="post" action="{% url 'firmware:release_status' project.key fw.slug rel.version %}">{% csrf_token %}<button class="btn btn-primary" name="action" value="testing">Send to testing</button></form><p></p>{% endif %}
+      {% if rel.status == 'testing' and can_edit %}<form method="post" action="{% url 'firmware:release_status' project.key fw.slug rel.version %}">{% csrf_token %}<button class="btn btn-sm btn-ghost" name="action" value="draft">Back to draft</button></form>{% endif %}
+      {% if can_approve %}
+        {% if rel.status == 'draft' or rel.status == 'testing' %}
+          <form method="post" action="{% url 'firmware:release_status' project.key fw.slug rel.version %}" data-confirm="Release {{ fw.name }} {{ rel.version }} for production? Its files will be locked.">{% csrf_token %}
+            <input type="text" name="note" maxlength="300" placeholder="Approval note, e.g. passed 48 h soak test" aria-label="Approval note"><p></p>
+            <button class="btn btn-primary" name="action" value="released">{% icon 'check' 16 %} Approve and release</button></form>
+          <p class="small muted">Releasing needs at least one file and the compatible board revisions. Older released versions for the same boards are marked deprecated.</p>
+        {% endif %}
+        {% if rel.status == 'released' %}<form method="post" action="{% url 'firmware:release_status' project.key fw.slug rel.version %}">{% csrf_token %}<button class="btn btn-sm" name="action" value="deprecated">Mark as deprecated</button></form><p></p>{% endif %}
+        {% if rel.status == 'released' or rel.status == 'deprecated' or rel.status == 'testing' %}
+          <details class="recall"><summary class="link-btn small">Recall this firmware…</summary>
+          <form method="post" action="{% url 'firmware:release_status' project.key fw.slug rel.version %}" data-confirm="Recall {{ rel.version }}? Everyone on the project will be told not to use it.">{% csrf_token %}
+            <textarea name="note" rows="2" maxlength="300" placeholder="Why? e.g. watchdog resets under load (PWR-21)" aria-label="Reason" required></textarea>
+            <button class="btn btn-danger btn-sm" name="action" value="recalled">Recall</button></form></details>{% endif %}
+      {% elif rel.status == 'testing' %}<p class="small muted">The project lead or an administrator approves releases.</p>{% endif %}
+      <div class="kv"><span>Created</span><span>{{ rel.created_at|naturalday }} · {{ rel.created_by|default:"GitHub" }}</span></div>
+      {% if rel.released_at %}<div class="kv"><span>Released</span><span>{{ rel.released_at|naturalday }} · {{ rel.released_by|default:"—" }}</span></div>{% endif %}
+    </div></div>
+    <div class="card"><div class="card-body">
+      <div class="field-label">Compatible board revisions</div>
+      {% for r in revisions %}<div class="kv"><a href="{{ r.get_absolute_url }}">{{ r.name }}</a>{% status_badge r.status r.get_status_display %}</div>{% empty %}<p class="small warn-text">Not set yet.</p>{% endfor %}
+      <p></p>
+      {% if rel.git_ref %}<div class="kv"><span>Built from</span>{% if rel.git_url %}<a class="mono" href="{{ rel.git_url }}" target="_blank" rel="noopener">{{ rel.git_ref }}</a>{% else %}<span class="mono">{{ rel.git_ref }}</span>{% endif %}</div>{% endif %}
+      {% if rel.source_url %}<div class="kv"><span>Source</span><a href="{{ rel.source_url }}" target="_blank" rel="noopener">GitHub release ↗</a></div>{% endif %}
+    </div></div>
+    <div class="card"><div class="card-head"><h3>Used in builds</h3></div><div class="card-body">
+      {% for b in builds %}<div class="kv"><a href="{{ b.get_absolute_url }}">{{ b.number }} · {{ b.revision.name }} × {{ b.quantity }}</a>{% status_badge b.status b.get_status_display %}</div>
+      {% empty %}<p class="small muted">Not used in a production build yet.</p>{% endfor %}
+    </div></div>
+    {% if activity %}<div class="card"><div class="card-head"><h3>History</h3></div><div class="card-body"><ul class="feed">
+      {% for a in activity %}<li><div class="small"><strong>{{ a.who }}</strong> {{ a.text }}</div><span class="when">{{ a.created_at|naturaltime }}</span></li>{% endfor %}</ul></div></div>{% endif %}
+  </div>
+</div>
+{% endblock %}

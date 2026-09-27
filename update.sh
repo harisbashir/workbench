@@ -45,7 +45,7 @@ current_commit="$(git rev-parse HEAD)"
 current_version="$(cat VERSION 2>/dev/null || echo '?')"
 branch="$(git symbolic-ref -q --short HEAD || true)"
 
-git fetch -q --tags --prune origin || die "Couldn't reach GitHub. Check the network and the deploy key (ssh -T github-workbench)."
+git fetch -q --tags --prune origin || die "Couldn't reach GitHub. Check the network (for a private repository, also the deploy key: ssh -T github-workbench)."
 
 if [ -n "$TARGET" ]; then
   target="$TARGET"

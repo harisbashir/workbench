@@ -125,3 +125,26 @@ class TotpReplayTests(TestCase):
         c2 = Client()
         c2.post(reverse("accounts:login"), {"username": "eng", "password": PASSWORD})
         self.assertEqual(c2.post(reverse("accounts:mfa_verify"), {"code": code}).status_code, 200)
+
+
+class ResetAccountCommandTests(TestCase):
+    def test_unlock_reset_2fa_and_password_link(self):
+        import io
+        from datetime import timedelta
+
+        from django.core.management import call_command
+        from django.utils import timezone
+
+        from apps.core.models import AuditLog
+        u = make_user("boss", role=User.Role.ADMIN)
+        User.objects.filter(pk=u.pk).update(locked_until=timezone.now() + timedelta(minutes=10), failed_logins=3,
+                                            mfa_enabled=True, _mfa_secret="X")
+        out = io.StringIO()
+        call_command("reset_account", "BOSS", "--2fa", "--password", stdout=out)
+        u.refresh_from_db()
+        self.assertEqual((u.locked_until, u.failed_logins, u.mfa_enabled), (None, 0, False))
+        self.assertIn("/set-password/", out.getvalue())
+        self.assertTrue(AuditLog.objects.filter(action="user.reset_from_server").exists())
+        out = io.StringIO()
+        call_command("reset_account", "--list", stdout=out)
+        self.assertIn("boss", out.getvalue())

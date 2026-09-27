@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 # Workbench installer for Ubuntu / Debian servers.
 #
-# New server (the repository is private, so this uses a read-only GitHub deploy key):
+# New server, public repository (no key needed):
+#   bash <(curl -fsSL https://raw.githubusercontent.com/YOUR-USER/workbench/main/install.sh) \
+#        https://github.com/YOUR-USER/workbench.git
+#
+# New server, private repository (sets up a read-only GitHub deploy key):
 #   1. Copy this one file to the server, e.g.  scp install.sh you@server:
-#   2. Run:  bash install.sh git@github.com:YOUR-ORG/workbench.git
+#   2. Run:  bash install.sh git@github.com:YOUR-USER/workbench.git
 #
 # Inside an existing copy of the repository (e.g. /opt/workbench):
 #   ./install.sh               # (re)configure and start
@@ -41,7 +45,7 @@ while [ $# -gt 0 ]; do
     --domain) DOMAIN_ARG="$2"; ASK_DOMAIN=0; shift 2 ;;
     --no-https) ASK_DOMAIN=0; shift ;;
     --deploy-key) ONLY_KEY=1; shift ;;
-    -h|--help) sed -n '2,23p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,27p' "$0"; exit 0 ;;
     git@*|https://*|ssh://*) REPO_URL="$1"; shift ;;
     *) die "Unknown option: $1 (see --help)" ;;
   esac
@@ -104,8 +108,9 @@ EOF
   fi
   # Trust github.com only if its key matches the published fingerprint.
   if ! ssh-keygen -F github.com -f "$HOME/.ssh/known_hosts" >/dev/null 2>&1; then
-    scanned="$(ssh-keyscan -t ed25519 github.com 2>/dev/null)"
-    fp="$(printf '%s\n' "$scanned" | ssh-keygen -lf - 2>/dev/null | awk '{print $2}')"
+    scanned="$(ssh-keyscan -T 15 -t ed25519 github.com 2>/dev/null || true)"
+    fp="$(printf '%s\n' "$scanned" | ssh-keygen -lf - 2>/dev/null | awk '{print $2}' || true)"
+    [ -n "$fp" ] || die "Couldn't reach github.com over SSH (port 22). Allow outgoing port 22, or make the repository public and use its https:// address."
     [ "$fp" = "$GITHUB_ED25519" ] || die "github.com's SSH key fingerprint ($fp) doesn't match GitHub's published one. Check your network."
     printf '%s\n' "$scanned" >> "$HOME/.ssh/known_hosts"
   fi
@@ -138,19 +143,33 @@ if [ $ONLY_KEY -eq 1 ]; then
 fi
 
 # --- 3. Get the code ---------------------------------------------------------------
+# A public repository can be read over HTTPS without any key.
+readable() { GIT_TERMINAL_PROMPT=0 git ls-remote -q "$1" HEAD >/dev/null 2>&1; }
+
 if [ $IN_REPO -eq 0 ]; then
   if [ -z "$REPO_URL" ]; then
-    read -r -p "GitHub repository (e.g. git@github.com:your-org/workbench.git): " REPO_URL
+    read -r -p "GitHub repository (e.g. https://github.com/your-user/workbench.git): " REPO_URL
   fi
   [ -n "$REPO_URL" ] || die "A repository address is needed."
-  setup_key
+  case "$REPO_URL" in
+    https://*) https_url="$REPO_URL" ;;
+    *) https_url="https://github.com/$(github_path "$REPO_URL")" ;;
+  esac
+  if readable "$https_url"; then
+    clone_url="$https_url"
+    info "Public repository: updates will download over HTTPS, no key needed."
+  else
+    info "The repository isn't public, so this server needs a deploy key."
+    setup_key
+    clone_url="git@$ALIAS:$(github_path "$REPO_URL")"
+  fi
   if [ -d "$DIR/.git" ]; then
     info "$DIR already has Workbench; using it."
   else
     say "Downloading Workbench into $DIR"
     $SUDO mkdir -p "$DIR"
     $SUDO chown "$(id -u):$(id -g)" "$DIR"
-    git clone -q "git@$ALIAS:$(github_path "$REPO_URL")" "$DIR"
+    git clone -q "$clone_url" "$DIR"
   fi
   cd "$DIR"
   git fetch -q --tags origin
@@ -168,11 +187,15 @@ else
   origin="$(git remote get-url origin 2>/dev/null || true)"
   case "$origin" in
     https://github.com/*)
-      say "Updates currently use $origin"
-      read -r -p "    Switch to a read-only deploy key (recommended for a server)? [Y/n] " yn
-      if [ "${yn:-Y}" != "n" ] && [ "${yn:-Y}" != "N" ]; then
-        setup_key
-        git remote set-url origin "git@$ALIAS:$(github_path "$origin")"
+      if readable "$origin"; then
+        info "Updates download from $origin (public, no key needed)."
+      else
+        say "Updates currently use $origin, which needs a sign-in"
+        read -r -p "    Switch to a read-only deploy key (recommended for a server)? [Y/n] " yn
+        if [ "${yn:-Y}" != "n" ] && [ "${yn:-Y}" != "N" ]; then
+          setup_key
+          git remote set-url origin "git@$ALIAS:$(github_path "$origin")"
+        fi
       fi ;;
   esac
 fi

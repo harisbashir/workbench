@@ -13,6 +13,8 @@ Workbench is one web app for a remote embedded-hardware team. It covers:
 - purchasing and production builds
 - timesheets and weekly reports
 
+**Contents:** [Quick start](#quick-start-about-5-minutes) · [Deploying to a server](#deploying-to-a-server-step-by-step) · [Updating](#updating) · [The data folder](#the-data-folder) · [Troubleshooting](#troubleshooting) · [What's inside](#whats-inside) · [Security](#security) · [Development](#development)
+
 Every feature is built into this codebase, with no third-party apps embedded. It runs as **one Docker container**, and everything it stores sits in **one `data` folder**.
 
 ---
@@ -31,49 +33,141 @@ Open **http://localhost:8000** (or `http://<server-ip>:8000`) and enter the setu
 
 There are no passwords, keys or config files to prepare. Workbench generates its own secrets on first start and keeps them in the data folder.
 
-### On a server, straight from your private GitHub repository (recommended)
+That's the quickest way to try it on your own computer. For a real server, follow [Deploying to a server](#deploying-to-a-server-step-by-step).
+
+---
+
+## Deploying to a server, step by step
+
+In the commands below, replace `YOUR-USER/workbench` with your GitHub repository.
+
+### What you need
+
+- A server running **Ubuntu 22.04 / 24.04 or Debian 12** with at least **2 GB RAM and 20 GB disk** (a small cloud VM is enough for a team of 20), and a user that can run `sudo`.
+- For access over the internet: a **domain name** (e.g. `workbench.yourcompany.com`) with a DNS **A record** pointing at the server's public IP. Check it before you start — this must print the server's IP:
+  ```bash
+  getent hosts workbench.yourcompany.com
+  ```
+- Without a domain, Workbench runs over plain HTTP on port 8000. Only do that inside an office network, a VPN or Tailscale.
+
+### Step 1 — Log in and open the firewall
 
 ```bash
-scp install.sh you@server:            # copy the one script to the new server
-ssh you@server
-bash install.sh git@github.com:YOUR-ORG/workbench.git
+ssh you@SERVER-IP
+sudo apt update && sudo apt install -y curl
+sudo ufw allow OpenSSH
+sudo ufw allow 80
+sudo ufw allow 443
+# sudo ufw allow 8000        # only if you're NOT using a domain
+sudo ufw --force enable
 ```
 
-The script installs git and Docker, creates a **read-only deploy key** and shows it. Add it in GitHub under *Settings → Deploy keys* (leave write access off), press Enter, and it verifies GitHub's host fingerprint, clones the newest release into `/opt/workbench`, asks for your domain (automatic HTTPS), starts Workbench and prints the setup code.
+If your cloud provider has its own firewall (AWS security groups, DigitalOcean/Hetzner firewalls…), open the same ports there too.
 
-Update later with:
+### Step 2 — Install
 
 ```bash
-/opt/workbench/update.sh --check      # is there a new version?
-/opt/workbench/update.sh              # backup → download → build → restart → health check
+bash <(curl -fsSL https://raw.githubusercontent.com/YOUR-USER/workbench/main/install.sh) https://github.com/YOUR-USER/workbench.git
 ```
 
-If the new version doesn't come up healthy, `update.sh` puts the previous version back and restores the backup automatically. The server follows release tags (`v1.3.0`), so pushes to `main` don't reach it until you tag a release; `install.sh --branch main` follows a branch instead. An existing HTTPS clone can switch to a deploy key with `./install.sh --deploy-key`.
+The installer:
 
-### On an internet-facing server, with HTTPS (manual)
+1. installs git and Docker if they're missing
+2. downloads the newest release (the highest `v…` tag) into `/opt/workbench`
+3. asks for your **domain** — type it for automatic HTTPS (Let's Encrypt), or leave it empty for `http://SERVER-IP:8000`
+4. builds and starts Workbench (the first build takes a few minutes)
+5. prints the address and a one-time **setup code**
 
-On a fresh Ubuntu or Debian server, first point a domain (e.g. `workbench.yourcompany.com`) at the server, then:
+Options: `--dir /srv/workbench` (another folder), `--branch main` (follow a branch instead of release tags), `--domain workbench.yourcompany.com` (skip the question), `--no-https`.
+
+**Private repository?** Copy the script to the server and give it the SSH address. It creates a read-only deploy key, shows it, and waits while you add it in GitHub under *Repository → Settings → Deploy keys → Add deploy key* (leave *Allow write access* off):
 
 ```bash
-./install.sh
+scp install.sh you@SERVER-IP:        # run on your computer
+bash install.sh git@github.com:YOUR-USER/workbench.git
 ```
 
-The script:
+### Step 3 — First sign-in
 
-1. installs Docker if it's missing
-2. asks for your domain
-3. turns on automatic HTTPS (a free Let's Encrypt certificate, renewed automatically)
-4. starts everything and prints the setup code
+1. Open the address the installer printed.
+2. Enter the setup code. (Lost it? `cd /opt/workbench && docker compose logs workbench | grep -i setup`)
+3. Create your administrator account and scan the QR code with an authenticator app (Google Authenticator, Microsoft Authenticator, 1Password…). **Save the recovery codes.**
 
-To do the same by hand:
+### Step 4 — Set it up
+
+In **System & backups**:
+
+| Tab | What to do |
+|---|---|
+| General | Company name, time zone (for nightly backups), **logo** |
+| Storage | Keep files on the server, or move them to S3 / R2 / B2 / Wasabi / your NAS — *Save and test connection*, then *Move files and switch* |
+| Backups | Check the nightly backup time; later, download a backup and keep it off the server |
+| Email | SMTP details so invites and notifications can be emailed; *Send me a test email* |
+| GitHub | Copy the webhook address and secret into each repository (*Settings → Webhooks*) |
+
+Then invite your team under **People → Invite**.
+
+### Step 5 — Check it's healthy
 
 ```bash
-echo "WORKBENCH_DOMAIN=workbench.yourcompany.com" > .env
-echo "WORKBENCH_BIND=127.0.0.1" >> .env
-docker compose --profile https up -d
+cd /opt/workbench
+docker compose ps                         # "workbench" should say (healthy)
+curl -s http://localhost:8000/healthz     # {"ok": true, ...}
 ```
 
-Without a domain, Workbench still works over plain HTTP. That's fine inside an office network, a VPN or Tailscale; administrators see a reminder banner.
+Point an uptime monitor (UptimeRobot, Healthchecks…) at `https://your-domain/healthz`.
+
+---
+
+## Updating
+
+### Servers installed with `install.sh`
+
+```bash
+cd /opt/workbench
+./update.sh --check       # is there a new version? (lists the changes)
+./update.sh               # update
+./update.sh --to v1.3.1   # go to a specific newer version
+```
+
+`update.sh`:
+
+1. takes a backup (`data/backups/…`)
+2. downloads the new version from GitHub
+3. builds it while the current version keeps running
+4. restarts and waits for the health check
+5. **if the new version doesn't come up healthy, puts the previous version back and restores the backup**
+
+Everything it does is logged in `data/update.log`. Workbench is unavailable for about a minute during step 4.
+
+### Older servers set up with `git clone` (before 1.3)
+
+These don't have `update.sh` yet, so update once by hand:
+
+```bash
+cd ~/workbench                                                       # wherever you cloned it
+docker compose exec workbench manage backup_now                      # safety backup
+git remote set-url origin https://github.com/YOUR-USER/workbench.git  # the public address
+git pull
+docker compose up -d --build            # add --profile https if you use a domain
+docker compose ps                       # wait for (healthy)
+```
+
+After that, use `./update.sh` like any other server. If `git pull` complains about local changes, run `git stash` first.
+
+### Publishing a new version
+
+Servers installed with `install.sh` follow **release tags**, so pushing to `main` alone doesn't reach them:
+
+```bash
+# on your computer, after the changes are merged into main
+echo 1.3.2 > VERSION
+git commit -am "Release 1.3.2"
+git tag -a v1.3.2 -m "Workbench 1.3.2"
+git push origin main --tags
+```
+
+Then run `./update.sh` on each server. A server installed with `--branch main` (or an old `git clone`) follows `main` directly — handy for a test server.
 
 ---
 
@@ -123,6 +217,110 @@ curl http://localhost:8000/healthz               # health check for monitoring
 
 ---
 
+## Troubleshooting
+
+Run these on the server, in the Workbench folder (`/opt/workbench`, or wherever you cloned it). If you use a domain, add `--profile https` to `docker compose up`/`down` commands so the HTTPS proxy (Caddy) is included; `ps`, `logs` and `exec` work without it.
+
+### First look
+
+```bash
+cd /opt/workbench
+docker compose ps                                   # is it running and (healthy)?
+docker compose logs --tail 100 workbench            # recent log of the app
+docker compose logs -f workbench                    # follow the log live (Ctrl+C to stop)
+curl -s http://localhost:8000/healthz               # {"ok": true, "database": true, "disk_free_mb": ..., "scheduler_seen": ..., "version": ...}
+tail -n 50 data/update.log                          # what the last updates did
+docker compose exec workbench manage check --deploy # Django's own configuration check
+```
+
+Without a domain, `check --deploy` warns about secure cookies and HSTS; that's expected on plain HTTP.
+
+`/healthz` reports `"ok": false` when the database can't be reached or less than 200 MB of disk is free. `scheduler_seen` is the last time the background worker (nightly backups, emails, exports, storage moves) checked in; it should be within the last minute or two.
+
+### Common problems
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| The browser can't connect at all | Firewall, or the container isn't running | `docker compose ps`; open ports 80/443 (or 8000) in `ufw` **and** in your cloud provider's firewall; `docker compose up -d` |
+| HTTPS certificate error, or the domain doesn't load | DNS not pointing at the server yet, or ports 80/443 closed, so Let's Encrypt couldn't verify | `getent hosts your-domain` must show the server's IP; then `docker compose --profile https restart caddy` and `docker compose logs caddy` |
+| **Bad Request (400)** | Opening by IP address while a domain is set | Use the domain name, or change `WORKBENCH_DOMAIN` in `.env` (see below) |
+| **CSRF verification failed** when signing in | Workbench sits behind another proxy/load balancer with a different address | Add `WORKBENCH_CSRF_TRUSTED_ORIGINS=https://the-address-people-use` and `WORKBENCH_ALLOWED_HOSTS=the-address-people-use` to `.env`, then `docker compose up -d` |
+| Invite or email links point to the wrong address | *Site url* not set | *System & backups → General → Site url*, e.g. `https://workbench.yourcompany.com` |
+| Port 8000 is already in use | Another program uses it | Set `WORKBENCH_PORT=8080` in `.env`, then `docker compose up -d` |
+| Container restarts over and over | A startup error | `docker compose logs --tail 200 workbench` — the error is at the end |
+| Nightly backups or "Download everything" don't happen | Background worker stopped | `docker compose restart workbench`; check `scheduler_seen` in `/healthz`; run one pass by hand with `docker compose exec workbench manage run_scheduler --once` |
+| Uploads fail / "disk full" | Disk or cloud storage problem | `df -h`, `du -sh data/*`; *Files → Storage* to delete old versions and empty the trash; `docker system prune` removes old Docker images; `docker compose exec workbench manage storage --test` checks cloud storage |
+| Emails don't arrive | SMTP settings | *System & backups → Email → Send me a test email*; the reason is shown on the page |
+| GitHub events don't show up | Webhook address or secret | In GitHub: *Repository → Settings → Webhooks → Recent deliveries* shows each attempt and the response; the address and secret must match *System & backups → GitHub* |
+| `update.sh` says "Couldn't reach GitHub" | Network, or the wrong repository address | `git remote -v`; for a public repository: `git remote set-url origin https://github.com/YOUR-USER/workbench.git` |
+| `update.sh` says files were changed on the server | Someone edited files in the folder | `git status` to see them; `git stash` to set them aside (or `git checkout -- .` to throw them away) |
+
+### Locked out
+
+```bash
+docker compose exec workbench manage reset_account --list               # all accounts; shows LOCKED ones
+docker compose exec workbench manage reset_account haris                # unlock after too many wrong passwords
+docker compose exec workbench manage reset_account haris --password     # + prints a one-time link to set a new password
+docker compose exec workbench manage reset_account haris --2fa          # + turns off 2FA (set up again at next sign-in)
+docker compose exec workbench manage create_admin --username newadmin   # a new administrator, with a set-password link
+```
+
+Every reset is written to the audit log. Other people's accounts can also be unlocked, and their 2FA reset, by an administrator under **People**.
+
+### Change the domain later (or add one)
+
+```bash
+cd /opt/workbench
+./install.sh              # asks for the domain again and restarts
+```
+
+Or by hand: edit `WORKBENCH_DOMAIN=` (and `WORKBENCH_BIND=127.0.0.1`) in `.env`, then `docker compose --profile https up -d`.
+
+### Go back to the previous version
+
+`update.sh` does this by itself when an update fails. To do it by hand (for example, the new version starts but something doesn't work right):
+
+```bash
+cd /opt/workbench
+ls -t data/backups | head -3          # the newest one is the backup update.sh took
+git tag --sort=-v:refname | head -5   # versions
+git checkout v1.3.0                   # the version you were on before
+docker compose stop workbench
+docker compose run --rm workbench restore workbench-YYYYMMDD-HHMMSS.zip
+docker compose up -d --build
+```
+
+Restore the backup together with the old version: a newer version may have changed the database, and an older version can't read it. Anything added since that backup is lost; the data from just before the restore is kept in `data/pre-restore-…`.
+
+### Useful commands
+
+```bash
+docker compose exec workbench manage backup_now          # backup now
+docker compose exec workbench manage storage             # where files are kept, locked or not
+docker compose exec workbench manage storage --test      # write/read/delete a test file
+docker compose exec workbench manage storage --unlock    # allow changing locked storage again
+docker compose exec workbench manage shell               # Python shell with Workbench loaded (careful)
+docker compose restart workbench                         # restart the app
+docker compose build --no-cache && docker compose up -d  # rebuild from scratch
+docker stats --no-stream                                 # CPU and memory use
+```
+
+Never set `WORKBENCH_DEBUG=1` on a server: it shows internal details to anyone who hits an error. Use the logs instead.
+
+### Asking for help
+
+Include the output of these (they contain no passwords or keys):
+
+```bash
+cat VERSION; git log --oneline -1
+docker compose ps
+curl -s http://localhost:8000/healthz
+docker compose logs --tail 200 workbench
+tail -n 50 data/update.log
+```
+
+---
+
 ## What's inside
 
 | Area | Highlights |
@@ -162,7 +360,7 @@ pip install -r requirements-dev.txt
 export WORKBENCH_DEBUG=1
 python manage.py migrate && python manage.py seed_demo
 python manage.py runserver                     # http://localhost:8000 — haris / Workbench-demo-2026!
-python manage.py test apps                     # 158 tests (S3 is tested against a local mock)
+python manage.py test apps                     # 159 tests (S3 is tested against a local mock)
 ```
 
 The demo users are `haris` (admin), `ayesha` (lead), `bilal`, `sana` and `usman` (engineers), and `fatima` (procurement). They all use the password `Workbench-demo-2026!`.

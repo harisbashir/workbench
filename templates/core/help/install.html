@@ -11,9 +11,9 @@
 <pre><code>docker compose logs workbench</code></pre>
 <h3>New server, straight from GitHub (recommended)</h3>
 <p>On a fresh Ubuntu or Debian server, one command:</p>
-<pre><code>bash &lt;(curl -fsSL https://raw.githubusercontent.com/YOUR-USER/workbench/main/install.sh) https://github.com/YOUR-USER/workbench.git</code></pre>
+<pre><code>bash &lt;(curl -fsSL https://raw.githubusercontent.com/harisbashir/workbench/main/install.sh) https://github.com/harisbashir/workbench.git</code></pre>
 <p>It installs git and Docker, downloads the newest release to <code>/opt/workbench</code>, asks for your domain (for HTTPS), starts Workbench and prints the setup code.</p>
-<p><strong>Private repository?</strong> Copy <code>install.sh</code> to the server and run <code>bash install.sh git@github.com:YOUR-USER/workbench.git</code>. The server gets its own <strong>read-only deploy key</strong>: add it in GitHub under <em>Repository → Settings → Deploy keys</em> (leave <em>Allow write access</em> off) and press Enter. An existing HTTPS copy of a private repository can switch with <code>./install.sh --deploy-key</code>.</p>
+<p><strong>Private repository?</strong> Copy <code>install.sh</code> to the server and run <code>bash install.sh git@github.com:harisbashir/workbench.git</code>. The server gets its own <strong>read-only deploy key</strong>: add it in GitHub under <em>Repository → Settings → Deploy keys</em> (leave <em>Allow write access</em> off) and press Enter. An existing HTTPS copy of a private repository can switch with <code>./install.sh --deploy-key</code>.</p>
 
 <h2>HTTPS for internet access</h2>
 <p>If people connect over the internet, use HTTPS. Point a domain name (e.g. <code>workbench.yourcompany.com</code>) at the server, then:</p>

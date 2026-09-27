@@ -2,12 +2,12 @@
 # Workbench installer for Ubuntu / Debian servers.
 #
 # New server, public repository (no key needed):
-#   bash <(curl -fsSL https://raw.githubusercontent.com/YOUR-USER/workbench/main/install.sh) \
-#        https://github.com/YOUR-USER/workbench.git
+#   bash <(curl -fsSL https://raw.githubusercontent.com/harisbashir/workbench/main/install.sh) \
+#        https://github.com/harisbashir/workbench.git
 #
 # New server, private repository (sets up a read-only GitHub deploy key):
 #   1. Copy this one file to the server, e.g.  scp install.sh you@server:
-#   2. Run:  bash install.sh git@github.com:YOUR-USER/workbench.git
+#   2. Run:  bash install.sh git@github.com:harisbashir/workbench.git
 #
 # Inside an existing copy of the repository (e.g. /opt/workbench):
 #   ./install.sh               # (re)configure and start
@@ -148,7 +148,7 @@ readable() { GIT_TERMINAL_PROMPT=0 git ls-remote -q "$1" HEAD >/dev/null 2>&1; }
 
 if [ $IN_REPO -eq 0 ]; then
   if [ -z "$REPO_URL" ]; then
-    read -r -p "GitHub repository (e.g. https://github.com/your-user/workbench.git): " REPO_URL
+    REPO_URL="https://github.com/harisbashir/workbench.git"
   fi
   [ -n "$REPO_URL" ] || die "A repository address is needed."
   case "$REPO_URL" in

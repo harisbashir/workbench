@@ -1,54 +1,112 @@
 # Workbench
 
-Workbench is one web app for a remote embedded-hardware team. It covers:
+**One self-hosted web app for a hardware team:** chat, projects and task boards, design and code reviews linked to GitHub, firmware releases, PCB design files with a built-in Gerber viewer, a parts library with KiCad BOM import, purchasing, production builds, and timesheets.
 
-- team chat
-- projects and task boards
-- design and code reviews linked to GitHub
-- a file library
-- firmware releases per board revision, with version control and checksums
-- PCB design files per revision, with a built-in Gerber viewer
-- assembly-house (JLCPCB, Seeed…) builds with an in-house finishing checklist
-- a parts library with KiCad BOM import
-- purchasing and production builds
-- timesheets and weekly reports
+Built for small embedded/electronics teams — especially **remote and distributed ones** — who are tired of stitching together Slack, Jira, a spreadsheet of parts and a shared drive. Everything is written in this codebase (no third-party apps embedded, no trackers, no CDNs), it runs as **one Docker container**, and everything it stores lives in **one `data` folder**.
 
-**Contents:** [Quick start](#quick-start-about-5-minutes) · [Deploying to a server](#deploying-to-a-server-step-by-step) · [Updating](#updating) · [The data folder](#the-data-folder) · [Troubleshooting](#troubleshooting) · [What's inside](#whats-inside) · [Security](#security) · [Development](#development)
+![Home dashboard](docs/screenshots/home.png)
 
-Every feature is built into this codebase, with no third-party apps embedded. It runs as **one Docker container**, and everything it stores sits in **one `data` folder**.
-
----
-
-## Quick start (about 5 minutes)
-
-You need [Docker](https://docs.docker.com/get-docker/). On Windows or Mac, install Docker Desktop.
-
-```bash
-# in the Workbench folder
-docker compose up -d
-docker compose logs workbench      # shows your one-time setup code
-```
-
-Open **http://localhost:8000** (or `http://<server-ip>:8000`) and enter the setup code. Then create your administrator account and scan the QR code with an authenticator app on your phone. That's it.
-
-There are no passwords, keys or config files to prepare. Workbench generates its own secrets on first start and keeps them in the data folder.
-
-That's the quickest way to try it on your own computer. For a real server, follow [Deploying to a server](#deploying-to-a-server-step-by-step).
+**Contents:**
+[Features](#features) ·
+[Install on a server](#install-on-a-server) ·
+[Try it on your computer](#try-it-on-your-computer) ·
+[Updating](#updating) ·
+[Configuration](#configuration) ·
+[File storage](#file-storage) ·
+[Backups and restore](#backups-and-restore) ·
+[Security](#security) ·
+[Troubleshooting](#troubleshooting) ·
+[Uninstall](#uninstall) ·
+[Development](#development)
 
 ---
 
-## Deploying to a server, step by step
+## Features
 
-In the commands below, replace `harisbashir/workbench` with your GitHub repository.
+### Projects and tasks
+- A project per product or board, each with a **task board** (To do → In progress → In review → Done), a list view with filters, and an overview page.
+- Task IDs like `PWR-12`, types (schematic, PCB layout, firmware, test…), priorities, due dates, reviewers, **blocked** flags with a reason, comments with **@mentions**, attachments, and time logging.
+- **Revisions** (Rev A, Rev B, EVT…) with a **release checklist** (ERC/DRC clean, MPNs complete, footprints checked…) that must be signed off before a revision can be released for production.
+
+![Task board](docs/screenshots/task-board.png)
+
+### Chat
+- A channel for every project (created automatically), topic channels, private channels and **direct messages**.
+- File sharing, @mentions, unread counts, task IDs that turn into links, and `code`/**bold**/heading formatting.
+- GitHub activity, firmware releases and production updates are posted into the right project channel automatically.
+
+![Chat](docs/screenshots/chat.png)
+
+### GitHub integration
+- One signed webhook per repository. Pull requests and commits that mention a task ID (`PWR-12`) are linked to the task.
+- PR opened → task moves to *In review*; changes requested → *In progress*; merged → *Done*.
+- CI results (e.g. KiBot ERC/DRC for hardware repositories, firmware builds) are shown on the task, and failures are announced in chat.
+- Publishing a GitHub release (e.g. tag `v1.5.0`) creates a firmware release in *Testing* automatically.
+
+### Firmware management
+- Per project: firmware components (main application, bootloader…) with **semantic versions** (`1.4.0`, `1.4.0-rc.1`).
+- Each release has notes, files (`.bin`, `.hex`, `.elf`…) with **SHA-256 checksums**, and the **board revisions it's compatible with** — so Rev A and Rev B can run different firmware.
+- Lifecycle: Draft → Testing → **Released** (leads approve; files are locked) → Deprecated / **Recalled** (with a reason; the team is notified and builds using it are blocked).
+- A recommended release per board revision, a **changelog between any two versions**, and a record of the firmware flashed on each production build.
+
+![Firmware release](docs/screenshots/firmware-release.png)
+
+### PCB design files and Gerber viewer
+- Each revision stores its **Gerbers, drill files, schematic and PCB files** (KiCad, Eagle, Altium), pick-and-place, BOM, STEP models and PDFs — sorted by type, every version kept.
+- A **built-in Gerber and Excellon viewer** (its own renderer, nothing external): top and bottom views with solder mask colour and finish, a layer view with toggles, zoom, pan and a **measure** tool.
+- Board facts for ordering: size, copper layers, thickness and finish (from the job file), hole counts, smallest drill, thinnest track.
+
+![Gerber viewer](docs/screenshots/gerber-viewer.png)
+
+### Parts and BOMs
+- Parts library with categories, MPNs, suppliers, prices, stock, reorder levels, storage locations and full **stock history**.
+- **KiCad BOM import** (KiCad or KiBot CSV) with automatic part matching; BOM cost per board, boards buildable from stock, and **BOM comparison between revisions**.
+- Each BOM line is marked as fitted by the **assembly house**, **in house** or **not fitted** (through-hole parts are suggested as in house).
+
+![BOM](docs/screenshots/bom.png)
+
+### Purchasing and production
+- **Purchase orders:** draft → ordered → received; receiving updates stock and unit cost. One click creates orders for exactly the parts a build is short of, grouped by supplier.
+- **Builds done fully in house:** shortage check, parts taken from stock, test yield.
+- **Builds assembled by JLCPCB, Seeed or another assembly house, then finished in house:**
+  - *Order files*: the assembler's BOM and placement (CPL) files with your in-house parts left out, plus the Gerbers, with checks for missing LCSC numbers or placements.
+  - Track the order number and dates; when the boards arrive, only the in-house parts leave stock.
+  - The build becomes a **finishing checklist** — one step per in-house part, highlighted on the board picture, with *+1 / +5 / All* counters that work on a phone at the bench — plus a **printable traveler** with a tick box per board.
+  - Then test & flash, and record passed/failed boards.
+
+![Finishing in house](docs/screenshots/build-finishing.png)
+
+### Files
+- A file space per project plus a company-wide *Shared* space, with folders, drag-and-drop upload, **every version kept**, previews (PDF, images, text, CSV, KiCad files), a trash with restore, and a storage page showing what takes space.
+
+![Files](docs/screenshots/files.png)
+
+### Time, reporting and search
+- Log hours against tasks; a **weekly report** of hours by person and project, finished work, reviews, blockers and builds — printable, or as CSV.
+- **Home** shows your tasks, reviews waiting for you, blocked and overdue work, low stock, and a **team clock** showing who's in working hours (e.g. Toronto ↔ Karachi).
+- One search box for tasks, files, parts and messages; type a task ID like `PWR-12` to jump straight to it. Notifications in the app and by email.
+
+### Administration
+- Five roles: **Administrator**, **Engineering lead**, **Engineer**, **Procurement / production**, **Viewer** (read-only). Engineers only see their projects.
+- Invite links (or emailed invites), company name and **logo** (SVG or transparent PNG), time zone, SMTP email, GitHub webhook secret.
+- **Storage settings in the app**: a folder on the server or S3-compatible cloud storage, with a verified background move.
+- Nightly **backups**, restore from the command line, **"Download everything"** as an organised zip, and an **audit log** of sign-ins, permission changes, downloads and stock changes.
+- **Help & guides** built in, and a short explanation on every page.
+
+---
+
+## Install on a server
+
+The commands below can be copied as they are.
 
 ### What you need
 
-- A server running **Ubuntu 22.04 / 24.04 or Debian 12** with at least **2 GB RAM and 20 GB disk** (a small cloud VM is enough for a team of 20), and a user that can run `sudo`.
-- For access over the internet: a **domain name** (e.g. `workbench.yourcompany.com`) with a DNS **A record** pointing at the server's public IP. Check it before you start — this must print the server's IP:
+- A server running **Ubuntu 22.04 / 24.04 or Debian 12**, with at least **2 GB RAM and 20 GB disk**, and a user that can run `sudo`. A small cloud VM (AWS Lightsail/EC2, DigitalOcean, Hetzner, Linode…) is enough for a team of 20.
+- For access over the internet: a **domain name** (e.g. `workbench.yourcompany.com`) with a DNS **A record** pointing at the server's public IP. Check it before you start — this must print your server's IP:
   ```bash
   getent hosts workbench.yourcompany.com
   ```
-- Without a domain, Workbench runs over plain HTTP on port 8000. Only do that inside an office network, a VPN or Tailscale.
+- No domain? Workbench can run over plain HTTP on port 8000. Only do that inside an office network, a VPN or Tailscale.
 
 ### Step 1 — Log in and open the firewall
 
@@ -58,11 +116,10 @@ sudo apt update && sudo apt install -y curl
 sudo ufw allow OpenSSH
 sudo ufw allow 80
 sudo ufw allow 443
-# sudo ufw allow 8000        # only if you're NOT using a domain
 sudo ufw --force enable
 ```
 
-If your cloud provider has its own firewall (AWS security groups, DigitalOcean/Hetzner firewalls…), open the same ports there too.
+Without a domain, also run `sudo ufw allow 8000`. If your cloud provider has its own firewall (AWS security groups, DigitalOcean/Hetzner firewalls…), open the same ports there too.
 
 ### Step 2 — Install
 
@@ -74,38 +131,43 @@ The installer:
 
 1. installs git and Docker if they're missing
 2. downloads the newest release (the highest `v…` tag) into `/opt/workbench`
-3. asks for your **domain** — type it for automatic HTTPS (Let's Encrypt), or leave it empty for `http://SERVER-IP:8000`
+3. asks for your **domain** — type it for automatic HTTPS with a free Let's Encrypt certificate, or leave it empty to use `http://SERVER-IP:8000`
 4. builds and starts Workbench (the first build takes a few minutes)
 5. prints the address and a one-time **setup code**
 
-Options: `--dir /srv/workbench` (another folder), `--branch main` (follow a branch instead of release tags), `--domain workbench.yourcompany.com` (skip the question), `--no-https`.
+Installer options (add them at the end of the command):
 
-**Private repository?** Copy the script to the server and give it the SSH address. It creates a read-only deploy key, shows it, and waits while you add it in GitHub under *Repository → Settings → Deploy keys → Add deploy key* (leave *Allow write access* off):
+| Option | What it does |
+|---|---|
+| `--domain workbench.yourcompany.com` | Use this domain without asking |
+| `--no-https` | Don't ask; run on `http://SERVER-IP:8000` |
+| `--dir /srv/workbench` | Install somewhere other than `/opt/workbench` |
+| `--branch main` | Follow the latest code on a branch instead of release tags (for test servers) |
 
-```bash
-scp install.sh you@SERVER-IP:        # run on your computer
-bash install.sh git@github.com:harisbashir/workbench.git
-```
+Installing from a **fork** or a **private copy**? Pass its address instead. For a private repository, use the SSH address (`git@github.com:you/workbench.git`): the installer creates a **read-only deploy key**, shows it, and waits while you add it in GitHub under *Repository → Settings → Deploy keys* (leave *Allow write access* off).
 
 ### Step 3 — First sign-in
 
 1. Open the address the installer printed.
-2. Enter the setup code. (Lost it? `cd /opt/workbench && docker compose logs workbench | grep -i setup`)
-3. Create your administrator account and scan the QR code with an authenticator app (Google Authenticator, Microsoft Authenticator, 1Password…). **Save the recovery codes.**
+2. Enter the setup code. Lost it? Run:
+   ```bash
+   cd /opt/workbench && docker compose logs workbench | grep -i "setup code"
+   ```
+3. Create your administrator account and scan the QR code with an authenticator app (Google Authenticator, Microsoft Authenticator, 1Password…). **Save the recovery codes** somewhere safe.
 
 ### Step 4 — Set it up
 
-In **System & backups**:
+Go to **System & backups**:
 
 | Tab | What to do |
 |---|---|
-| General | Company name, time zone (for nightly backups), **logo** |
-| Storage | Keep files on the server, or move them to S3 / R2 / B2 / Wasabi / your NAS — *Save and test connection*, then *Move files and switch* |
-| Backups | Check the nightly backup time; later, download a backup and keep it off the server |
-| Email | SMTP details so invites and notifications can be emailed; *Send me a test email* |
-| GitHub | Copy the webhook address and secret into each repository (*Settings → Webhooks*) |
+| General | Company name, **Site url** (e.g. `https://workbench.yourcompany.com`, used in invite and email links), time zone, logo |
+| Storage | Keep files on the server, or move them to cloud storage (see [File storage](#file-storage)) |
+| Backups | Check the nightly backup time. Download a backup now and then and keep it off the server |
+| Email | SMTP details so invites and notifications can be emailed, then *Send me a test email* |
+| GitHub | Copy the webhook address and secret into each repository: *Repository → Settings → Webhooks → Add webhook*, content type `application/json` |
 
-Then invite your team under **People → Invite**.
+Then create your projects and invite your team under **People → Invite**. **Help & guides** (the `?` at the top of every page) walks new users through everything.
 
 ### Step 5 — Check it's healthy
 
@@ -119,15 +181,40 @@ Point an uptime monitor (UptimeRobot, Healthchecks…) at `https://your-domain/h
 
 ---
 
+## Try it on your computer
+
+You need [Docker Desktop](https://docs.docker.com/get-docker/) (Windows, Mac) or Docker (Linux).
+
+```bash
+git clone https://github.com/harisbashir/workbench.git
+cd workbench
+docker compose up -d
+docker compose logs workbench        # shows the one-time setup code
+```
+
+Open **http://localhost:8000**, enter the setup code and create your account.
+
+To explore with example data instead — projects, tasks, chat, parts, firmware, a sample board and builds — load the demo **instead of** creating your own account:
+
+```bash
+docker compose exec workbench manage seed_demo
+```
+
+Then sign in as `haris` (administrator), `ayesha` (lead), `bilal`, `sana` or `usman` (engineers) or `fatima` (procurement), all with the password `Workbench-demo-2026!`. The demo is for trying things out — don't load it on a real installation.
+
+Stop it with `docker compose down`. Your data stays in the `data` folder.
+
+---
+
 ## Updating
 
-### Servers installed with `install.sh`
+### Servers installed with the installer
 
 ```bash
 cd /opt/workbench
 ./update.sh --check       # is there a new version? (lists the changes)
 ./update.sh               # update
-./update.sh --to v1.3.1   # go to a specific newer version
+./update.sh --to v1.3.3   # go to a specific newer version
 ```
 
 `update.sh`:
@@ -138,122 +225,148 @@ cd /opt/workbench
 4. restarts and waits for the health check
 5. **if the new version doesn't come up healthy, puts the previous version back and restores the backup**
 
-Everything it does is logged in `data/update.log`. Workbench is unavailable for about a minute during step 4.
+Workbench is unavailable for about a minute during step 4. Everything is logged in `data/update.log`. Database changes are applied automatically when the new version starts.
 
-### Older servers set up with `git clone` (before 1.3)
+### Older installations (set up with `git clone` before version 1.3)
 
-These don't have `update.sh` yet, so update once by hand:
+These don't have `update.sh` yet. Update once by hand, then use `./update.sh` from then on:
 
 ```bash
-cd ~/workbench                                                       # wherever you cloned it
-docker compose exec workbench manage backup_now                      # safety backup
-git remote set-url origin https://github.com/harisbashir/workbench.git  # the public address
+cd ~/workbench                                                         # wherever you cloned it
+docker compose exec workbench manage backup_now                        # safety backup
+git remote set-url origin https://github.com/harisbashir/workbench.git
 git pull
-docker compose up -d --build            # add --profile https if you use a domain
+docker compose up -d --build            # with a domain: docker compose --profile https up -d --build
 docker compose ps                       # wait for (healthy)
+chmod +x install.sh update.sh
 ```
 
-After that, use `./update.sh` like any other server. If `git pull` complains about local changes, run `git stash` first.
+If `git pull` complains about local changes, run `git stash` and try again.
 
-### Publishing a new version
+### Which version does a server get?
 
-Servers installed with `install.sh` follow **release tags**, so pushing to `main` alone doesn't reach them:
-
-```bash
-# on your computer, after the changes are merged into main
-echo 1.3.2 > VERSION
-git commit -am "Release 1.3.2"
-git tag -a v1.3.2 -m "Workbench 1.3.2"
-git push origin main --tags
-```
-
-Then run `./update.sh` on each server. A server installed with `--branch main` (or an old `git clone`) follows `main` directly — handy for a test server.
+Servers installed with the installer follow **release tags** (`v1.3.3`), so unfinished work on `main` never reaches them. A server installed with `--branch main`, or an older `git clone`, follows `main` directly — handy for a test server.
 
 ---
 
-## The data folder
+## Configuration
 
-Everything Workbench stores lives in `./data` next to `docker-compose.yml`:
+Most settings are made in the app (**System & backups**). A few server settings go in a `.env` file in the Workbench folder (`/opt/workbench/.env`). After changing it, apply with `docker compose up -d` (with a domain: `docker compose --profile https up -d`). Workbench generates its own secret keys on first start — there's nothing you have to set.
+
+| Variable | Default | What it does |
+|---|---|---|
+| `WORKBENCH_DOMAIN` | *(empty)* | Your domain. Turns on HTTPS mode (secure cookies, HSTS); the `https` profile gets a certificate for it |
+| `WORKBENCH_BIND` | `0.0.0.0` | Address the app port listens on. The installer sets `127.0.0.1` with a domain, so only the HTTPS proxy is reachable |
+| `WORKBENCH_PORT` | `8000` | Port on the server for the app |
+| `WORKBENCH_WORKERS` | `3` | Web server processes (each runs 4 threads) |
+| `WORKBENCH_TIME_ZONE` | `UTC` | Server default time zone (the company time zone is set in the app) |
+| `WORKBENCH_SESSION_HOURS` | `12` | How long people stay signed in |
+| `WORKBENCH_LOGIN_MAX_ATTEMPTS` / `WORKBENCH_LOGIN_LOCKOUT_MINUTES` | `5` / `15` | Account lockout after wrong passwords |
+| `WORKBENCH_ALLOWED_HOSTS` / `WORKBENCH_CSRF_TRUSTED_ORIGINS` | | Extra addresses, when Workbench sits behind another proxy or load balancer |
+| `WORKBENCH_DB_NAME`, `_USER`, `_PASSWORD`, `_HOST`, `_PORT` | | Use an existing **PostgreSQL** server instead of the built-in SQLite database (only needed for large teams) |
+| `WORKBENCH_STORAGE`, `WORKBENCH_S3_*`, `WORKBENCH_FILES_DIR` | | Pin file storage in the server configuration instead of the app (see `.env.example`) |
+
+See [`.env.example`](.env.example) for a commented template.
+
+---
+
+## File storage
+
+Administrators choose where uploaded files are kept in **System & backups → Storage**:
+
+- **A folder on the server** — the default (`data/files`). It can point at a bigger disk or a NAS share mounted into the container.
+- **Cloud storage over the S3 protocol** — **Amazon S3, Cloudflare R2, Backblaze B2, Wasabi, DigitalOcean Spaces, Google Cloud Storage** (HMAC keys), or your own **MinIO / Synology / QNAP** S3 server. Choose the service and its address is filled in.
+
+To switch:
+
+1. Create a **private** bucket and an access key limited to it. It needs to list, read, write and delete objects. On AWS, an IAM role on the server works without keys.
+2. Enter the details and press **Save and test connection** — Workbench writes, reads back and deletes a test file.
+3. Press **Move files and switch**. Every file is copied and checked in the background; Workbench switches only when all of them made it, and people can keep working meanwhile. Nothing is deleted from the old place.
+4. With **Lock storage here** ticked (the default), the choice is permanent in the app — only the keys for the same bucket can be updated. To change it anyway, an administrator runs `docker compose exec workbench manage storage --unlock` on the server.
+
+Keys are stored encrypted, buckets stay private, and files are always downloaded through Workbench, so permissions apply wherever they're kept. With cloud storage, nightly backups still include every file, and a copy of each backup is also kept in the bucket under `backups/`.
+
+---
+
+## Backups and restore
+
+Everything lives in the `data` folder next to `docker-compose.yml`:
 
 | Folder / file | What's in it |
 |---|---|
 | `data/db/` | The database (SQLite, a single file) |
-| `data/files/` | Every uploaded file, one folder per project (`files/PWR/…`, `files/shared/…`), all versions kept |
-| `data/backups/` | Nightly backup zips |
-| `data/secrets.json` | Generated keys. They're needed to read 2FA secrets, so never lose this file |
+| `data/files/` | Uploaded files, when they're stored on the server |
+| `data/backups/` | Backup zips |
+| `data/secrets.json` | Generated keys. They're needed to read 2FA and other encrypted settings — **never lose this file** |
+| `data/update.log` | What `update.sh` did |
 
-- **Back up:** automatic every night, or press *Back up now* under *System & backups*. Each zip holds the database, all files and the keys. Download backups from the same page, or sync `data/backups` to cloud storage. Keep a copy off the server.
+- **Automatic:** a backup every night (time set in *System & backups → Backups*); the newest 14 are kept. Each zip holds the database, all files and the keys.
+- **Right now:** press *Back up now*, or run `docker compose exec workbench manage backup_now`.
+- **Off the server:** download backups from the Backups page, or sync `data/backups` somewhere else (with cloud storage, copies are already in your bucket). **Always keep a copy off the server.**
 - **Restore:**
   ```bash
+  cd /opt/workbench
   docker compose stop workbench
   docker compose run --rm workbench restore workbench-YYYYMMDD-HHMMSS.zip
   docker compose start workbench
   ```
-  Your data from before the restore is kept in `data/pre-restore-…` until you delete it.
-- **Move to a new server:** stop Workbench, copy the `data` folder across, run `docker compose up -d`.
-- **Update:** `./update.sh` (backup, pull, rebuild, health check, automatic rollback). Database changes apply automatically on start.
-- **Download everything:** *System & backups → Download everything* builds one zip organised for people rather than for restoring: `Projects/<project>/Files`, `Firmware/<name>/<version>`, `Revisions` (BOMs as CSV), `Tasks.csv`, chat transcripts of public channels, parts, orders and builds as CSV files. Private channels, direct messages and keys are left out. Use a backup zip to restore; use this to hand files to someone or archive them.
-- **Storage housekeeping:** *Files → Storage* shows usage by project and the largest files. It can also delete old versions or empty the trash. Deleted files stay in the trash for 30 days first.
+  The data from just before the restore is kept in `data/pre-restore-…` until you delete it.
+- **Move to a new server:** install on the new server (above), then run `docker compose stop workbench` on both, copy the old server's `data` folder over the new one, and run `docker compose start workbench`.
+- **Download everything:** *System & backups → Download everything* builds one zip organised for people rather than for restoring: every file in its folders, each firmware release with its files and notes, BOMs, tasks, parts, orders and builds as spreadsheets, and transcripts of public chat channels. Private channels, direct messages and keys are left out. Use it for handovers, audits or archives.
 
-### Where uploaded files are kept
+---
 
-Chosen by an administrator in **System → Storage**: a folder on the server (default `data/files`), or cloud storage over the S3 protocol — **Amazon S3, Cloudflare R2, Backblaze B2, Wasabi, DigitalOcean Spaces, Google Cloud Storage** (HMAC keys) or a self-hosted **MinIO / Synology / QNAP** server. Enter the bucket and keys, *Save and test connection*, then *Move files and switch*: every file is copied and verified in the background and Workbench switches only when all of them made it. Ticking *Lock storage here* makes the choice permanent in the app (`manage storage --unlock` on the server undoes it). Keys are encrypted; buckets stay private; downloads always go through Workbench's permission checks; backups include cloud files and a copy is kept in the bucket.
+## Security
 
-```bash
-docker compose exec workbench manage storage          # where files are kept, locked or not
-docker compose exec workbench manage storage --test   # write/read/delete a test file
-```
+- **Sign-in:** passwords of 12+ characters plus **mandatory authenticator-app 2FA**, single-use recovery codes, and account lockout after repeated wrong passwords.
+- **Access control:** five roles; engineers only see their projects; released revisions and released firmware are locked; every page and download is permission-checked on the server.
+- **Data at rest:** 2FA secrets, SMTP passwords, webhook secrets and storage keys are encrypted in the database. Uploaded files are never served directly, and files that could run in a browser (`.html`, `.js`, `.exe`…) are refused. Uploaded SVG logos are cleaned before use.
+- **In the browser:** HTTPS with HSTS (with a domain), secure cookies, CSRF protection and a strict Content-Security-Policy. No third-party scripts, fonts or trackers.
+- **GitHub webhooks:** HMAC-SHA256 signatures, replay protection, and capped logging of rejected requests.
+- **Audit log:** sign-ins (including failures), permission changes, uploads, downloads, backups, imports, stock changes and orders, each with its IP address.
+- **Server:** the container runs as an unprivileged user; the installer verifies GitHub's host key when it uses a deploy key; updates take a backup first and roll back automatically.
 
-`WORKBENCH_STORAGE=s3` and friends in `.env` (version 1.2) still work and take precedence over the page.
-
-Useful commands:
-
-```bash
-docker compose logs -f workbench                 # watch the log
-docker compose exec workbench manage backup_now  # take a backup from the command line
-docker compose exec workbench manage seed_demo   # load example data (empty installs only)
-curl http://localhost:8000/healthz               # health check for monitoring
-```
+Found a security problem? Please report it privately through this repository's **Security → Report a vulnerability** page on GitHub, not in a public issue.
 
 ---
 
 ## Troubleshooting
 
-Run these on the server, in the Workbench folder (`/opt/workbench`, or wherever you cloned it). If you use a domain, add `--profile https` to `docker compose up`/`down` commands so the HTTPS proxy (Caddy) is included; `ps`, `logs` and `exec` work without it.
+Run these on the server, in the Workbench folder (`/opt/workbench`, or wherever you cloned it). With a domain, add `--profile https` to `docker compose up` and `down` so the HTTPS proxy (Caddy) is included; `ps`, `logs`, `exec` and `restart` work without it.
 
 ### First look
 
 ```bash
 cd /opt/workbench
-docker compose ps                                   # is it running and (healthy)?
-docker compose logs --tail 100 workbench            # recent log of the app
-docker compose logs -f workbench                    # follow the log live (Ctrl+C to stop)
-curl -s http://localhost:8000/healthz               # {"ok": true, "database": true, "disk_free_mb": ..., "scheduler_seen": ..., "version": ...}
-tail -n 50 data/update.log                          # what the last updates did
-docker compose exec workbench manage check --deploy # Django's own configuration check
+docker compose ps                                    # is it running and (healthy)?
+docker compose logs --tail 100 workbench             # recent log of the app
+docker compose logs -f workbench                     # follow the log live (Ctrl+C to stop)
+curl -s http://localhost:8000/healthz                # {"ok": true, "database": true, "disk_free_mb": ..., "scheduler_seen": ..., "version": ...}
+tail -n 50 data/update.log                           # what the last updates did
+docker compose exec workbench manage check --deploy  # configuration check
 ```
 
-Without a domain, `check --deploy` warns about secure cookies and HSTS; that's expected on plain HTTP.
-
-`/healthz` reports `"ok": false` when the database can't be reached or less than 200 MB of disk is free. `scheduler_seen` is the last time the background worker (nightly backups, emails, exports, storage moves) checked in; it should be within the last minute or two.
+- `/healthz` says `"ok": false` when the database can't be reached or less than 200 MB of disk is free.
+- `scheduler_seen` is the last time the background worker (nightly backups, emails, exports, storage moves) checked in. It should be within the last minute or two.
+- Without a domain, `check --deploy` warns about secure cookies and HSTS; that's expected on plain HTTP.
 
 ### Common problems
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | The browser can't connect at all | Firewall, or the container isn't running | `docker compose ps`; open ports 80/443 (or 8000) in `ufw` **and** in your cloud provider's firewall; `docker compose up -d` |
-| HTTPS certificate error, or the domain doesn't load | DNS not pointing at the server yet, or ports 80/443 closed, so Let's Encrypt couldn't verify | `getent hosts your-domain` must show the server's IP; then `docker compose --profile https restart caddy` and `docker compose logs caddy` |
-| **Bad Request (400)** | Opening by IP address while a domain is set | Use the domain name, or change `WORKBENCH_DOMAIN` in `.env` (see below) |
-| **CSRF verification failed** when signing in | Workbench sits behind another proxy/load balancer with a different address | Add `WORKBENCH_CSRF_TRUSTED_ORIGINS=https://the-address-people-use` and `WORKBENCH_ALLOWED_HOSTS=the-address-people-use` to `.env`, then `docker compose up -d` |
-| Invite or email links point to the wrong address | *Site url* not set | *System & backups → General → Site url*, e.g. `https://workbench.yourcompany.com` |
+| HTTPS certificate error, or the domain doesn't load | DNS doesn't point at the server yet, or ports 80/443 are closed, so Let's Encrypt couldn't verify | `getent hosts your-domain` must show the server's IP; then `docker compose --profile https restart caddy` and check `docker compose logs caddy` |
+| **Bad Request (400)** | Opening by IP address while a domain is set | Use the domain name, or change the domain (see below) |
+| **CSRF verification failed** when signing in | Workbench is behind another proxy or load balancer with a different address | Add `WORKBENCH_CSRF_TRUSTED_ORIGINS=https://the-address` and `WORKBENCH_ALLOWED_HOSTS=the-address` to `.env`, then `docker compose up -d` |
+| Invite or email links point to the wrong address | *Site url* not set | *System & backups → General → Site url* |
 | Port 8000 is already in use | Another program uses it | Set `WORKBENCH_PORT=8080` in `.env`, then `docker compose up -d` |
 | Container restarts over and over | A startup error | `docker compose logs --tail 200 workbench` — the error is at the end |
-| Nightly backups or "Download everything" don't happen | Background worker stopped | `docker compose restart workbench`; check `scheduler_seen` in `/healthz`; run one pass by hand with `docker compose exec workbench manage run_scheduler --once` |
-| Uploads fail / "disk full" | Disk or cloud storage problem | `df -h`, `du -sh data/*`; *Files → Storage* to delete old versions and empty the trash; `docker system prune` removes old Docker images; `docker compose exec workbench manage storage --test` checks cloud storage |
-| Emails don't arrive | SMTP settings | *System & backups → Email → Send me a test email*; the reason is shown on the page |
-| GitHub events don't show up | Webhook address or secret | In GitHub: *Repository → Settings → Webhooks → Recent deliveries* shows each attempt and the response; the address and secret must match *System & backups → GitHub* |
-| `update.sh` says "Couldn't reach GitHub" | Network, or the wrong repository address | `git remote -v`; for a public repository: `git remote set-url origin https://github.com/harisbashir/workbench.git` |
-| `./update.sh: Permission denied` | The script lost its "executable" flag (e.g. uploaded through the GitHub website or from Windows) | `chmod +x install.sh update.sh`, or run it as `bash update.sh` |
+| Nightly backups or "Download everything" don't happen | The background worker stopped | `docker compose restart workbench`; check `scheduler_seen` in `/healthz`; run one pass by hand with `docker compose exec workbench manage run_scheduler --once` |
+| Uploads fail, or "disk full" | Disk or cloud storage problem | `df -h` and `du -sh data/*`; *Files → Storage* to delete old versions and empty the trash; `docker system prune` removes old Docker images; `docker compose exec workbench manage storage --test` checks cloud storage |
+| Emails don't arrive | SMTP settings | *System & backups → Email → Send me a test email* — the reason is shown on the page |
+| GitHub events don't show up | Webhook address or secret | In GitHub, *Repository → Settings → Webhooks → Recent deliveries* shows each attempt and the response. The address and secret must match *System & backups → GitHub* |
+| `./update.sh: Permission denied` | The script lost its "executable" flag | `chmod +x install.sh update.sh`, or run `bash update.sh` |
+| `update.sh` says "Couldn't reach GitHub" | Network, or the wrong repository address | `git remote -v`; `git remote set-url origin https://github.com/harisbashir/workbench.git` |
 | `update.sh` says files were changed on the server | Someone edited files in the folder | `git status` to see them; `git stash` to set them aside (or `git checkout -- .` to throw them away) |
 
 ### Locked out
@@ -261,12 +374,12 @@ Without a domain, `check --deploy` warns about secure cookies and HSTS; that's e
 ```bash
 docker compose exec workbench manage reset_account --list               # all accounts; shows LOCKED ones
 docker compose exec workbench manage reset_account haris                # unlock after too many wrong passwords
-docker compose exec workbench manage reset_account haris --password     # + prints a one-time link to set a new password
-docker compose exec workbench manage reset_account haris --2fa          # + turns off 2FA (set up again at next sign-in)
+docker compose exec workbench manage reset_account haris --password     # also print a one-time link to set a new password
+docker compose exec workbench manage reset_account haris --2fa          # also turn off 2FA (set up again at next sign-in)
 docker compose exec workbench manage create_admin --username newadmin   # a new administrator, with a set-password link
 ```
 
-Every reset is written to the audit log. Other people's accounts can also be unlocked, and their 2FA reset, by an administrator under **People**.
+Replace `haris` with the username. Every reset is written to the audit log. Administrators can also unlock people and reset their 2FA under **People**.
 
 ### Change the domain later (or add one)
 
@@ -275,23 +388,23 @@ cd /opt/workbench
 ./install.sh              # asks for the domain again and restarts
 ```
 
-Or by hand: edit `WORKBENCH_DOMAIN=` (and `WORKBENCH_BIND=127.0.0.1`) in `.env`, then `docker compose --profile https up -d`.
+Or by hand: set `WORKBENCH_DOMAIN=` and `WORKBENCH_BIND=127.0.0.1` in `.env`, then run `docker compose --profile https up -d`.
 
 ### Go back to the previous version
 
-`update.sh` does this by itself when an update fails. To do it by hand (for example, the new version starts but something doesn't work right):
+`update.sh` does this by itself when an update fails. To do it by hand — for example, the new version starts but something doesn't work right:
 
 ```bash
 cd /opt/workbench
-ls -t data/backups | head -3          # the newest one is the backup update.sh took
+ls -t data/backups | head -3          # the newest is the backup update.sh took before updating
 git tag --sort=-v:refname | head -5   # versions
-git checkout v1.3.0                   # the version you were on before
+git checkout v1.3.2                   # the version you were on before
 docker compose stop workbench
 docker compose run --rm workbench restore workbench-YYYYMMDD-HHMMSS.zip
 docker compose up -d --build
 ```
 
-Restore the backup together with the old version: a newer version may have changed the database, and an older version can't read it. Anything added since that backup is lost; the data from just before the restore is kept in `data/pre-restore-…`.
+Always restore the backup together with the old version: a newer version may have changed the database, and an older version can't read it. Anything added since that backup is lost.
 
 ### Useful commands
 
@@ -310,7 +423,7 @@ Never set `WORKBENCH_DEBUG=1` on a server: it shows internal details to anyone w
 
 ### Asking for help
 
-Include the output of these (they contain no passwords or keys):
+Open an issue on GitHub with the output of these (they contain no passwords or keys):
 
 ```bash
 cat VERSION; git log --oneline -1
@@ -322,75 +435,74 @@ tail -n 50 data/update.log
 
 ---
 
-## What's inside
+## Uninstall
 
-| Area | Highlights |
-|---|---|
-| **Projects** | A task board per product/board, revisions (Rev A, Rev B) with a **release checklist** that must be signed off before a revision is released, reviewers, due dates, **blocked** flags, comments with @mentions |
-| **Chat** | A channel for each project (automatic), topic channels, private channels, direct messages, file sharing, GitHub/task updates posted automatically |
-| **Files** | Project and company-wide spaces, folders, drag-and-drop upload with progress, **every version kept**, previews for PDFs, images and text/CSV/KiCad files, trash with restore, storage dashboard |
-| **GitHub** | Signed webhooks link PRs and commits to tasks by ID (`PWR-12`). PR opened → *In review*, changes requested → *In progress*, merged → *Done*; CI (e.g. KiBot ERC/DRC) results shown and failures announced |
-| **Firmware** | Per project: firmware components (main app, bootloader…), releases with **semantic versions** (`1.4.0`, `1.4.0-rc.1`), release notes and a **changelog between any two versions**, files with **SHA-256 checksums**, and the **board revisions each release is compatible with**. Draft → Testing → **Released** (leads approve; released files are locked) → Deprecated / **Recalled** (with a reason; everyone is notified and builds using it are blocked). Each revision shows its recommended firmware; builds record which firmware was flashed; a GitHub release tag can create a Testing release automatically |
-| **Design files** | Per revision: Gerbers, drill, schematic and PCB files (KiCad, Eagle, Altium), pick-and-place, STEP, PDFs — sorted by type, every version kept. A **built-in Gerber viewer** (our own RS-274X/Excellon renderer) shows top/bottom with mask colour, a layer view, zoom, pan and measure, plus board size, layer count, smallest drill/track and hole counts |
-| **Parts & BOM** | Parts library with stock history, suppliers, KiCad/KiBot BOM import with matching, cost per board, boards buildable from stock, BOM comparison between revisions |
-| **Production** | Purchase orders (draft → ordered → received, updating stock and cost), builds with shortage check, one-click orders for missing parts, test yield. **Assembly-house builds:** mark BOM lines as fitted by the assembler, in house or not fitted; download JLCPCB/Seeed BOM + CPL files with in-house parts left out; track the order; on arrival only in-house parts leave stock and the build becomes a **finishing checklist** (per-part steps highlighted on the board, +1/+5 per board, phone-friendly) with a printable traveler |
-| **Timesheets & reports** | Log hours per task; a **weekly report** of hours by person and project, finished work, reviews, blockers and builds, printable or as CSV |
-| **Home** | Your tasks, reviews waiting for you, blocked and overdue work, low stock, and a **team clock** showing who's in working hours (Toronto ↔ Karachi) |
-| **Administration** | People and roles, invite links (or email them), *System & backups* for settings, **company logo** (SVG or transparent PNG, with an optional version for the dark menu bar), SMTP email, GitHub secret, backups and health, audit log |
-| **Help** | Built-in guides for every area, a getting-started checklist, and a short explanation on every page |
+```bash
+cd /opt/workbench
+docker compose --profile https down      # stop and remove the containers
+```
 
-## Security
+That leaves your data in `/opt/workbench/data`. **Download a backup first** if you might want it later. To remove everything, including all data:
 
-- **Sign-in:** a password of 12+ characters plus **mandatory authenticator-app 2FA**. Each code works only once, and there are single-use recovery codes. Accounts lock after 5 failed attempts.
-- **Access:** five roles. Engineers see only their projects. Released revisions are locked to leads. Every page and file download is permission-checked on the server.
-- **Protection at rest:** 2FA, SMTP and webhook secrets are encrypted in the database. Uploaded files are never served directly, and files that could run in a browser (`.html`, `.js`, `.exe`…) are refused. Uploaded SVG logos are cleaned (scripts, event handlers and external links removed) and served with a sandboxing policy.
-- **Browser protections:** HTTPS with HSTS (in HTTPS mode), secure cookies, CSRF protection, and a strict Content-Security-Policy. No third-party scripts, fonts or trackers are loaded.
-- **GitHub webhook:** HMAC-SHA256 signatures, replay protection, and capped logging of rejected requests.
-- **Audit log:** sign-ins (including failures), permission changes, uploads, downloads, backups, BOM imports, stock changes and orders, each with its IP address.
-- **Container:** runs as an unprivileged user, and invite links always use the configured address, never the request's Host header.
-
-Report security issues privately to the maintainer.
+```bash
+sudo rm -rf /opt/workbench
+docker image rm workbench:latest caddy:2
+```
 
 ---
 
 ## Development
 
+Workbench is a [Django](https://www.djangoproject.com/) 5 app with server-rendered pages and hand-written CSS and JavaScript (no frontend framework, no build step). The database is SQLite by default (PostgreSQL optional); files go through Django's storage API (local disk, or S3 via `django-storages`).
+
 ```bash
+git clone https://github.com/harisbashir/workbench.git && cd workbench
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
 export WORKBENCH_DEBUG=1
 python manage.py migrate && python manage.py seed_demo
 python manage.py runserver                     # http://localhost:8000 — haris / Workbench-demo-2026!
 python manage.py test apps                     # 159 tests (S3 is tested against a local mock)
+ruff check apps config --select F,E9           # lint
 ```
 
-The demo users are `haris` (admin), `ayesha` (lead), `bilal`, `sana` and `usman` (engineers), and `fatima` (procurement). They all use the password `Workbench-demo-2026!`.
+### Workflow
 
-### Version control workflow
+- `main` is always deployable. Work on a branch (e.g. `pwr-14-export-po-pdf`) and open a pull request.
+- CI (`.github/workflows/ci.yml`) runs the linters (Python and the shell scripts), the tests, Django's production security check, a container build with a health check, and a dependency audit.
+- Database changes go in migrations (`python manage.py makemigrations`), committed with the code. They're applied automatically when a server starts the new version.
 
-- `main` is always deployable. Work on a branch named after the task, e.g. `wb-14-export-po-pdf`, and open a pull request.
-- CI (`.github/workflows/ci.yml`) runs the linter and tests, Django's production security check, a dependency audit, and a container build with a health check. A PR needs CI to pass and one review before it's merged.
-- Database changes go in migrations (`python manage.py makemigrations`), committed with the code.
-- Tag releases (`git tag v1.2.0 && git push --tags`). `.github/workflows/release.yml` then publishes a ready-made image to GitHub Container Registry, so servers can use `image: ghcr.io/<owner>/workbench:1.2.0` instead of building.
+### Releasing a version
+
+```bash
+echo 1.3.4 > VERSION
+git commit -am "Release 1.3.4"
+git tag -a v1.3.4 -m "Workbench 1.3.4"
+git push origin main --tags
+```
+
+Servers pick it up with `./update.sh`. The tag also triggers `.github/workflows/release.yml`, which publishes a ready-made image to GitHub Container Registry.
 
 ### Project layout
 
 ```
-config/              settings (zero-config; data folder, generated secrets)
+config/              settings (zero-config: data folder, generated secrets, storage)
 apps/accounts/       users, roles, 2FA, invites, lockout
 apps/core/           dashboard, search, notifications, audit log, help, setup wizard,
                      system page, backups, export, storage, logo, scheduler, email
-apps/projects/       projects, revisions & release checklists, tasks, activity
+apps/projects/       projects, revisions and release checklists, tasks, activity
 apps/chat/           channels, messages, file sharing
 apps/files/          file library: spaces, folders, versions, trash, storage
-apps/inventory/      parts, suppliers, stock, BOMs, KiCad import
 apps/firmware/       firmware components, releases, artifacts
 apps/design/         revision design files, Gerber/Excellon parser and board renderer
+apps/inventory/      parts, suppliers, stock, BOMs, KiCad import
 apps/production/     purchase orders, builds, assembly-house files, finishing
 apps/timesheets/     time entries, weekly report
 apps/integrations/   GitHub webhook
-templates/ static/   UI (hand-written CSS and JavaScript, no frameworks)
+templates/ static/   UI (hand-written CSS and JavaScript)
+docs/                screenshots, sample BOM, KiBot setup for hardware repositories
 Dockerfile docker-compose.yml docker-entrypoint.sh deploy/
-install.sh update.sh  server install (deploy key) and safe updates
-docs/examples/       sample BOM, KiBot workflow for hardware repos
+install.sh update.sh server install and safe updates
 ```
+
+Hardware repositories can run ERC/DRC and produce fabrication files in CI with [KiBot](https://github.com/INTI-CMNB/KiBot): copy [`docs/examples/kibot.yml`](docs/examples/kibot.yml) to `.github/workflows/` and [`docs/examples/.kibot.yaml`](docs/examples/.kibot.yaml) to the repository root. The results show up on the linked Workbench tasks.

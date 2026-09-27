@@ -39,7 +39,7 @@ That's the quickest way to try it on your own computer. For a real server, follo
 
 ## Deploying to a server, step by step
 
-In the commands below, replace `YOUR-USER/workbench` with your GitHub repository.
+In the commands below, replace `harisbashir/workbench` with your GitHub repository.
 
 ### What you need
 
@@ -67,7 +67,7 @@ If your cloud provider has its own firewall (AWS security groups, DigitalOcean/H
 ### Step 2 — Install
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/YOUR-USER/workbench/main/install.sh) https://github.com/YOUR-USER/workbench.git
+bash <(curl -fsSL https://raw.githubusercontent.com/harisbashir/workbench/main/install.sh) https://github.com/harisbashir/workbench.git
 ```
 
 The installer:
@@ -84,7 +84,7 @@ Options: `--dir /srv/workbench` (another folder), `--branch main` (follow a bran
 
 ```bash
 scp install.sh you@SERVER-IP:        # run on your computer
-bash install.sh git@github.com:YOUR-USER/workbench.git
+bash install.sh git@github.com:harisbashir/workbench.git
 ```
 
 ### Step 3 — First sign-in
@@ -147,7 +147,7 @@ These don't have `update.sh` yet, so update once by hand:
 ```bash
 cd ~/workbench                                                       # wherever you cloned it
 docker compose exec workbench manage backup_now                      # safety backup
-git remote set-url origin https://github.com/YOUR-USER/workbench.git  # the public address
+git remote set-url origin https://github.com/harisbashir/workbench.git  # the public address
 git pull
 docker compose up -d --build            # add --profile https if you use a domain
 docker compose ps                       # wait for (healthy)
@@ -252,7 +252,8 @@ Without a domain, `check --deploy` warns about secure cookies and HSTS; that's e
 | Uploads fail / "disk full" | Disk or cloud storage problem | `df -h`, `du -sh data/*`; *Files → Storage* to delete old versions and empty the trash; `docker system prune` removes old Docker images; `docker compose exec workbench manage storage --test` checks cloud storage |
 | Emails don't arrive | SMTP settings | *System & backups → Email → Send me a test email*; the reason is shown on the page |
 | GitHub events don't show up | Webhook address or secret | In GitHub: *Repository → Settings → Webhooks → Recent deliveries* shows each attempt and the response; the address and secret must match *System & backups → GitHub* |
-| `update.sh` says "Couldn't reach GitHub" | Network, or the wrong repository address | `git remote -v`; for a public repository: `git remote set-url origin https://github.com/YOUR-USER/workbench.git` |
+| `update.sh` says "Couldn't reach GitHub" | Network, or the wrong repository address | `git remote -v`; for a public repository: `git remote set-url origin https://github.com/harisbashir/workbench.git` |
+| `./update.sh: Permission denied` | The script lost its "executable" flag (e.g. uploaded through the GitHub website or from Windows) | `chmod +x install.sh update.sh`, or run it as `bash update.sh` |
 | `update.sh` says files were changed on the server | Someone edited files in the folder | `git status` to see them; `git stash` to set them aside (or `git checkout -- .` to throw them away) |
 
 ### Locked out

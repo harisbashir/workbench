@@ -114,10 +114,11 @@ class BackupTests(TransactionTestCase):
         site = SiteSettings.load()
         site.backup_hour, site.time_zone = 2, "UTC"
         site.save()
-        at_two = datetime(2026, 9, 25, 2, 5, tzinfo=dt_tz.utc)
+        # Today's date: the backup records the real time it ran.
+        at_two = datetime.now(dt_tz.utc).replace(hour=2, minute=5)
         self.assertIn("backup", tick(at_two))
         self.assertNotIn("backup", tick(at_two))  # only once per day
-        self.assertNotIn("backup", tick(datetime(2026, 9, 25, 14, 0, tzinfo=dt_tz.utc)))
+        self.assertNotIn("backup", tick(at_two.replace(hour=14)))
 
     def test_trash_purged_after_retention(self):
         doc = Document.objects.get()

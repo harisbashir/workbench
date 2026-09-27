@@ -30,7 +30,7 @@ class StockAdjustForm(forms.Form):
 class BomLineForm(forms.ModelForm):
     class Meta:
         model = BomLine
-        fields = ["part", "quantity", "references", "dnp", "notes"]
+        fields = ["part", "quantity", "references", "fitted_by", "dnp", "notes"]
         widgets = {"references": forms.TextInput(attrs={"placeholder": "R1, R2, R7"})}
 
 

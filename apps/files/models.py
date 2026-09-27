@@ -12,7 +12,6 @@ import os
 import re
 
 from django.conf import settings
-from django.core.files.storage import default_storage
 from django.db import models
 from django.db.models import Q, Sum
 from django.urls import reverse
@@ -195,7 +194,8 @@ class Document(models.Model):
         space, pk = self.space, self.pk
         self.delete()
         # Tidy the now-empty folder when files are stored locally.
-        location = getattr(getattr(default_storage, "_wrapped", default_storage), "location", None)
+        from apps.core.storage import local_root
+        location = local_root()
         if location:
             try:
                 os.rmdir(os.path.join(location, space, str(pk)))

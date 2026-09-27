@@ -1,0 +1,20 @@
+{% load workbench %}{# expects: board, project, rev #}
+{% if board %}
+<div class="card board-card"><div class="card-head"><h2>{% icon 'pcb' 18 %} Board</h2>
+  <a class="btn btn-sm" href="{% url 'design:pcb' project.key rev.pk %}">{% icon 'eye' 14 %} Open viewer</a></div>
+  {% if board.ok %}
+  <a class="board-thumb" href="{% url 'design:pcb' project.key rev.pk %}" aria-label="Open the board viewer">
+    <img src="{% url 'design:pcb_svg' project.key rev.pk %}?view=thumb" alt="Top of the {{ rev.name }} board, drawn from its Gerber files" loading="lazy"></a>
+  <div class="card-body board-facts">
+    {% with i=board.info %}
+    <div><span>Size</span><strong>{{ i.width|floatformat:1 }} × {{ i.height|floatformat:1 }} mm</strong></div>
+    <div><span>Copper layers</span><strong>{{ i.copper_layers|default:"—" }}</strong></div>
+    <div><span>Holes</span><strong>{{ i.holes }}{% if i.slots %} + {{ i.slots }} slots{% endif %}</strong></div>
+    <div><span>Smallest drill</span><strong>{% if i.min_drill %}{{ i.min_drill|floatformat:2 }} mm{% else %}—{% endif %}</strong></div>
+    <div><span>Thinnest track</span><strong>{% if i.min_trace %}{{ i.min_trace|floatformat:3 }} mm{% else %}—{% endif %}</strong></div>
+    <div><span>Pads</span><strong>{{ i.pads_top }} top · {{ i.pads_bottom }} bottom</strong></div>
+    {% endwith %}
+  </div>
+  {% else %}<div class="card-body"><p class="warn-text small">{{ board.error }}</p></div>{% endif %}
+</div>
+{% endif %}

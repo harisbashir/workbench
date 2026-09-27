@@ -1,0 +1,39 @@
+{% extends "base.html" %}{% load workbench humanize %}
+{% block title %}Traveler · {{ b.number }}{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles"><div class="crumbs no-print"><a href="{% url 'production:build_list' %}">Production</a> / <a href="{{ b.get_absolute_url }}">{{ b.number }}</a> /</div>
+  <h1>{{ b.number }} · {{ b.quantity }} × {{ b.revision }}</h1>
+  <p class="intro">{% if b.by_fab %}Assembled by {{ b.manufacturer|default:"the assembly house" }}{% if b.fab_order_ref %} (order {{ b.fab_order_ref }}){% endif %} — finish these in house.{% else %}Assembled in house.{% endif %}
+    {% if b.serial_prefix %}Serials {{ b.serial_prefix }}0001–{{ b.serial_prefix }}{{ b.quantity|stringformat:"04d" }}.{% endif %} Printed {% now "M j, Y" %}.</p></div>
+  <div class="actions no-print"><button class="btn btn-primary" type="button" data-print>Print / save PDF</button></div></div>
+
+<div class="traveler">
+  {% if board and markers %}<div class="card"><div class="board-marked traveler-board">
+    <img src="{% url 'design:pcb_svg' b.revision.project.key b.revision.pk %}?view=thumb" alt="Board with the parts to fit marked">
+    <svg class="board-markers" viewBox="{{ viewbox }}" aria-hidden="true">{% for m in markers %}<g class="marker{% if m.bottom %} bottom{% endif %}"><circle cx="{{ m.x }}" cy="{{ m.y }}" r="{{ m.r }}"/><text x="{{ m.x }}" y="{{ m.ty }}" font-size="{{ m.fs }}">{{ m.ref }}</text></g>{% endfor %}</svg>
+  </div></div>{% endif %}
+
+  <div class="card"><div class="table-wrap"><table class="table traveler-table">
+    <thead><tr><th>#</th><th>Step</th><th>Part</th><th>Where from</th><th class="num">Per board</th><th class="num">For {{ b.board_qty }} boards</th><th>Done by / date</th></tr></thead>
+    <tbody>{% for s in steps %}<tr><td>{{ forloop.counter }}</td><td><strong>{{ s.title }}</strong>{% if s.detail %}<div class="small">{{ s.detail }}</div>{% endif %}</td>
+      <td class="small">{% if s.bom_line %}{{ s.bom_line.part.ipn }}<br>{{ s.bom_line.part.manufacturer }} {{ s.bom_line.part.mpn }}{% endif %}</td>
+      <td class="small">{% if s.bom_line %}{{ s.bom_line.part.location|default:"—" }}{% endif %}</td>
+      <td class="num">{% if s.per_board %}{{ s.per_board }}{% endif %}</td>
+      <td class="num">{% if s.per_board %}{% widthratio s.per_board 1 b.board_qty %}{% endif %}</td>
+      <td class="sign"></td></tr>{% empty %}<tr><td colspan="7" class="muted">No finishing steps.</td></tr>{% endfor %}
+    </tbody></table></div></div>
+
+  <div class="grid grid-2">
+    <div class="card"><div class="card-head"><h3>Firmware to flash</h3></div><div class="card-body small">
+      {% for r in firmware %}<div class="kv"><span>{{ r.firmware.name }} <strong>{{ r.version }}</strong>{% if r.status != 'released' %} ({{ r.get_status_display|lower }}){% endif %}</span>
+        <span class="mono">{% for a in r.artifacts.all %}{% if a.kind != 'debug' %}{{ a.name }} · {{ a.sha256|slice:":12" }}<br>{% endif %}{% endfor %}</span></div>
+      {% empty %}<p class="muted">None recorded.</p>{% endfor %}</div></div>
+    <div class="card"><div class="card-head"><h3>Test results</h3></div><div class="card-body small">
+      <div class="kv"><span>Boards passed</span><span class="sign-line"></span></div>
+      <div class="kv"><span>Boards failed</span><span class="sign-line"></span></div>
+      <div class="kv"><span>Tested by / date</span><span class="sign-line"></span></div>
+      <div class="kv"><span>Notes</span><span class="sign-line"></span></div>
+    </div></div>
+  </div>
+</div>
+{% endblock %}

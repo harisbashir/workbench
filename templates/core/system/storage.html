@@ -1,0 +1,131 @@
+{% extends "base.html" %}{% load workbench humanize %}
+{% block title %}Storage{% endblock %}
+{% block content %}
+{% include "core/system/_head.html" %}
+
+<div class="grid grid-main">
+  <div class="stack">
+    <div class="card"><div class="card-head"><h2>Where files are kept</h2>
+      {% if cfg.locked and not pinned %}<span class="badge badge-done">{% icon 'lock' 12 %} Locked</span>{% endif %}</div>
+      <div class="card-body">
+        {% with a=pinned|default:active %}
+        <div class="storage-now">
+          <span class="storage-icon">{% if a.kind == 's3' %}{% icon 'cloud' 28 %}{% else %}{% icon 'database' 28 %}{% endif %}</span>
+          <div><div class="storage-where">{% if a.kind == 's3' %}{{ a.label }}{% else %}A folder on this server{% endif %}</div>
+            <div class="small muted">{% if a.kind == 's3' %}Bucket <code>{{ a.bucket }}</code>{% if a.prefix %}, folder <code>{{ a.prefix }}/</code>{% endif %}{% if a.region %} · {{ a.region }}{% endif %}{% if a.endpoint %} · <code>{{ a.endpoint }}</code>{% endif %}
+              {% else %}<code>{{ a.path }}</code>{% if a.default %} (the data folder){% endif %}{% endif %}</div></div>
+        </div>
+        {% endwith %}
+        <div class="kv"><span>Files stored</span><span>{{ file_count }} ({{ file_size|filesizeformat }}, all versions)</span></div>
+        {% if cfg.locked and not pinned %}<div class="kv"><span>Locked</span><span>{{ cfg.locked_at|date:"M j, Y" }} — files always stay here</span></div>{% endif %}
+        {% if previous %}
+          <div class="alert alert-info alert-block"><p><strong>The old storage is kept as a backup.</strong> Workbench still reads a file from
+            <code>{{ previous.where }}</code> if it's ever missing from the new place. Once you've opened a few files and everything looks right, stop using it.</p>
+            <form method="post" data-confirm="Stop reading from the old storage? Files there are not deleted.">{% csrf_token %}
+              <button class="btn btn-sm" name="action" value="forget_previous">Stop using the old storage</button></form></div>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if pinned %}
+    <div class="card"><div class="card-body">
+      <p><strong>Storage is set in the server's configuration file</strong> (<code>WORKBENCH_STORAGE</code> in <code>.env</code>), so it can't be changed here.</p>
+      <p class="small">To manage it from this page instead: remove the <code>WORKBENCH_STORAGE</code>, <code>WORKBENCH_FILES_DIR</code> and <code>WORKBENCH_S3_…</code> lines from <code>.env</code>, restart Workbench, then choose the same place here, test it and press <em>Move files and switch</em> — files already there are skipped, so nothing is copied twice.</p>
+    </div></div>
+    {% elif running %}
+    <div class="card" data-poll-status="{% url 'core:storage_status' %}"><div class="card-head"><h2>Moving files…</h2></div><div class="card-body">
+      <p>Copying every file to <strong>{{ draft.where|default:"the new storage" }}</strong>. Workbench keeps working normally; new uploads are copied too. You can leave this page.</p>
+      <div class="progress progress-lg"><span data-progress class="w-{{ running.percent|percent_step }}"></span></div>
+      <p class="small muted" data-progress-text>{{ running.done_count }} of {{ running.total|default:"…" }} files</p>
+    </div></div>
+    {% else %}
+    <div class="card" id="change"><div class="card-head"><h2>{% if cfg.locked %}Update access keys{% else %}Change where files are kept{% endif %}</h2></div>
+      <div class="card-body">
+        {% if cfg.locked %}<p class="small muted">Storage is locked to this place. You can update the keys for the same bucket (for example after rotating them), but not move files somewhere else.</p>{% endif %}
+        <form method="post" novalidate data-storage-form>{% csrf_token %}
+          {{ form.non_field_errors }}
+          {% if not cfg.locked %}{% include "partials/field.html" with field=form.kind %}{% else %}<input type="hidden" name="kind" value="{{ form.kind.value }}">{% endif %}
+          <div data-show-when="kind:local">
+            {% include "partials/field.html" with field=form.path %}
+          </div>
+          <div data-show-when="kind:s3">
+            <div class="form-grid">
+              {% include "partials/field.html" with field=form.provider %}
+              {% include "partials/field.html" with field=form.bucket %}
+              <div data-provider-field="region">{% include "partials/field.html" with field=form.region %}</div>
+              <div data-provider-field="prefix">{% include "partials/field.html" with field=form.prefix %}</div>
+            </div>
+            <div data-provider-field="endpoint">{% include "partials/field.html" with field=form.endpoint %}</div>
+            <p class="small provider-help" data-provider-help></p>
+            <div class="form-grid">
+              {% include "partials/field.html" with field=form.access_key %}
+              {% include "partials/field.html" with field=form.secret_key %}
+            </div>
+          </div>
+          <div class="btn-row"><button class="btn btn-primary" name="action" value="test">{% icon 'check' 16 %} Save and test connection</button></div>
+        </form>
+
+        {% if draft %}
+        <div class="storage-step {% if cfg.draft_test_ok %}ok{% else %}bad{% endif %}">
+          <div class="storage-step-head">{% if cfg.draft_test_ok %}{% icon 'check' 18 %}{% else %}{% icon 'alert' 18 %}{% endif %}
+            <div><strong>{{ draft.where }}</strong><div class="small">{{ cfg.draft_test_message }}</div></div></div>
+          {% if cfg.draft_test_ok %}
+            {% if draft_same_place %}
+              <p class="small">This is where files are kept already — saving only updates the settings.</p>
+              <form method="post" class="btn-row">{% csrf_token %}<button class="btn btn-primary" name="action" value="apply">Save settings</button>
+                <button class="btn btn-ghost" name="action" value="discard">Cancel</button></form>
+            {% else %}
+              <form method="post" data-confirm="Copy all {{ file_count }} files to {{ draft.where }} and switch to it?">{% csrf_token %}
+                <p class="small">Workbench will copy all {{ file_count }} files ({{ file_size|filesizeformat }}) there, check each one, and switch only if every file made it. Nothing is deleted from the current place.</p>
+                <label class="check-label"><input type="checkbox" name="lock" value="1" {% if draft.kind == 's3' %}checked{% endif %}>
+                  Lock storage here afterwards <span class="small muted">— recommended; prevents anyone from moving files again by mistake</span></label>
+                <div class="btn-row"><button class="btn btn-primary" name="action" value="move">{% icon 'upload' 16 %} Move files and switch</button>
+                  <button class="btn btn-ghost" name="action" value="discard">Cancel</button></div>
+              </form>
+            {% endif %}
+          {% else %}
+            <form method="post">{% csrf_token %}<button class="btn btn-sm btn-ghost" name="action" value="discard">Cancel this change</button></form>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if moves %}
+    <div class="card"><div class="card-head"><h3>Moves</h3></div><div class="table-wrap"><table class="table">
+      <thead><tr><th>Started</th><th>To</th><th>Status</th><th class="num">Files</th></tr></thead><tbody>
+      {% for m in moves %}<tr><td class="small">{{ m.created_at|naturaltime }}<br><span class="faint">{{ m.requested_by|default:"" }}</span></td>
+        <td class="small">{{ m.target|storage_where }}</td>
+        <td>{% status_badge m.status m.get_status_display %}{% if m.message %}<div class="small faint">{{ m.message }}</div>{% endif %}
+          {% if m.failures %}<details class="small"><summary>{{ m.failures|length }} problem{{ m.failures|length|pluralize }}</summary>
+            <ul class="bullets">{% for f in m.failures %}<li><code>{{ f.file }}</code> — {{ f.error }}</li>{% endfor %}</ul></details>{% endif %}</td>
+        <td class="num">{{ m.total }}</td></tr>{% endfor %}
+      </tbody></table></div></div>
+    {% endif %}
+  </div>
+
+  <div class="stack">
+    <div class="card"><div class="card-head"><h3>Good to know</h3></div><div class="card-body small">
+      <ul class="bullets">
+        <li>Files are always downloaded through Workbench, so permissions are checked the same way wherever they're kept. Buckets stay private.</li>
+        <li>Moving copies every file and checks it before switching. Nothing is deleted from the old place, and a move that's interrupted can simply be started again.</li>
+        <li><strong>Locked</strong> storage can't be changed from this page. To unlock it, run this on the server:<br><code>docker compose exec workbench manage storage --unlock</code></li>
+        <li>Backups still include every file. With cloud storage, a copy of each backup is also kept in the bucket under <code>backups/</code>.</li>
+        <li>Access keys are stored encrypted.</li>
+      </ul>
+      <a class="btn btn-sm" href="{% url 'core:help_topic' 'install' %}#storage">Storage guide</a>
+    </div></div>
+    <div class="card"><div class="card-head"><h3>Which option?</h3></div><div class="card-body small">
+      <div class="kv-stack">
+        <p><strong>Folder on this server</strong> — simplest; fine until the disk fills up. Point it at a bigger disk or a NAS share when needed.</p>
+        <p><strong>Amazon S3</strong> — best if Workbench runs on AWS. Pay per GB; no disk to manage.</p>
+        <p><strong>Cloudflare R2, Backblaze B2, Wasabi</strong> — S3-compatible and usually cheaper; R2 has no download fees.</p>
+        <p><strong>DigitalOcean Spaces, Google Cloud Storage</strong> — handy if the server already runs there.</p>
+        <p><strong>MinIO or a NAS with an S3 server</strong> — keep files in the office on your own hardware.</p>
+      </div>
+    </div></div>
+  </div>
+</div>
+{{ providers|json_script:"provider-info" }}
+{% endblock %}

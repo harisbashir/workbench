@@ -54,12 +54,131 @@
     // Print buttons
     document.querySelectorAll("[data-print]").forEach((b) => b.addEventListener("click", () => window.print()));
 
+    initShowWhen();
+    initBuildSteps();
+    initProviderHints();
+    initStatusPoll();
     initDropzone();
     initTeamClock();
     initBoard();
     initChat();
     pollUnread();
   });
+
+  // ------------------------------------------- Show parts of a form -------
+  // <div data-show-when="kind:s3,other"> is shown only while the form field
+  // named "kind" has one of those values.
+  function fieldValue(form, name) {
+    const els = form.querySelectorAll('[name="' + name + '"]');
+    for (const el of els) {
+      if (el.type === "radio" || el.type === "checkbox") { if (el.checked) return el.value; }
+      else return el.value;
+    }
+    return "";
+  }
+  function initShowWhen() {
+    document.querySelectorAll("form").forEach((form) => {
+      const parts = form.querySelectorAll("[data-show-when]");
+      if (!parts.length) return;
+      const update = () => parts.forEach((p) => {
+        const [name, values] = p.dataset.showWhen.split(":");
+        p.hidden = values.split(",").indexOf(fieldValue(form, name)) === -1;
+      });
+      form.addEventListener("change", update);
+      update();
+    });
+  }
+
+  // ------------------------------------------------ Build finishing ------
+  // +1 / +5 / All buttons update in place; hovering a step highlights its parts on the board.
+  function initBuildSteps() {
+    document.querySelectorAll("form[data-step-form]").forEach((form) => {
+      form.addEventListener("submit", (e) => {
+        const btn = e.submitter;
+        if (!btn) return;
+        e.preventDefault();
+        const fd = new FormData(form);
+        fd.append(btn.name, btn.value);
+        form.querySelectorAll("button").forEach((b) => (b.disabled = true));
+        fetch(form.action, { method: "POST", body: fd, credentials: "same-origin",
+          headers: { "X-CSRFToken": csrf(), "X-Requested-With": "fetch" } })
+          .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
+          .then((d) => {
+            const row = form.closest("[data-step-row]");
+            row.querySelector("[data-step-done]").textContent = d.done;
+            const bar = row.querySelector("[data-step-bar]");
+            bar.className = ""; bar.style.width = d.percent + "%";
+            row.classList.toggle("complete", d.complete);
+            if (d.all_done) {
+              const fin = document.querySelector("[data-finish-button]");
+              if (fin) fin.classList.add("pulse");
+              toast("Every step is done on every board.");
+            }
+          })
+          .catch(() => toast("Couldn't save — check your connection.", true))
+          .finally(() => form.querySelectorAll("button").forEach((b) => (b.disabled = false)));
+      });
+    });
+    document.querySelectorAll("[data-step-row]").forEach((row) => {
+      const id = row.dataset.stepRow;
+      const marks = document.querySelectorAll('.board-markers [data-marker-step="' + id + '"]');
+      if (!marks.length) return;
+      row.addEventListener("mouseenter", () => {
+        document.querySelectorAll(".board-markers .marker").forEach((m) => m.classList.add("dim"));
+        marks.forEach((m) => { m.classList.remove("dim"); m.classList.add("hot"); });
+      });
+      row.addEventListener("mouseleave", () => {
+        document.querySelectorAll(".board-markers .marker").forEach((m) => m.classList.remove("dim", "hot"));
+      });
+    });
+  }
+
+  // ------------------------------------------ Storage provider hints -------
+  function initProviderHints() {
+    const select = document.querySelector("[data-provider-select]");
+    const dataEl = document.getElementById("provider-info");
+    if (!select || !dataEl) return;
+    const info = JSON.parse(dataEl.textContent);
+    const form = select.form;
+    const region = form.querySelector('[name="region"]');
+    const endpoint = form.querySelector('[name="endpoint"]');
+    const help = form.querySelector("[data-provider-help]");
+    const wrap = (name) => form.querySelector('[data-provider-field="' + name + '"]');
+    function update() {
+      const p = info[select.value] || {};
+      const tmpl = p.endpoint || "";
+      wrap("region").hidden = !!p.region;               // fixed region ("auto")
+      wrap("endpoint").hidden = select.value === "aws";
+      region.placeholder = p.region_hint || "";
+      if (tmpl.indexOf("{region}") !== -1) {
+        endpoint.placeholder = tmpl.replace("{region}", region.value || "REGION");
+      } else {
+        endpoint.placeholder = tmpl || "https://s3.example.com";
+      }
+      help.textContent = p.help || "";
+    }
+    select.addEventListener("change", () => { endpoint.value = ""; update(); });
+    region.addEventListener("input", update);
+    update();
+  }
+
+  // ------------------------------------------------ Background jobs --------
+  // <div data-poll-status="/url.json"> polls until the job finishes, then reloads.
+  function initStatusPoll() {
+    const box = document.querySelector("[data-poll-status]");
+    if (!box) return;
+    const bar = box.querySelector("[data-progress]");
+    const text = box.querySelector("[data-progress-text]");
+    function poll() {
+      fetch(box.dataset.pollStatus, { credentials: "same-origin" }).then((r) => r.json()).then((s) => {
+        if (bar) { bar.className = ""; bar.style.width = (s.percent || 0) + "%"; }
+        if (text && s.total) text.textContent = s.done + " of " + s.total + " files" + (s.failed ? " · " + s.failed + " problems" : "");
+        if (s.status === "done" || s.status === "failed" || s.status === "none") window.location.reload();
+        else setTimeout(poll, 2000);
+      }).catch(() => setTimeout(poll, 5000));
+    }
+    setTimeout(poll, 1500);
+  }
 
   // -------------------------------------------------------------- Uploads --
   function initDropzone() {
@@ -86,6 +205,7 @@
     function send(files) {
       const fd = new FormData();
       for (const f of files) fd.append("files", f);
+      zone.querySelectorAll("[data-upload-extra]").forEach((el) => { if (el.value) fd.append(el.name, el.value); });
       const xhr = new XMLHttpRequest();
       xhr.open("POST", zone.dataset.uploadUrl);
       xhr.setRequestHeader("X-CSRFToken", csrf());

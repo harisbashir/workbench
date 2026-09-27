@@ -7,6 +7,7 @@
   {% if SITE.logo %}<link rel="icon" href="{% url 'core:logo' 'light' %}?v={{ SITE.logo_version }}">{% else %}<link rel="icon" href="{% static 'img/favicon.svg' %}" type="image/svg+xml">{% endif %}
   <link rel="stylesheet" href="{% static 'css/app.css' %}">
   <script src="{% static 'js/app.js' %}" defer></script>
+  {% block extra_head %}{% endblock %}
 </head>
 <body>
 {% block body %}

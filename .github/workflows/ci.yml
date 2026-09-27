@@ -16,6 +16,8 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - name: Lint
         run: ruff check apps config --select F,E9
+      - name: Lint the install and update scripts
+        run: shellcheck -S warning install.sh update.sh
       - name: Tests
         env:
           WORKBENCH_DEBUG: "1"

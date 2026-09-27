@@ -10,7 +10,7 @@ that open anywhere, without Workbench.
       Projects/PWR - Power management board/
         Files/<folders>/<files>              (latest versions; older ones in _older versions/ if chosen)
         Firmware/<firmware>/<version> (<status>)/<binaries> + RELEASE NOTES.md
-        Revisions/<rev>/BOM.csv, Release checklist.csv
+        Revisions/<rev>/BOM.csv, Release checklist.csv, Design files/<type>/<files>
         Tasks.csv, Task comments.csv, Time entries.csv, Chat - #pwr.txt
       Parts/Parts.csv, Suppliers.csv, Stock movements.csv
       Production/Purchase orders.csv, Builds.csv
@@ -159,6 +159,12 @@ def build_export(include_versions=False, user=None):
                        for l in rev.bom_lines.select_related("part", "part__supplier")])
                 w.csv(rb + ["Release checklist.csv"], ["Item", "Signed off by", "When", "Note"],
                       [[c.text, c.done_by or "", fmt(c.done_at), c.note] for c in rev.checks.select_related("done_by")])
+                for df in rev.design_files.order_by("category", "name", "-version"):
+                    if df.is_current:
+                        w.stored(rb + ["Design files", df.get_category_display(), df.name], df.file)
+                        counts["files"] += 1
+                    elif include_versions:
+                        w.stored(rb + ["Design files", df.get_category_display(), "_older versions", f"v{df.version} - {df.name}"], df.file)
             # Tasks, comments, time
             tasks = p.tasks.select_related("assignee", "reviewer", "revision", "created_by").order_by("number")
             w.csv(pbase + ["Tasks.csv"], ["ID", "Title", "Type", "Status", "Priority", "Assignee", "Reviewer", "Revision",

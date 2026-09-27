@@ -42,7 +42,7 @@ class POLineForm(forms.ModelForm):
 class BuildForm(forms.ModelForm):
     class Meta:
         model = BuildOrder
-        fields = ["revision", "quantity", "manufacturer", "due_date", "serial_prefix", "firmware_releases", "notes"]
+        fields = ["revision", "quantity", "assembly", "manufacturer", "due_date", "serial_prefix", "firmware_releases", "notes"]
         widgets = {"due_date": DateInput(), "notes": forms.Textarea(attrs={"rows": 3})}
 
     def __init__(self, user, *args, **kwargs):
@@ -50,7 +50,10 @@ class BuildForm(forms.ModelForm):
         self.fields["revision"].queryset = Revision.objects.filter(
             project__in=Project.objects.visible_to(user)).exclude(status=Revision.Status.OBSOLETE).select_related("project")
         self.fields["manufacturer"].queryset = Supplier.objects.filter(kind__in=["assembly", "pcb", "other"])
-        self.fields["manufacturer"].empty_label = "In-house"
+        self.fields["manufacturer"].empty_label = "—"
+        self.fields["manufacturer"].label = "Assembly house"
+        self.fields["manufacturer"].help_text = "e.g. JLCPCB or Seeed Fusion. Add them under Parts → Suppliers."
+        self.fields["assembly"].widget = forms.RadioSelect(choices=BuildOrder.Assembly.choices)
         from apps.firmware.models import FirmwareRelease
         self.fields["firmware_releases"].queryset = FirmwareRelease.objects.filter(
             firmware__project__in=Project.objects.visible_to(user), status__in=["released", "testing"]
@@ -222,11 +225,27 @@ def build_detail(request, pk):
     recommended = {fw.pk: fw.recommended_for(b.revision) for fw in {r.firmware for r in fw_choices}}
     for r in fw_choices:
         r.recommended = recommended.get(r.firmware_id) == r
-    return render(request, "production/build_detail.html", {
-        "b": b, "reqs": reqs, "short": [r for r in reqs if r["short"]], "firmware": firmware, "fw_choices": fw_choices,
-        "complete_form": CompleteForm(initial={"passed": b.quantity, "failed": 0}),
+    from .fab_views import FabOrderForm, ReceiveForm, build_context
+    ctx = build_context(b, request.user)
+    stages = [("planned", "Planned")]
+    if b.by_fab:
+        stages += [("at_fab", "At the assembly house"), ("finishing", "Finishing in house")]
+    else:
+        stages += [("finishing", "Assembly in house")]
+    stages += [("testing", "Test & flash"), ("done", "Done")]
+    keys = [k for k, _ in stages]
+    current = keys.index(b.stage) if b.stage in keys else 0
+    ctx.update({
+        "reqs": reqs, "short": [r for r in reqs if r["short"]], "firmware": firmware, "fw_choices": fw_choices,
+        "complete_form": CompleteForm(initial={"passed": b.board_qty, "failed": 0}),
+        "fab_form": FabOrderForm(initial={"fab_ordered_at": timezone.localdate()}),
+        "receive_form": ReceiveForm(initial={"received_qty": b.quantity}),
         "can_edit": request.user.can_manage_procurement,
+        "stages": [{"key": k, "label": label, "state": "done" if i < current else ("now" if i == current else "todo")}
+                   for i, (k, label) in enumerate(stages)] if b.status != "cancelled" else [],
+        "steps_total": len(ctx["steps"]), "steps_complete": sum(1 for s in ctx["steps"] if s.complete),
     })
+    return render(request, "production/build_detail.html", ctx)
 
 
 @procurement_required
@@ -244,6 +263,9 @@ def build_action(request, pk):
             return redirect(b)
         b.start()
         b.consume_stock(request.user)
+        b.create_steps()
+        b.stage = BuildOrder.Stage.AT_FAB if b.by_fab else BuildOrder.Stage.FINISHING
+        b.save(update_fields=["stage"])
         log_activity(project, f"started build {b.number}", actor=request.user, url=b.get_absolute_url())
         post_system_message(project, f"Build {b.number} ({b.quantity} × {b.revision.name}) has started. Parts have been taken from stock.", b.get_absolute_url())
         messages.success(request, f"{b.number} started. Parts for {b.quantity} boards were taken out of stock.")
@@ -251,6 +273,8 @@ def build_action(request, pk):
         form = CompleteForm(request.POST)
         if form.is_valid():
             b.complete(request.user, form.cleaned_data["passed"], form.cleaned_data["failed"])
+            b.stage = BuildOrder.Stage.DONE
+            b.save(update_fields=["stage"])
             text = f"Build {b.number} completed: {b.completed_qty} passed, {b.failed_qty} failed"
             if b.yield_percent is not None:
                 text += f" ({b.yield_percent}% yield)"

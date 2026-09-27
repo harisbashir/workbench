@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views
+from . import storage_views, views
 
 app_name = "core"
 
@@ -19,5 +19,7 @@ urlpatterns = [
     path("branding/logo-<slug:variant>", views.logo, name="logo"),
     path("system/", views.system_page, name="system"),
     path("system/action/", views.system_action, name="system_action"),
+    path("system/storage/", storage_views.storage_page, name="storage"),
+    path("system/storage/status.json", storage_views.storage_status, name="storage_status"),
     path("system/<slug:tab>/", views.system_page, name="system_tab"),
 ]

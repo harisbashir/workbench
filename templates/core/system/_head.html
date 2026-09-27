@@ -1,0 +1,10 @@
+{% load workbench %}<div class="page-head"><div class="titles"><h1>System &amp; backups</h1>
+  <p class="intro">Settings for the whole installation. Everything Workbench stores is in one data folder on the server — back it up and you have everything.</p></div></div>
+<nav class="tabs">
+  <a href="{% url 'core:system' %}" class="{% if tab == 'overview' %}active{% endif %}">{% icon 'database' 15 %} Overview</a>
+  <a href="{% url 'core:system_tab' 'general' %}" class="{% if tab == 'general' %}active{% endif %}">{% icon 'settings' 15 %} General</a>
+  <a href="{% url 'core:system_tab' 'backups' %}" class="{% if tab == 'backups' %}active{% endif %}">{% icon 'box' 15 %} Backups</a>
+  <a href="{% url 'core:storage' %}" class="{% if tab == 'storage' %}active{% endif %}">{% icon 'cloud' 15 %} Storage</a>
+  <a href="{% url 'core:system_tab' 'email' %}" class="{% if tab == 'email' %}active{% endif %}">{% icon 'bell' 15 %} Email</a>
+  <a href="{% url 'core:system_tab' 'github' %}" class="{% if tab == 'github' %}active{% endif %}">{% icon 'git' 15 %} GitHub</a>
+</nav>

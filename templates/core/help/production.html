@@ -2,7 +2,18 @@
 {% block help_title %}Purchasing &amp; production{% endblock %}
 {% block help %}
 <h1>Purchasing &amp; production</h1>
-<h2>Running a build</h2>
+<h2>Boards assembled by JLCPCB, Seeed or another assembly house</h2>
+<p>Most builds are assembled by an assembly house and then finished in house (connectors, through-hole parts, parts the assembler doesn't stock). Workbench splits the work for you:</p>
+<ol>
+  <li><strong>Mark who fits each part.</strong> On the revision's BOM, each line is <em>Assembly house</em>, <em>In house</em> or <em>Do not fit</em>. Through-hole parts are suggested as in house.</li>
+  <li><strong>Order files.</strong> <em>Order files</em> on the build (or the BOM) gives the assembly house's BOM and placement (CPL) files, with in-house and do-not-fit parts left out, plus the Gerbers. Checks warn about parts without an LCSC number or placement.</li>
+  <li><strong>Plan the build</strong> with assembly <em>by an assembly house, then finished in house</em>, and record the order number when you place the order.</li>
+  <li><strong>Receive the boards.</strong> Only the in-house parts are taken from stock — the assembler supplies the rest.</li>
+  <li><strong>Finish them.</strong> The build page becomes a checklist: one step per in-house part, highlighted on the board picture, with <em>+1</em>/<em>+5</em>/<em>All</em> buttons as boards are done. Add your own steps (wash, conformal coat). It works on a phone at the bench. <em>Print traveler</em> gives a paper sheet with a tick box per board.</li>
+  <li><strong>Test &amp; flash</strong>, then record passed/failed boards.</li>
+</ol>
+
+<h2>Running a build fully in house</h2>
 <ol>
   <li><strong>Plan the build.</strong> Production → <em>Plan a build</em>. Pick the revision, the number of boards, and the assembly house (or in-house).</li>
   <li><strong>Check parts.</strong> The build page lists every part needed and what's short.</li>

@@ -7,6 +7,8 @@ Workbench is one web app for a remote embedded-hardware team. It covers:
 - design and code reviews linked to GitHub
 - a file library
 - firmware releases per board revision, with version control and checksums
+- PCB design files per revision, with a built-in Gerber viewer
+- assembly-house (JLCPCB, Seeed…) builds with an in-house finishing checklist
 - a parts library with KiCad BOM import
 - purchasing and production builds
 - timesheets and weekly reports
@@ -29,7 +31,26 @@ Open **http://localhost:8000** (or `http://<server-ip>:8000`) and enter the setu
 
 There are no passwords, keys or config files to prepare. Workbench generates its own secrets on first start and keeps them in the data folder.
 
-### On an internet-facing server, with HTTPS
+### On a server, straight from your private GitHub repository (recommended)
+
+```bash
+scp install.sh you@server:            # copy the one script to the new server
+ssh you@server
+bash install.sh git@github.com:YOUR-ORG/workbench.git
+```
+
+The script installs git and Docker, creates a **read-only deploy key** and shows it. Add it in GitHub under *Settings → Deploy keys* (leave write access off), press Enter, and it verifies GitHub's host fingerprint, clones the newest release into `/opt/workbench`, asks for your domain (automatic HTTPS), starts Workbench and prints the setup code.
+
+Update later with:
+
+```bash
+/opt/workbench/update.sh --check      # is there a new version?
+/opt/workbench/update.sh              # backup → download → build → restart → health check
+```
+
+If the new version doesn't come up healthy, `update.sh` puts the previous version back and restores the backup automatically. The server follows release tags (`v1.3.0`), so pushes to `main` don't reach it until you tag a release; `install.sh --branch main` follows a branch instead. An existing HTTPS clone can switch to a deploy key with `./install.sh --deploy-key`.
+
+### On an internet-facing server, with HTTPS (manual)
 
 On a fresh Ubuntu or Debian server, first point a domain (e.g. `workbench.yourcompany.com`) at the server, then:
 
@@ -76,31 +97,20 @@ Everything Workbench stores lives in `./data` next to `docker-compose.yml`:
   ```
   Your data from before the restore is kept in `data/pre-restore-…` until you delete it.
 - **Move to a new server:** stop Workbench, copy the `data` folder across, run `docker compose up -d`.
-- **Update:** `git pull && docker compose up -d --build`. Database changes apply automatically on start.
+- **Update:** `./update.sh` (backup, pull, rebuild, health check, automatic rollback). Database changes apply automatically on start.
 - **Download everything:** *System & backups → Download everything* builds one zip organised for people rather than for restoring: `Projects/<project>/Files`, `Firmware/<name>/<version>`, `Revisions` (BOMs as CSV), `Tasks.csv`, chat transcripts of public channels, parts, orders and builds as CSV files. Private channels, direct messages and keys are left out. Use a backup zip to restore; use this to hand files to someone or archive them.
 - **Storage housekeeping:** *Files → Storage* shows usage by project and the largest files. It can also delete old versions or empty the trash. Deleted files stay in the trash for 30 days first.
 
 ### Where uploaded files are kept
 
-By default files sit in `data/files`. Two settings in `.env` change that (see `.env.example`):
-
-| Option | Settings |
-|---|---|
-| Another folder or disk | `WORKBENCH_FILES_DIR=/files`, and mount the disk into the container at `/files` |
-| **Amazon S3** (or Wasabi, Cloudflare R2, MinIO, Backblaze B2) | `WORKBENCH_STORAGE=s3`, `WORKBENCH_S3_BUCKET`, `WORKBENCH_S3_REGION`; plus `WORKBENCH_S3_ACCESS_KEY_ID`/`SECRET_ACCESS_KEY` unless the server has an IAM role; `WORKBENCH_S3_ENDPOINT_URL` for non-AWS services |
-
-With S3, objects are private and encrypted (SSE-S3); downloads still go through Workbench's permission checks. Nightly backups include the S3 files and a copy of each backup zip is also stored in the bucket under `backups/`. *Files → Storage* shows which storage is in use.
-
-To move existing files, set the new storage in `.env`, restart, then copy:
+Chosen by an administrator in **System → Storage**: a folder on the server (default `data/files`), or cloud storage over the S3 protocol — **Amazon S3, Cloudflare R2, Backblaze B2, Wasabi, DigitalOcean Spaces, Google Cloud Storage** (HMAC keys) or a self-hosted **MinIO / Synology / QNAP** server. Enter the bucket and keys, *Save and test connection*, then *Move files and switch*: every file is copied and verified in the background and Workbench switches only when all of them made it. Ticking *Lock storage here* makes the choice permanent in the app (`manage storage --unlock` on the server undoes it). Keys are encrypted; buckets stay private; downloads always go through Workbench's permission checks; backups include cloud files and a copy is kept in the bucket.
 
 ```bash
-docker compose exec workbench manage migrate_storage --to s3 --from local --dry-run   # preview
-docker compose exec workbench manage migrate_storage --to s3 --from local             # copy (safe to re-run)
+docker compose exec workbench manage storage          # where files are kept, locked or not
+docker compose exec workbench manage storage --test   # write/read/delete a test file
 ```
 
-The source files are not deleted; remove them yourself after checking. Moving back works the same way (`--to local --from s3`).
-
-The minimum IAM policy for the bucket is `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject` on `arn:aws:s3:::<bucket>/<prefix>/*` and `s3:ListBucket` on the bucket.
+`WORKBENCH_STORAGE=s3` and friends in `.env` (version 1.2) still work and take precedence over the page.
 
 Useful commands:
 
@@ -122,8 +132,9 @@ curl http://localhost:8000/healthz               # health check for monitoring
 | **Files** | Project and company-wide spaces, folders, drag-and-drop upload with progress, **every version kept**, previews for PDFs, images and text/CSV/KiCad files, trash with restore, storage dashboard |
 | **GitHub** | Signed webhooks link PRs and commits to tasks by ID (`PWR-12`). PR opened → *In review*, changes requested → *In progress*, merged → *Done*; CI (e.g. KiBot ERC/DRC) results shown and failures announced |
 | **Firmware** | Per project: firmware components (main app, bootloader…), releases with **semantic versions** (`1.4.0`, `1.4.0-rc.1`), release notes and a **changelog between any two versions**, files with **SHA-256 checksums**, and the **board revisions each release is compatible with**. Draft → Testing → **Released** (leads approve; released files are locked) → Deprecated / **Recalled** (with a reason; everyone is notified and builds using it are blocked). Each revision shows its recommended firmware; builds record which firmware was flashed; a GitHub release tag can create a Testing release automatically |
+| **Design files** | Per revision: Gerbers, drill, schematic and PCB files (KiCad, Eagle, Altium), pick-and-place, STEP, PDFs — sorted by type, every version kept. A **built-in Gerber viewer** (our own RS-274X/Excellon renderer) shows top/bottom with mask colour, a layer view, zoom, pan and measure, plus board size, layer count, smallest drill/track and hole counts |
 | **Parts & BOM** | Parts library with stock history, suppliers, KiCad/KiBot BOM import with matching, cost per board, boards buildable from stock, BOM comparison between revisions |
-| **Production** | Purchase orders (draft → ordered → received, updating stock and cost), builds with shortage check, one-click orders for missing parts, test yield |
+| **Production** | Purchase orders (draft → ordered → received, updating stock and cost), builds with shortage check, one-click orders for missing parts, test yield. **Assembly-house builds:** mark BOM lines as fitted by the assembler, in house or not fitted; download JLCPCB/Seeed BOM + CPL files with in-house parts left out; track the order; on arrival only in-house parts leave stock and the build becomes a **finishing checklist** (per-part steps highlighted on the board, +1/+5 per board, phone-friendly) with a printable traveler |
 | **Timesheets & reports** | Log hours per task; a **weekly report** of hours by person and project, finished work, reviews, blockers and builds, printable or as CSV |
 | **Home** | Your tasks, reviews waiting for you, blocked and overdue work, low stock, and a **team clock** showing who's in working hours (Toronto ↔ Karachi) |
 | **Administration** | People and roles, invite links (or email them), *System & backups* for settings, **company logo** (SVG or transparent PNG, with an optional version for the dark menu bar), SMTP email, GitHub secret, backups and health, audit log |
@@ -151,7 +162,7 @@ pip install -r requirements-dev.txt
 export WORKBENCH_DEBUG=1
 python manage.py migrate && python manage.py seed_demo
 python manage.py runserver                     # http://localhost:8000 — haris / Workbench-demo-2026!
-python manage.py test apps                     # 112 tests (S3 is tested against a local mock)
+python manage.py test apps                     # 158 tests (S3 is tested against a local mock)
 ```
 
 The demo users are `haris` (admin), `ayesha` (lead), `bilal`, `sana` and `usman` (engineers), and `fatima` (procurement). They all use the password `Workbench-demo-2026!`.
@@ -175,10 +186,12 @@ apps/chat/           channels, messages, file sharing
 apps/files/          file library: spaces, folders, versions, trash, storage
 apps/inventory/      parts, suppliers, stock, BOMs, KiCad import
 apps/firmware/       firmware components, releases, artifacts
-apps/production/     purchase orders, builds
+apps/design/         revision design files, Gerber/Excellon parser and board renderer
+apps/production/     purchase orders, builds, assembly-house files, finishing
 apps/timesheets/     time entries, weekly report
 apps/integrations/   GitHub webhook
 templates/ static/   UI (hand-written CSS and JavaScript, no frameworks)
-Dockerfile docker-compose.yml docker-entrypoint.sh install.sh deploy/
+Dockerfile docker-compose.yml docker-entrypoint.sh deploy/
+install.sh update.sh  server install (deploy key) and safe updates
 docs/examples/       sample BOM, KiBot workflow for hardware repos
 ```

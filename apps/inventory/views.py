@@ -162,6 +162,10 @@ def bom(request, pk):
         "placements": sum(l.quantity for l in fitted), "unique_parts": len(fitted),
         "can_edit": rev.project.can_edit(request.user), "others": others,
         "limiting": sorted(fitted, key=lambda l: l.can_build)[:3] if fitted else [],
+        "house_lines": [l for l in fitted if l.fitted_by == "house"],
+        "house_parts": sum(l.quantity for l in fitted if l.fitted_by == "house"),
+        "fab_parts": sum(l.quantity for l in fitted if l.fitted_by != "house"),
+        "can_set_fitted": rev.project.can_edit(request.user) and (rev.status != "released" or request.user.can_manage_projects),
     })
 
 

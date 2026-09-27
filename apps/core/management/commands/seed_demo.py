@@ -61,6 +61,7 @@ class Command(BaseCommand):
             ("LCSC", "distributor", "China", 10, "https://www.lcsc.com"),
             ("JLCPCB", "pcb", "China", 12, "https://jlcpcb.com"),
             ("Lahore Electronics Assembly", "assembly", "Pakistan", 14, ""),
+            ("Seeed Fusion", "assembly", "China", 15, "https://www.seeedstudio.com/fusion.html"),
         ]:
             s[name] = Supplier.objects.get_or_create(name=name, defaults=dict(kind=kind, country=country, lead_time_days=lead, website=web))[0]
 
@@ -98,19 +99,24 @@ class Command(BaseCommand):
                   "STM32G031K8": "1.4200", "USBLC6-2SC6": "0.1100", "LED_Green": "0.0300", "USB_C_Receptacle": "0.5200",
                   "Conn_01x04": "0.0900", "AO3401A": "0.0400"}
         stock = {"100nF": 2400, "22uF": 180, "10uF": 300, "4.7uF": 40, "10k": 3800, "100k": 900, "31.6k": 0, "5.1k": 950, "0R": 500,
-                 "4.7uH": 35, "TPS62133": 12, "STM32G031K8": 60, "USBLC6-2SC6": 0, "LED_Green": 400, "USB_C_Receptacle": 22,
-                 "Conn_01x04": 150, "AO3401A": 0}
+                 "4.7uH": 35, "TPS62133": 12, "STM32G031K8": 60, "USBLC6-2SC6": 60, "LED_Green": 400, "USB_C_Receptacle": 22,
+                 "Conn_01x04": 150, "AO3401A": 60}
+        lcsc = {"100nF": "C14663", "22uF": "C12891", "10uF": "C15850", "4.7uF": "C1779", "10k": "C25804", "100k": "C25803",
+                "31.6k": "C23156", "5.1k": "C23186", "0R": "C21189", "LED_Green": "C72043"}
         for r in rows:
             part = Part.objects.create(description=r["description"], category=r["category"], value=r["value"], footprint=r["footprint"],
                                        manufacturer=r["manufacturer"], mpn=r["mpn"], datasheet_url=r["datasheet"],
                                        supplier=s["LCSC"] if r["category"] in ("resistor", "capacitor", "diode", "transistor") else s["DigiKey"],
+                                       supplier_sku=lcsc.get(r["value"], "") if r["category"] in ("resistor", "capacitor", "diode", "transistor") else "",
                                        unit_cost=Decimal(prices.get(r["value"], "0.05")), min_stock=50 if r["category"] in ("resistor", "capacitor") else 10,
                                        location="Lahore lab · " + ("Reel rack" if r["category"] in ("resistor", "capacitor") else "Cabinet B"))
             if stock.get(r["value"]):
                 part.adjust_stock(stock[r["value"]], StockMovement.Reason.ADJUST, user=u["fatima"], reference="Opening stock count")
-            BomLine.objects.create(revision=rev_b, part=part, quantity=r["quantity"], references=r["references"], dnp=r["dnp"])
+            BomLine.objects.create(revision=rev_b, part=part, quantity=r["quantity"], references=r["references"], dnp=r["dnp"],
+                                   fitted_by="house" if r["value"] in ("Conn_01x04", "USBLC6-2SC6", "AO3401A") else "fab")
         pcb_b = Part.objects.create(ipn="PCB-0002", description="PWR bare PCB Rev B, 2-layer 1.6mm ENIG", category="pcb", supplier=s["JLCPCB"], unit_cost=Decimal("1.20"))
-        BomLine.objects.create(revision=rev_b, part=pcb_b, quantity=1, references="PCB1")
+        BomLine.objects.create(revision=rev_b, part=pcb_b, quantity=1, references="PCB1", dnp=False, fitted_by="fab",
+                               notes="Made by the assembly house as part of the PCBA order")
         # Rev A BOM: same minus ESD/load switch, older divider
         for line in rev_b.bom_lines.select_related("part"):
             if line.part.value in ("USBLC6-2SC6", "AO3401A", "31.6k"):
@@ -118,7 +124,8 @@ class Command(BaseCommand):
             if line.part.value == "100nF":  # Rev B added one decoupling cap (C9)
                 BomLine.objects.create(revision=rev_a, part=line.part, quantity=4, references="C1, C2, C5, C6")
                 continue
-            BomLine.objects.create(revision=rev_a, part=line.part, quantity=line.quantity, references=line.references, dnp=line.dnp)
+            BomLine.objects.create(revision=rev_a, part=line.part, quantity=line.quantity, references=line.references, dnp=line.dnp,
+                                   fitted_by=line.fitted_by)
         r33 = Part.objects.create(description="33k 1% 0603 resistor", category="resistor", value="33k", footprint="Resistor_SMD:R_0603_1608Metric",
                                   manufacturer="Yageo", mpn="RC0603FR-0733KL", supplier=s["LCSC"], unit_cost=Decimal("0.0010"), lifecycle=Part.Lifecycle.ACTIVE)
         BomLine.objects.create(revision=rev_a, part=r33, quantity=1, references="R4")
@@ -164,7 +171,7 @@ class Command(BaseCommand):
             (u["sana"], "ESD schematic is nearly done. I'll open the PR today so @haris can review in his morning."),
             (u["bilal"], "PR #44 for brown-out is up. CI is green. Main question: is 3 ms flush time acceptable?"),
             (u["haris"], "3 ms is fine — the bulk cap gives us ~8 ms at 2.9 V. I'll review PWR-4 today. Please add the scope capture to the task."),
-            (u["fatima"], "FYI: USBLC6-2SC6 and AO3401A are out of stock. I'll order from LCSC once the Rev B BOM is final."),
+            (u["fatima"], "FYI: JLC has no USBLC6-2SC6 or AO3401A in stock, so we fit those by hand after PCBA, together with J2. We have enough here for the EVT run."),
         ]
         for i, (who, text) in enumerate(chat):
             m = Message.objects.create(channel=ch, author=who, body=text)
@@ -273,11 +280,55 @@ class Command(BaseCommand):
         pcb_po = PurchaseOrder.objects.create(supplier=s["JLCPCB"], created_by=u["fatima"], notes="Rev A bare boards")
         pcb_po.lines.create(part=pcb_b, quantity=20, unit_cost=Decimal("1.20"))
 
-        evt = BuildOrder.objects.create(revision=rev_b, quantity=25, manufacturer=s["Lahore Electronics Assembly"], created_by=u["fatima"],
-                                  due_date=(now + timedelta(days=30)).date(), serial_prefix="PWRB-26-",
-                                  notes="EVT build for field trials. 5 units go to Toronto.")
+        # Design files: Gerbers (two versions), placement file, BOM export and the KiCad project file.
+
+        from apps.design import demo_board
+        from apps.design.models import DesignFile
+        import io as _io
+        import zipfile as _zip
+        z2 = demo_board.gerber_zip()
+        buf = _io.BytesIO()   # the first version: same board, generated a week earlier
+        with _zip.ZipFile(_io.BytesIO(z2)) as src, _zip.ZipFile(buf, "w", _zip.ZIP_DEFLATED) as dst:
+            for info in src.infolist():
+                dst.writestr(info.filename, src.read(info).replace(b"2026-09-22", b"2026-09-15"))
+        z1 = buf.getvalue()
+        DesignFile.store(rev_b, SimpleUploadedFile("pwr-board-gerbers.zip", z1), u["sana"], note="First fab release candidate")
+        DesignFile.objects.filter(revision=rev_b).update(uploaded_at=now - timedelta(days=9))
+        DesignFile.store(rev_b, SimpleUploadedFile("pwr-board-gerbers.zip", z2), u["sana"],
+                         note="Moved D1 away from the mounting hole; silkscreen tidy-up")
+        DesignFile.store(rev_b, SimpleUploadedFile("pwr-board-pos.csv", demo_board.pos_csv()), u["sana"])
+        DesignFile.store(rev_b, SimpleUploadedFile("PWR-RevB-BOM.csv", sample.read_bytes()), u["sana"])
+        DesignFile.store(rev_b, SimpleUploadedFile("pwr-board.kicad_pro", b'{\n  "meta": {"filename": "pwr-board.kicad_pro", "version": 1},\n  "board": {"design_settings": {"rules": {"min_track_width": 0.2, "min_via_diameter": 0.5}}}\n}\n'), u["sana"])
+        DesignFile.store(rev_a, SimpleUploadedFile("pwr-board-revA-gerbers.zip", z1), u["sana"], note="As sent to JLCPCB for Rev A")
+
+        # Builds: EVT boards assembled by JLCPCB, being finished in house now; a planned DVT run at Seeed.
+        evt = BuildOrder.objects.create(revision=rev_b, quantity=25, manufacturer=s["JLCPCB"], created_by=u["fatima"],
+                                        assembly=BuildOrder.Assembly.FAB, due_date=(now + timedelta(days=6)).date(), serial_prefix="PWRB-26-",
+                                        fab_order_ref="SO2609118842", fab_tracking="DHL 4471 2290 18",
+                                        notes="EVT build for field trials. 5 units go to Toronto.")
         evt.firmware_releases.set([fw_app_13, fw_boot])
+        evt.start()
+        evt.consume_stock(u["fatima"])
+        evt.create_steps()
+        from apps.production.models import BuildStep
+        BuildStep.objects.create(build=evt, title="Wash flux and inspect under the microscope", per_board=0, order=10)
+        evt.received_qty, evt.received_at, evt.stage = 25, now - timedelta(days=1), BuildOrder.Stage.FINISHING
+        evt.fab_ordered_at = (now - timedelta(days=12)).date()
+        evt.started_at = now - timedelta(days=12)
+        evt.save()
+        BuildOrder.objects.filter(pk=evt.pk).update(created_at=now - timedelta(days=14))
+        progress = {"J2": 18, "U3": 25, "Q1": 11, "Wash": 6}
+        for step in evt.steps.all():
+            for key, n in progress.items():
+                if key in step.title:
+                    step.done_qty, step.updated_by, step.updated_at = n, u["usman"], now - timedelta(hours=2)
+                    step.save()
+        log_activity(pwr, f"received 25 assembled boards for {evt.number} from JLCPCB", actor=u["fatima"], url=evt.get_absolute_url())
+        BuildOrder.objects.create(revision=rev_b, quantity=100, manufacturer=s["Seeed Fusion"], created_by=u["fatima"],
+                                  assembly=BuildOrder.Assembly.FAB, due_date=(now + timedelta(days=45)).date(),
+                                  notes="DVT run, if EVT field trials pass.")
         done = BuildOrder.objects.create(revision=rev_a, quantity=10, created_by=u["fatima"], status=BuildOrder.Status.COMPLETED,
+                                         assembly=BuildOrder.Assembly.HOUSE, stage=BuildOrder.Stage.DONE,
                                          completed_qty=9, failed_qty=1, stock_consumed=True,
                                          started_at=now - timedelta(days=40), completed_at=now - timedelta(days=33),
                                          notes="Unit 7 failed: solder bridge on U1. Reworked later.")

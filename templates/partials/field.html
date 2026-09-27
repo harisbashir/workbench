@@ -8,7 +8,7 @@
     <span class="field-label">{{ field.label }}</span>
     <div class="radios">{{ field }}</div>
   {% else %}
-    <label for="{{ field.id_for_label }}">{{ field.label }}{% if not field.field.required %} <span class="faint small">(optional)</span>{% endif %}</label>
+    <label for="{{ field.id_for_label }}">{{ field.label }}{% if not field.field.required and not field.field.conditionally_required %} <span class="faint small">(optional)</span>{% endif %}</label>
     {{ field }}
   {% endif %}
   {% if field.help_text %}<div class="help">{{ field.help_text|safe }}</div>{% endif %}

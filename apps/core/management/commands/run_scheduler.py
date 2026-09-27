@@ -31,7 +31,9 @@ def tick(now=None):
     local = now.astimezone(tz)
     if email.send_pending_notifications():
         done.append("emails")
-    from apps.core import export
+    from apps.core import export, storage_move
+    if storage_move.run_pending():
+        done.append("storage move")
     if export.run_pending():
         export.prune_exports()
         done.append("export")
@@ -53,6 +55,9 @@ class Command(BaseCommand):
 
     def handle(self, *args, **o):
         beat = Path(settings.DATA_DIR) / "scheduler.heartbeat"
+        # A move interrupted by a restart continues where it stopped (copied files are skipped).
+        from apps.core.models import StorageMove
+        StorageMove.objects.filter(status=StorageMove.Status.RUNNING).update(status=StorageMove.Status.PENDING)
         while True:
             close_old_connections()
             try:

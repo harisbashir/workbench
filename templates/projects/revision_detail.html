@@ -6,6 +6,7 @@
   <h1>{{ rev.name }} {% status_badge rev.status rev.get_status_display %}</h1>
   <p class="intro">{% if rev.target_date %}<span class="meta-item">Target {{ rev.target_date|naturalday }}</span>{% endif %}{% if rev.git_ref %}<span class="meta-item">git <code>{{ rev.git_ref }}</code></span>{% endif %}{% if rev.notes %}<span class="meta-item">{{ rev.notes }}</span>{% endif %}</p></div>
   <div class="actions">
+    <a class="btn" href="{% url 'design:files' project.key rev.pk %}">{% icon 'pcb' 16 %} Design files</a>
     <a class="btn" href="{% url 'inventory:bom' rev.pk %}">{% icon 'chip' 16 %} BOM</a>
     <a class="btn" href="{% url 'projects:board' project.key %}?revision={{ rev.pk }}">{% icon 'board' 16 %} Tasks</a>
     {% if can_edit %}<a class="btn" href="{% url 'projects:revision_edit' project.key rev.pk %}">{% icon 'edit' 16 %} Edit</a>{% endif %}
@@ -19,6 +20,22 @@
 </div><p></p>
 
 <div class="grid grid-main">
+  <div class="stack">
+  <div class="card" id="design"><div class="card-head"><h2>{% icon 'pcb' 18 %} Design files</h2>
+    <a class="btn btn-sm" href="{% url 'design:files' project.key rev.pk %}">{% if can_edit and rev.status != 'released' %}{% icon 'upload' 14 %} Upload / manage{% else %}All files{% endif %}</a></div>
+    {% if board and board.ok %}<div class="design-strip">
+      <a class="board-thumb" href="{% url 'design:pcb' project.key rev.pk %}" aria-label="Open the board viewer"><img src="{% url 'design:pcb_svg' project.key rev.pk %}?view=thumb" alt="Top of the {{ rev.name }} board" loading="lazy"></a>
+      <div class="card-body board-facts">{% with i=board.info %}
+        <div><span>Size</span><strong>{{ i.width|floatformat:1 }} × {{ i.height|floatformat:1 }} mm</strong></div>
+        <div><span>Copper layers</span><strong>{{ i.copper_layers|default:"—" }}</strong></div>
+        <div><span>Holes</span><strong>{{ i.holes }}{% if i.slots %} + {{ i.slots }} slots{% endif %}</strong></div>
+        <div><span>Smallest drill · track</span><strong>{% if i.min_drill %}{{ i.min_drill|floatformat:2 }}{% else %}—{% endif %} · {% if i.min_trace %}{{ i.min_trace|floatformat:3 }}{% else %}—{% endif %} mm</strong></div>
+        {% endwith %}<a class="btn btn-sm" href="{% url 'design:pcb' project.key rev.pk %}">{% icon 'eye' 14 %} Open board viewer</a></div>
+    </div>{% endif %}
+    <div class="card-body">
+      {% if design_files %}<div class="file-chips">{% for f in design_files %}<a class="file-chip" href="{{ f.get_absolute_url }}"><span class="small faint">{{ f.get_category_display }}</span>{{ f.name }}{% if f.version > 1 %} <span class="faint">v{{ f.version }}</span>{% endif %}</a>{% endfor %}</div>
+      {% else %}<p class="muted small">No Gerbers, schematic or pick-and-place files yet.{% if can_edit %} <a href="{% url 'design:files' project.key rev.pk %}">Upload them</a> to see the board here.{% endif %}</p>{% endif %}
+    </div></div>
   <div class="card" id="checklist"><div class="card-head"><h2>Release checklist</h2><span class="small muted">All items must be signed off before the revision can be released for production.</span></div>
     <div class="card-body">
     {% if checks %}<ul class="checklist">
@@ -33,6 +50,7 @@
     {% if can_edit %}<form method="post" action="{% url 'projects:revision_check' project.key rev.pk %}" class="btn-row">{% csrf_token %}
       <input type="text" name="text" maxlength="200" placeholder="Add a checklist item, e.g. Thermal test at 2 A passed" aria-label="New checklist item" class="grow"><button class="btn btn-sm" name="action" value="add">{% icon 'plus' 14 %} Add</button></form>{% endif %}
     </div></div>
+  </div>
 
   <div class="stack">
     <div class="card"><div class="card-head"><h3>Open tasks</h3></div><div class="card-body">

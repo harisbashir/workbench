@@ -1,10 +1,12 @@
 import io
 import zipfile
+from unittest import mock
 
 import boto3
+from django.conf import settings
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
-from django.test import TestCase, TransactionTestCase, override_settings
+from django.test import TestCase, TransactionTestCase
 from django.urls import reverse
 from moto import mock_aws
 
@@ -12,83 +14,199 @@ from apps.accounts.models import User
 from apps.core import export, system
 from apps.core.branding import clean_svg
 from apps.core.models import ExportJob, SiteSettings
-from apps.core.storage import backend, stored_files
+from apps.core.models import StorageMove, StorageSettings
+from apps.core.storage import seal, storage_info, stored_files, unseal
 from apps.core.testing import make_user, signed_in
 from apps.files.models import Document
 from apps.firmware.models import Firmware, FirmwareArtifact, FirmwareRelease
 from apps.projects.models import Project, Revision
 
-def _app_s3_config():
-    """The exact S3 configuration the app builds from WORKBENCH_S3_* settings."""
-    import os
-    from unittest import mock
-
-    import config.settings as cs
-    env = {"WORKBENCH_S3_ACCESS_KEY_ID": "test", "WORKBENCH_S3_SECRET_ACCESS_KEY": "test"}
-    with mock.patch.dict(cs.S3, {"bucket": "wb-test", "region": "us-east-1", "prefix": "workbench", "endpoint": ""}), \
-            mock.patch.dict(os.environ, env):
-        return cs.storage_backend("s3")
+S3_CFG = {"kind": "s3", "provider": "aws", "bucket": "wb-test", "region": "us-east-1", "endpoint": "",
+          "prefix": "workbench", "access_key": "test", "secret_key": "test"}
 
 
-S3_CONFIG = _app_s3_config()
+def use_storage(cfg):
+    row = StorageSettings.load()
+    row.active = seal(cfg)
+    row.save()
 
 
-def s3_settings(**extra):
-    from django.conf import settings
-    configs = dict(settings.STORAGE_CONFIGS, s3=S3_CONFIG)
-    storages = dict(settings.STORAGES, default=S3_CONFIG)
-    return override_settings(STORAGE_KIND="s3", STORAGES=storages, STORAGE_CONFIGS=configs,
-                             S3={"bucket": "wb-test", "region": "us-east-1", "endpoint": "", "prefix": "workbench"}, **extra)
+def s3_client():
+    return boto3.client("s3", region_name="us-east-1")
 
 
 @mock_aws
 class S3StorageTests(TransactionTestCase):
     def setUp(self):
-        boto3.client("s3", region_name="us-east-1").create_bucket(Bucket="wb-test")
+        s3_client().create_bucket(Bucket="wb-test")
         self.admin = make_user("boss", role=User.Role.ADMIN)
         self.p = Project.objects.create(key="PWR", name="Power")
         self.p.members.add(self.admin)
 
+    def upload(self, name, data, client=None):
+        (client or signed_in(self.admin)).post(reverse("files:upload_root", args=["PWR"]), {"files": [SimpleUploadedFile(name, data)]})
+        return Document.objects.get(name=name)
+
     def test_upload_download_and_purge_in_s3(self):
-        with s3_settings():
-            c = signed_in(self.admin)
-            c.post(reverse("files:upload_root", args=["PWR"]), {"files": [SimpleUploadedFile("scope.png", b"PNGDATA")]})
-            doc = Document.objects.get()
-            key = f"workbench/{doc.latest.file.name}"
-            obj = boto3.client("s3", region_name="us-east-1").get_object(Bucket="wb-test", Key=key)
-            self.assertEqual(obj["Body"].read(), b"PNGDATA")
-            self.assertEqual(obj.get("ServerSideEncryption"), "AES256")
-            r = c.get(reverse("files:download", args=[doc.latest.pk]))
-            self.assertEqual(b"".join(r.streaming_content), b"PNGDATA")
-            doc.trash(self.admin)
-            doc.purge()
-            listed = boto3.client("s3", region_name="us-east-1").list_objects_v2(Bucket="wb-test").get("KeyCount", 0)
-            self.assertEqual(listed, 0)
+        use_storage(S3_CFG)
+        c = signed_in(self.admin)
+        doc = self.upload("scope.png", b"PNGDATA", c)
+        obj = s3_client().get_object(Bucket="wb-test", Key=f"workbench/{doc.latest.file.name}")
+        self.assertEqual(obj["Body"].read(), b"PNGDATA")
+        self.assertEqual(obj.get("ServerSideEncryption"), "AES256")
+        r = c.get(reverse("files:download", args=[doc.latest.pk]))
+        self.assertEqual(b"".join(r.streaming_content), b"PNGDATA")
+        doc.trash(self.admin)
+        doc.purge()
+        self.assertEqual(s3_client().list_objects_v2(Bucket="wb-test").get("KeyCount", 0), 0)
 
     def test_backup_includes_s3_files_and_copies_offsite(self):
-        with s3_settings():
-            signed_in(self.admin).post(reverse("files:upload_root", args=["PWR"]), {"files": [SimpleUploadedFile("a.txt", b"hello s3")]})
-            path = system.create_backup("test")
-            with zipfile.ZipFile(path) as z:
-                self.assertTrue(any(n.endswith("a.txt") and z.read(n) == b"hello s3" for n in z.namelist()))
-            keys = [o["Key"] for o in boto3.client("s3", region_name="us-east-1").list_objects_v2(Bucket="wb-test")["Contents"]]
-            self.assertIn(f"workbench/backups/{path.name}", keys)
+        use_storage(S3_CFG)
+        self.upload("a.txt", b"hello s3")
+        path = system.create_backup("test")
+        with zipfile.ZipFile(path) as z:
+            self.assertTrue(any(n.endswith("a.txt") and z.read(n) == b"hello s3" for n in z.namelist()))
+        keys = [o["Key"] for o in s3_client().list_objects_v2(Bucket="wb-test")["Contents"]]
+        self.assertIn(f"workbench/backups/{path.name}", keys)
 
-    def test_migrate_storage_local_to_s3(self):
-        # Upload while on local storage…
-        signed_in(self.admin).post(reverse("files:upload_root", args=["PWR"]), {"files": [SimpleUploadedFile("local.txt", b"move me")]})
-        doc = Document.objects.get()
-        with s3_settings():
-            out = io.StringIO()
-            call_command("migrate_storage", "--to", "s3", "--from", "local", stdout=out)
-            self.assertIn("Copied 1 files", out.getvalue())
-            self.assertTrue(backend("s3").exists(doc.latest.file.name))
-            out = io.StringIO()
-            call_command("migrate_storage", "--to", "s3", "--from", "local", stdout=out)
-            self.assertIn("1 already there", out.getvalue())
-            # …and it's served from S3 now.
-            r = signed_in(self.admin).get(reverse("files:download", args=[doc.latest.pk]))
-            self.assertEqual(b"".join(r.streaming_content), b"move me")
+    def page(self, c, **data):
+        return c.post(reverse("core:storage"), data, follow=True)
+
+    def s3_form(self, **extra):
+        return {"kind": "s3", "provider": "aws", "bucket": "wb-test", "region": "us-east-1", "prefix": "workbench",
+                "access_key": "test", "secret_key": "test", **extra}
+
+    def test_move_local_to_s3_from_the_app(self):
+        from apps.core import storage_move
+        c = signed_in(self.admin)
+        doc = self.upload("local.txt", b"move me", c)
+        # A wrong bucket fails the test and can't be moved to.
+        r = self.page(c, action="test", **self.s3_form(bucket="no-such-bucket"))
+        self.assertContains(r, "bucket doesn")
+        self.page(c, action="move", lock="1")
+        self.assertFalse(StorageMove.objects.exists())
+        # The right one works.
+        r = self.page(c, action="test", **self.s3_form())
+        self.assertContains(r, "Connected")
+        with mock.patch("apps.core.storage_views._worker_alive", return_value=True):
+            self.page(c, action="move", lock="1")
+        move = StorageMove.objects.get()
+        storage_move.run_move(move, settle_seconds=0)
+        move.refresh_from_db()
+        self.assertEqual((move.status, move.copied, move.total), ("done", 1, 1), move.failures)
+        row = StorageSettings.objects.get()
+        self.assertTrue(row.locked)
+        self.assertEqual(row.active["bucket"], "wb-test")
+        self.assertTrue(row.active["secret_key"].startswith("enc:"), "keys are stored encrypted")
+        self.assertEqual(row.previous.get("kind"), "local")
+        self.assertTrue(storage_info()["kind"] == "s3")
+        key = f"workbench/{doc.latest.file.name}"
+        self.assertEqual(s3_client().get_object(Bucket="wb-test", Key=key)["Body"].read(), b"move me")
+        # New uploads go to S3.
+        new = self.upload("new.txt", b"fresh", c)
+        s3_client().head_object(Bucket="wb-test", Key=f"workbench/{new.latest.file.name}")
+        # If an object goes missing, the old storage is used as a fallback…
+        s3_client().delete_object(Bucket="wb-test", Key=key)
+        r = c.get(reverse("files:download", args=[doc.latest.pk]))
+        self.assertEqual(b"".join(r.streaming_content), b"move me")
+        # …until the admin stops using it.
+        self.page(c, action="forget_previous")
+        self.assertEqual(c.get(reverse("files:download", args=[doc.latest.pk])).status_code, 404)
+        # Locked: moving elsewhere is refused, but keys for the same bucket can be updated.
+        r = self.page(c, action="test", kind="local", path=str(settings.FILES_DIR))
+        self.assertContains(r, "locked")
+        r = self.page(c, action="test", **self.s3_form(access_key="test", secret_key="test2"))
+        self.page(c, action="apply")
+        self.assertEqual(unseal(StorageSettings.objects.get().active)["secret_key"], "test2")
+        out = io.StringIO()
+        call_command("storage", "--unlock", stdout=out)
+        self.assertFalse(StorageSettings.objects.get().locked)
+
+    def test_failed_move_keeps_old_storage(self):
+        from apps.core import storage_move
+        self.upload("a.txt", b"x")
+        bad = seal(dict(S3_CFG, bucket="missing-bucket"))
+        move = StorageMove.objects.create(source={}, target=bad)
+        storage_move.run_move(move, settle_seconds=0)
+        move.refresh_from_db()
+        self.assertEqual(move.status, "failed")
+        self.assertEqual(move.failed, 1)
+        self.assertEqual(storage_info()["kind"], "local")
+
+    def test_resumed_move_skips_copied_files(self):
+        from apps.core import storage_move
+        self.upload("a.txt", b"x")
+        self.upload("b.txt", b"yy")
+        move = StorageMove.objects.create(source={}, target=seal(S3_CFG))
+        storage_move.run_move(move, settle_seconds=0)
+        use_storage({"kind": "local", "path": str(settings.FILES_DIR)})  # pretend we came back
+        again = StorageMove.objects.create(source={}, target=seal(S3_CFG))
+        storage_move.run_move(again, settle_seconds=0)
+        again.refresh_from_db()
+        self.assertEqual((again.skipped, again.copied), (2, 0))
+
+    def test_move_to_another_folder(self):
+        import tempfile
+        from pathlib import Path
+
+        from apps.core import storage_move
+        doc = self.upload("a.txt", b"disk")
+        other = tempfile.mkdtemp()
+        c = signed_in(self.admin)
+        self.page(c, action="test", kind="local", path=other)
+        with mock.patch("apps.core.storage_views._worker_alive", return_value=True):
+            self.page(c, action="move")
+        storage_move.run_move(StorageMove.objects.get(), settle_seconds=0)
+        self.assertTrue((Path(other) / doc.latest.file.name).exists())
+        self.assertEqual(storage_info()["path"], other)
+        self.assertFalse(StorageSettings.objects.get().locked)
+
+
+class StorageFormTests(TestCase):
+    def setUp(self):
+        self.c = signed_in(make_user("boss", role=User.Role.ADMIN))
+
+    def errors(self, **data):
+        from apps.core.forms import StorageLocationForm
+        f = StorageLocationForm({"kind": "s3", **data})
+        f.is_valid()
+        return f.errors
+
+    def test_validation(self):
+        self.assertIn("bucket", self.errors(provider="aws", bucket="Bad_Name", region="x"))
+        self.assertIn("region", self.errors(provider="aws", bucket="ok-bucket"))
+        self.assertIn("endpoint", self.errors(provider="r2", bucket="ok-bucket", endpoint="https://ACCOUNT_ID.r2.cloudflarestorage.com",
+                                              access_key="a", secret_key="b"))
+        self.assertIn("access_key", self.errors(provider="wasabi", bucket="ok-bucket", region="ca-central-1"))
+        self.assertIn("endpoint", self.errors(provider="wasabi", bucket="ok-bucket", region="x", endpoint="http://insecure.example",
+                                              access_key="a", secret_key="b"))
+        self.assertEqual(self.errors(provider="wasabi", bucket="ok-bucket", region="ca-central-1", access_key="a", secret_key="b"), {})
+        from apps.core.forms import StorageLocationForm
+        f = StorageLocationForm({"kind": "local", "path": "relative/path"})
+        self.assertFalse(f.is_valid())
+        f = StorageLocationForm({"kind": "local", "path": str(settings.BACKUP_DIR)})
+        self.assertFalse(f.is_valid())
+
+    def test_endpoints(self):
+        from apps.core.storage import endpoint_for
+        self.assertEqual(endpoint_for({"provider": "wasabi", "region": "ca-central-1"}), "https://s3.ca-central-1.wasabisys.com")
+        self.assertEqual(endpoint_for({"provider": "spaces", "region": "tor1"}), "https://tor1.digitaloceanspaces.com")
+        self.assertEqual(endpoint_for({"provider": "aws", "region": "us-east-1"}), "")
+        self.assertEqual(endpoint_for({"provider": "r2", "endpoint": "https://abc.r2.cloudflarestorage.com/"}), "https://abc.r2.cloudflarestorage.com")
+
+    def test_pinned_in_env(self):
+        from apps.core.storage import reset_cache
+        with self.settings(STORAGE_ENV={"kind": "local", "path": str(settings.FILES_DIR)}):
+            reset_cache()
+            r = self.c.get(reverse("core:storage"))
+            self.assertContains(r, "set in the server")
+            self.c.post(reverse("core:storage"), {"action": "test", "kind": "local", "path": "/tmp"})
+            self.assertFalse(StorageSettings.objects.get().draft)
+        reset_cache()
+
+    def test_only_admins(self):
+        self.assertEqual(signed_in(make_user("eng")).get(reverse("core:storage")).status_code, 403)
+        self.assertEqual(self.c.get(reverse("core:storage")).status_code, 200)
 
 
 class ExportTests(TransactionTestCase):

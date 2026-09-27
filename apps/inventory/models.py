@@ -140,6 +140,15 @@ class BomLine(models.Model):
     references = models.TextField(blank=True, help_text="Schematic reference designators, e.g. R1, R2, R5")
     quantity = models.PositiveIntegerField(default=1, help_text="How many are used on one board.")
     dnp = models.BooleanField("Do not populate", default=False)
+
+    class FittedBy(models.TextChoices):
+        FAB = "fab", "Assembly house"
+        HOUSE = "house", "In house"
+
+    fitted_by = models.CharField(
+        "Fitted by", max_length=8, choices=FittedBy.choices, default=FittedBy.FAB,
+        help_text="Who solders this part when boards are assembled by JLCPCB, Seeed or another assembly house. "
+                  "“In house” parts are left off the assembler's files and fitted by your team afterwards.")
     notes = models.CharField(max_length=200, blank=True)
 
     class Meta:
@@ -147,5 +156,36 @@ class BomLine(models.Model):
         unique_together = [("revision", "part")]
 
     @property
+    def refs(self):
+        return expand_refs(self.references)
+
+    @property
     def line_cost(self):
         return Decimal(0) if self.dnp else self.part.unit_cost * self.quantity
+
+
+def expand_refs(text):
+    """'R1, R2, R5-R7' -> ['R1', 'R2', 'R5', 'R6', 'R7']."""
+    import re
+    out = []
+    for token in re.split(r"[,;\s]+", text or ""):
+        token = token.strip()
+        if not token:
+            continue
+        m = re.fullmatch(r"([A-Za-z_]+)(\d+)-(?:[A-Za-z_]+)?(\d+)", token)
+        if m and int(m.group(3)) >= int(m.group(2)) and int(m.group(3)) - int(m.group(2)) < 500:
+            out += [f"{m.group(1)}{n}" for n in range(int(m.group(2)), int(m.group(3)) + 1)]
+        else:
+            out.append(token)
+    return out
+
+
+THT_HINTS = ("THT", "PinHeader", "PinSocket", "TerminalBlock", "_Vertical", "_Horizontal", "BarrelJack", "Battery",
+             "Relay", "DIP-", "TO-220", "TO-92", "Buzzer", "Fuseholder", "Potentiometer", "Transformer", "JST_", "Molex",
+             "Phoenix", "IDC", "D-Sub", "RJ45", "Heatsink", "MountingHole")
+
+
+def suggest_house(line):
+    """Whether a part is usually fitted by hand after PCBA: through-hole connectors and the like."""
+    fp = (line.part.footprint or "")
+    return any(h.lower() in fp.lower() for h in THT_HINTS)

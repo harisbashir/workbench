@@ -103,6 +103,7 @@ INSTALLED_APPS = [
     "apps.chat",
     "apps.files",
     "apps.firmware",
+    "apps.design",
     "apps.inventory",
     "apps.production",
     "apps.integrations",
@@ -124,49 +125,30 @@ MIDDLEWARE = [
 ]
 
 # --- Where uploaded files are stored --------------------------------------
-#   WORKBENCH_STORAGE=local  (default) files in FILES_DIR on this server
-#   WORKBENCH_STORAGE=s3     Amazon S3 or any S3-compatible service
-#                            (Wasabi, Backblaze B2, Cloudflare R2, MinIO…)
-# Move existing files between the two with:  manage migrate_storage --to s3
-STORAGE_KIND = env("WORKBENCH_STORAGE", "local").lower()
-S3 = {
-    "bucket": env("WORKBENCH_S3_BUCKET", ""),
-    "region": env("WORKBENCH_S3_REGION", ""),
-    "endpoint": env("WORKBENCH_S3_ENDPOINT_URL", ""),  # only for non-AWS services
-    "prefix": env("WORKBENCH_S3_PREFIX", "workbench"),
-}
-
-
-def storage_backend(kind):
-    if kind == "s3":
-        options = {
-            "bucket_name": S3["bucket"],
-            "location": S3["prefix"],
-            "default_acl": None,                    # objects stay private
-            "querystring_auth": True,
-            "file_overwrite": True,                 # paths are unique (document id + version)
-            "object_parameters": {"ServerSideEncryption": "AES256"},
-        }
-        if S3["region"]:
-            options["region_name"] = S3["region"]
-        if S3["endpoint"]:
-            options["endpoint_url"] = S3["endpoint"]
+# Normally chosen in the app (System → Storage) and saved in the database.
+# Setting WORKBENCH_STORAGE (or WORKBENCH_FILES_DIR) here pins it instead:
+#   WORKBENCH_STORAGE=local  files in WORKBENCH_FILES_DIR (default data/files)
+#   WORKBENCH_STORAGE=s3     Amazon S3 or an S3-compatible service
+STORAGE_ENV = None
+if env("WORKBENCH_STORAGE", "").lower() == "s3":
+    STORAGE_ENV = {
+        "kind": "s3",
+        "provider": env("WORKBENCH_S3_PROVIDER", "minio" if env("WORKBENCH_S3_ENDPOINT_URL") else "aws"),
+        "bucket": env("WORKBENCH_S3_BUCKET", ""),
+        "region": env("WORKBENCH_S3_REGION", ""),
+        "endpoint": env("WORKBENCH_S3_ENDPOINT_URL", ""),
+        "prefix": env("WORKBENCH_S3_PREFIX", "workbench"),
         # Keys are optional: on AWS, prefer an IAM role (EC2 instance profile / ECS task role).
-        if env("WORKBENCH_S3_ACCESS_KEY_ID"):
-            options["access_key"] = env("WORKBENCH_S3_ACCESS_KEY_ID")
-            options["secret_key"] = env("WORKBENCH_S3_SECRET_ACCESS_KEY", "")
-        return {"BACKEND": "storages.backends.s3.S3Storage", "OPTIONS": options}
-    return {"BACKEND": "django.core.files.storage.FileSystemStorage",
-            "OPTIONS": {"location": str(FILES_DIR)}}
+        "access_key": env("WORKBENCH_S3_ACCESS_KEY_ID", ""),
+        "secret_key": env("WORKBENCH_S3_SECRET_ACCESS_KEY", ""),
+    }
+    if not STORAGE_ENV["bucket"]:
+        raise RuntimeError("WORKBENCH_STORAGE=s3 needs WORKBENCH_S3_BUCKET.")
+elif (env("WORKBENCH_STORAGE", "").lower() == "local" or env("WORKBENCH_FILES_DIR")) and not TESTING:
+    STORAGE_ENV = {"kind": "local", "path": str(FILES_DIR)}
 
-
-if STORAGE_KIND == "s3" and not S3["bucket"]:
-    raise RuntimeError("WORKBENCH_STORAGE=s3 needs WORKBENCH_S3_BUCKET.")
-
-# Both configurations, so files can be copied between them (migrate_storage).
-STORAGE_CONFIGS = {"local": storage_backend("local"), "s3": storage_backend("s3") if S3["bucket"] else None}
 STORAGES = {
-    "default": storage_backend(STORAGE_KIND),
+    "default": {"BACKEND": "apps.core.storage.DynamicStorage"},
     "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
 }
 

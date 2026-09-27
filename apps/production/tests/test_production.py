@@ -46,14 +46,14 @@ class ProductionTests(TestCase):
         self.assertEqual(self.u.stock, 5)
 
     def test_build_shortages_and_ordering(self):
-        b = BuildOrder.objects.create(revision=self.rev, quantity=10)
+        b = BuildOrder.objects.create(revision=self.rev, quantity=10, assembly="house")
         self.assertEqual(b.shortage_count, 1)  # needs 10 MCUs, has 3
         signed_in(self.buyer).post(reverse("production:build_action", args=[b.pk]), {"action": "order_shortages"})
         po = PurchaseOrder.objects.get(status="draft")
         self.assertEqual(po.lines.get().quantity, 7)
 
     def test_start_blocked_when_short_unless_forced(self):
-        b = BuildOrder.objects.create(revision=self.rev, quantity=10)
+        b = BuildOrder.objects.create(revision=self.rev, quantity=10, assembly="house")
         c = signed_in(self.buyer)
         c.post(reverse("production:build_action", args=[b.pk]), {"action": "start"})
         b.refresh_from_db()
@@ -65,7 +65,7 @@ class ProductionTests(TestCase):
         self.assertEqual(self.r.stock, 60)
 
     def test_complete_records_yield_and_consumes_once(self):
-        b = BuildOrder.objects.create(revision=self.rev, quantity=2)
+        b = BuildOrder.objects.create(revision=self.rev, quantity=2, assembly="house")
         c = signed_in(self.buyer)
         c.post(reverse("production:build_action", args=[b.pk]), {"action": "start"})
         c.post(reverse("production:build_action", args=[b.pk]), {"action": "complete", "passed": 2, "failed": 0})

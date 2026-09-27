@@ -23,19 +23,31 @@
   <div class="card stat"><div class="label">Boards buildable from stock</div><div class="value {% if buildable == 0 %}bad{% elif buildable < 10 %}warn{% endif %}">{{ buildable }}</div>
     {% if limiting and buildable < 1000 %}<div class="small muted">Limited by {% for l in limiting %}<a href="{{ l.part.get_absolute_url }}">{{ l.part.ipn }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</div>{% endif %}</div>
 </div><p></p>
-<div class="btn-row">{% if user.can_manage_procurement %}<a class="btn" href="{% url 'production:build_create' %}?revision={{ rev.pk }}">{% icon 'factory' 16 %} Plan a build of this revision</a>{% endif %}</div><p></p>
+<div class="card assembly-card"><div class="card-body">
+  <div><strong>Assembly:</strong> the assembly house places {{ fab_parts }} part{{ fab_parts|pluralize }} per board{% if house_parts %}; your team fits <strong>{{ house_parts }} in house</strong> ({% for l in house_lines|slice:":5" %}{{ l.references|truncatechars:18 }}{% if not forloop.last %}, {% endif %}{% endfor %}{% if house_lines|length > 5 %}…{% endif %}){% endif %}.
+    <span class="small muted">Use the <em>Fitted by</em> column to choose which parts your team solders after PCBA.</span></div>
+  <div class="btn-row">
+    {% if can_set_fitted %}<form method="post" action="{% url 'production:bom_fitted' rev.pk %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.path }}">
+      <button class="btn btn-sm" name="action" value="suggest" title="Marks through-hole connectors, headers, terminal blocks and similar as fitted in house">Mark through-hole parts as in house</button></form>{% endif %}
+    <a class="btn btn-sm" href="{% url 'production:fab_package' rev.pk %}">{% icon 'box' 14 %} Order files for JLC / Seeed</a>
+    {% if user.can_manage_procurement %}<a class="btn btn-sm" href="{% url 'production:build_create' %}?revision={{ rev.pk }}">{% icon 'factory' 14 %} Plan a build</a>{% endif %}
+  </div></div></div><p></p>
 <div class="card"><div class="table-wrap"><table class="table">
-  <thead><tr><th>Part</th><th>Description</th><th>References</th><th class="num">Qty / board</th><th class="num">Unit cost</th><th class="num">Line cost</th><th class="num">In stock</th><th class="num">Boards</th>{% if can_edit %}<th></th>{% endif %}</tr></thead>
+  <thead><tr><th>Part</th><th>Description</th><th>References</th><th class="num">Qty / board</th><th>Fitted by</th><th class="num">Unit cost</th><th class="num">Line cost</th><th class="num">In stock</th><th class="num">Boards</th>{% if can_edit %}<th></th>{% endif %}</tr></thead>
   <tbody>{% for l in lines %}
     <tr class="{% if l.dnp %}row-muted{% elif l.can_build == 0 %}row-bad{% elif l.part.is_low %}row-warn{% endif %}">
       <td class="key"><a href="{{ l.part.get_absolute_url }}">{{ l.part.ipn }}</a></td>
       <td>{{ l.part.description }}{% if l.dnp %} <span class="badge">Do not populate</span>{% endif %}<br><span class="small faint">{{ l.part.manufacturer }} {{ l.part.mpn }}</span></td>
       <td class="small">{{ l.references|truncatechars:48 }}</td>
-      <td class="num">{{ l.quantity }}</td><td class="num">{{ l.part.unit_cost|floatformat:4 }}</td><td class="num">{{ l.line_cost|floatformat:2 }}</td>
+      <td class="num">{{ l.quantity }}</td>
+      <td>{% if l.dnp %}<span class="faint small">—</span>{% elif can_set_fitted %}<form method="post" action="{% url 'production:bom_fitted' rev.pk %}" class="seg seg-sm fitted-toggle">{% csrf_token %}<input type="hidden" name="line" value="{{ l.pk }}"><input type="hidden" name="next" value="{{ request.path }}">
+        <button name="to" value="fab" class="{% if l.fitted_by == 'fab' %}active{% endif %}" aria-pressed="{% if l.fitted_by == 'fab' %}true{% else %}false{% endif %}" title="Placed by the assembly house">Fab</button><button name="to" value="house" class="{% if l.fitted_by == 'house' %}active house{% endif %}" aria-pressed="{% if l.fitted_by == 'house' %}true{% else %}false{% endif %}" title="Soldered by your team after PCBA">In house</button></form>
+        {% else %}<span class="badge {% if l.fitted_by == 'house' %}badge-high{% endif %}">{{ l.get_fitted_by_display }}</span>{% endif %}</td>
+      <td class="num">{{ l.part.unit_cost|floatformat:4 }}</td><td class="num">{{ l.line_cost|floatformat:2 }}</td>
       <td class="num">{{ l.part.stock }}</td><td class="num">{% if l.dnp %}—{% else %}{{ l.can_build }}{% endif %}</td>
       {% if can_edit %}<td class="right"><a class="btn btn-sm btn-ghost" href="{% url 'inventory:bom_line_edit' rev.pk l.pk %}">Edit</a></td>{% endif %}</tr>
   {% endfor %}</tbody>
-  <tfoot><tr><td colspan="5">Total per board</td><td class="num">{{ cost|floatformat:2 }}</td><td colspan="{% if can_edit %}3{% else %}2{% endif %}"></td></tr></tfoot>
+  <tfoot><tr><td colspan="6">Total per board</td><td class="num">{{ cost|floatformat:2 }}</td><td colspan="{% if can_edit %}3{% else %}2{% endif %}"></td></tr></tfoot>
 </table></div></div>
 <p class="small muted">Red rows: not enough stock for even one board. Amber rows: below the part's reorder level. “Boards” shows how many boards the current stock of that part covers.</p>
 {% else %}

@@ -1,0 +1,75 @@
+{% extends "base.html" %}{% load static workbench humanize %}
+{% block title %}Board · {{ rev }}{% endblock %}
+{% block extra_head %}<script src="{% static 'js/pcb.js' %}" defer></script>{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles">
+  <div class="crumbs"><a href="{{ project.get_absolute_url }}">{{ project.name }}</a> / <a href="{{ rev.get_absolute_url }}">{{ rev.name }}</a> / <a href="{% url 'design:files' project.key rev.pk %}">Design files</a> /</div>
+  <h1>{{ project.key }} {{ rev.name }} board</h1>
+  <p class="intro">Drawn from {% for s in board.sources %}<code>{{ s.name }}</code>{% if s.version > 1 %} v{{ s.version }}{% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}. Scroll to zoom, drag to move.</p></div>
+  <div class="actions">
+    {% if zips|length > 1 %}<form method="get" class="inline"><select name="file" data-autosubmit aria-label="Gerber version">
+      <option value="">Newest Gerbers</option>{% for z in zips %}<option value="{{ z.pk }}" {% if selected and selected.pk == z.pk %}selected{% endif %}>{{ z.name }} v{{ z.version }} · {{ z.uploaded_at|date:"M j" }}</option>{% endfor %}</select></form>{% endif %}
+    {% for s in board.sources %}{% if forloop.first %}<a class="btn" href="{% url 'design:download' project.key rev.pk s.id %}">{% icon 'download' 16 %} Download</a>{% endif %}{% endfor %}
+  </div></div>
+
+{% if not board.ok %}
+<div class="card"><div class="empty">{% icon 'alert' 36 %}<h3>These files couldn't be drawn</h3><p>{{ board.error }}</p>
+  <p class="small">Upload the Gerber zip exactly as you'd send it to the fab (Gerber files plus drill files).</p></div></div>
+{% else %}
+<div class="pcb-layout">
+  <div class="card pcb-stage">
+    <div class="pcb-toolbar">
+      <div class="seg" role="group" aria-label="View">
+        <button type="button" class="active" data-set-view="top">Top</button>
+        <button type="button" data-set-view="bottom">Bottom</button>
+        <button type="button" data-set-view="layers">{% icon 'layers' 14 %} Layers</button>
+      </div>
+      <div class="seg" role="group" aria-label="Zoom">
+        <button type="button" data-zoom="out" aria-label="Zoom out">−</button>
+        <button type="button" data-zoom="fit">Fit</button>
+        <button type="button" data-zoom="in" aria-label="Zoom in">+</button>
+      </div>
+      <button type="button" class="btn btn-sm" data-measure aria-pressed="false">Measure</button>
+      <span class="pcb-coords mono small" data-coords aria-live="off"></span>
+    </div>
+    <div class="pcb-canvas" data-pcb-canvas data-src="{% url 'design:pcb_svg' project.key rev.pk %}{{ query }}">
+      <div class="pcb-loading">Drawing the board…</div>
+    </div>
+    <div class="pcb-foot">
+      <span class="small muted">Solder mask</span>
+      <span class="swatches">{% for name, colour in masks %}<button type="button" class="swatch swatch-{{ name }}{% if forloop.first %} active{% endif %}" data-mask="{{ name }}" aria-label="{{ name|capfirst }} solder mask" title="{{ name|capfirst }}"></button>{% endfor %}</span>
+      <span class="small muted">Finish</span>
+      <span class="seg seg-sm"><button type="button" class="active" data-finish="hasl">HASL</button><button type="button" data-finish="enig">ENIG</button></span>
+    </div>
+  </div>
+
+  <aside class="stack">
+    <div class="card"><div class="card-head"><h3>Board</h3></div><div class="card-body board-facts">
+      {% with i=board.info %}
+      <div><span>Size</span><strong>{{ i.width|floatformat:2 }} × {{ i.height|floatformat:2 }} mm</strong></div>
+      <div><span>Area</span><strong>{{ i.area_cm2 }} cm²</strong></div>
+      <div><span>Copper layers</span><strong>{{ i.copper_layers|default:"—" }}</strong></div>
+      {% if i.thickness %}<div><span>Thickness</span><strong>{{ i.thickness }} mm</strong></div>{% endif %}
+      {% if i.finish %}<div><span>Finish (job file)</span><strong>{{ i.finish }}</strong></div>{% endif %}
+      <div><span>Holes</span><strong>{{ i.plated }} plated{% if i.nonplated %}, {{ i.nonplated }} non-plated{% endif %}{% if i.slots %}, {{ i.slots }} slots{% endif %}</strong></div>
+      <div><span>Smallest drill</span><strong>{% if i.min_drill %}{{ i.min_drill|floatformat:2 }} mm{% else %}—{% endif %}</strong></div>
+      <div><span>Thinnest track</span><strong>{% if i.min_trace %}{{ i.min_trace|floatformat:3 }} mm{% else %}—{% endif %}</strong></div>
+      <div><span>Pads</span><strong>{{ i.pads_top }} top · {{ i.pads_bottom }} bottom</strong></div>
+      {% endwith %}
+    </div></div>
+    <div class="card"><div class="card-head"><h3>{% icon 'layers' 16 %} Layers</h3><span class="small faint">for the Layers view</span></div><div class="card-body layer-list">
+      {% for l in board.layers %}<label class="layer-row"><input type="checkbox" data-layer-toggle="{{ l.id }}" {% if l.shown %}checked{% endif %}>
+        <span class="layer-dot" data-colour="{{ l.colour }}"></span><span><span class="layer-name">{{ l.label }}</span><span class="small faint mono">{{ l.file }}</span></span></label>{% endfor %}
+    </div></div>
+    {% if board.info.drill_sizes %}<div class="card"><div class="card-head"><h3>Drill sizes</h3></div><div class="card-body">
+      {% for d, n in board.info.drill_sizes %}<div class="kv"><span>{{ d|floatformat:2 }} mm</span><span>{{ n }}</span></div>{% endfor %}
+    </div></div>{% endif %}
+    {% if board.warnings or board.unused %}<div class="card"><div class="card-head"><h3>Notes</h3></div><div class="card-body small">
+      <ul class="bullets">{% for w in board.warnings %}<li>{{ w }}</li>{% endfor %}
+      {% if board.unused %}<li>Not drawn (not Gerber or drill files): {{ board.unused|join:", " }}</li>{% endif %}</ul>
+    </div></div>{% endif %}
+  </aside>
+</div>
+{{ masks_json|json_script:"pcb-colours" }}
+{% endif %}
+{% endblock %}

@@ -24,7 +24,7 @@ from django.core.management import call_command
 from django.db import connection
 from django.utils import timezone
 
-from .storage import is_s3, storage_info, stored_files, write_exact
+from .storage import is_s3, local_root, reset_cache, storage_info, stored_files, write_exact
 
 log = logging.getLogger("workbench")
 
@@ -32,8 +32,11 @@ VERSION = (Path(settings.BASE_DIR) / "VERSION").read_text().strip() if (Path(set
 STORED = {".zip", ".gz", ".7z", ".png", ".jpg", ".jpeg", ".pdf", ".xlsx", ".docx", ".step", ".stp"}
 
 
-def disk_usage():
-    total, used, free = shutil.disk_usage(settings.DATA_DIR)
+def disk_usage(path=None):
+    try:
+        total, used, free = shutil.disk_usage(path or settings.DATA_DIR)
+    except OSError:
+        total, used, free = shutil.disk_usage(settings.DATA_DIR)
     return {"total": total, "used": used, "free": free, "percent": round(100 * used / total) if total else 0}
 
 
@@ -107,16 +110,19 @@ def create_backup(reason="manual"):
             if secrets_file.exists():
                 z.write(secrets_file, "secrets.json")
             n = 0
-            if not is_s3():
-                for root, _dirs, files in os.walk(settings.FILES_DIR):
+            files_root = local_root()
+            if files_root:
+                for root, _dirs, files in os.walk(files_root):
                     for f in files:
                         full = Path(root) / f
-                        arc = "files/" + str(full.relative_to(settings.FILES_DIR)).replace(os.sep, "/")
+                        if f.startswith(".workbench-check-"):
+                            continue
+                        arc = "files/" + str(full.relative_to(files_root)).replace(os.sep, "/")
                         method = zipfile.ZIP_STORED if full.suffix.lower() in STORED else zipfile.ZIP_DEFLATED
                         z.write(full, arc, compress_type=method)
                         n += 1
             else:
-                # S3: copy every file Workbench references into the zip.
+                # Cloud storage: copy every file Workbench references into the zip.
                 missing = []
                 for name, _size in stored_files():
                     try:
@@ -176,24 +182,6 @@ def restore_backup(zip_path):
         secrets_file = Path(settings.DATA_DIR) / "secrets.json"
         if secrets_file.exists():
             shutil.copy2(secrets_file, safety / "secrets.json")
-        if not is_s3():
-            # Keep the current files aside so a mistaken restore can be undone.
-            if Path(settings.FILES_DIR).exists():
-                shutil.move(str(settings.FILES_DIR), safety / "files")
-            Path(settings.FILES_DIR).mkdir(parents=True, exist_ok=True)
-            for n in names:
-                if n.startswith("files/") and not n.endswith("/"):
-                    target = Path(settings.FILES_DIR) / n[len("files/"):]
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    with z.open(n) as src, open(target, "wb") as dst:
-                        shutil.copyfileobj(src, dst)
-        else:
-            # S3: upload each file back under its original key (versions are
-            # immutable paths, so existing objects are simply replaced).
-            for n in names:
-                if n.startswith("files/") and not n.endswith("/"):
-                    with z.open(n) as src:
-                        write_exact(n[len("files/"):], src)
         if "secrets.json" in names:
             secrets_file.write_bytes(z.read("secrets.json"))
             os.chmod(secrets_file, 0o600)
@@ -211,6 +199,31 @@ def restore_backup(zip_path):
             dump.write_bytes(z.read("db/data.json"))
             call_command("flush", "--noinput")
             call_command("loaddata", str(dump))
+        # Files go wherever the restored settings say they're kept.
+        if "secrets.json" in names:
+            settings.FIELD_KEY = json.loads(z.read("secrets.json")).get("field_key", settings.FIELD_KEY)
+        reset_cache()
+        files_root = local_root()
+        if files_root:
+            # Keep the current files aside so a mistaken restore can be undone.
+            # (Its contents are moved, not the folder, which may be a mounted disk.)
+            Path(files_root).mkdir(parents=True, exist_ok=True)
+            (safety / "files").mkdir()
+            for child in Path(files_root).iterdir():
+                shutil.move(str(child), safety / "files" / child.name)
+            for n in names:
+                if n.startswith("files/") and not n.endswith("/"):
+                    target = Path(files_root) / n[len("files/"):]
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    with z.open(n) as src, open(target, "wb") as dst:
+                        shutil.copyfileobj(src, dst)
+        else:
+            # Cloud storage: upload each file back under its original key (versions
+            # are immutable paths, so existing objects are simply replaced).
+            for n in names:
+                if n.startswith("files/") and not n.endswith("/"):
+                    with z.open(n) as src:
+                        write_exact(n[len("files/"):], src)
     return manifest, safety
 
 

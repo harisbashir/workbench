@@ -10,6 +10,7 @@ urlpatterns = [
     path("integrations/", include("apps.integrations.urls")),
     path("files/", include("apps.files.urls")),
     path("", include("apps.firmware.urls")),
+    path("", include("apps.design.urls")),
     path("time/", include("apps.timesheets.urls")),
 ]
 

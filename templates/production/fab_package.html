@@ -1,0 +1,60 @@
+{% extends "base.html" %}{% load workbench humanize %}
+{% block title %}Order files · {{ rev }}{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles">
+  <div class="crumbs"><a href="{{ project.get_absolute_url }}">{{ project.name }}</a> / <a href="{{ rev.get_absolute_url }}">{{ rev.name }}</a> /</div>
+  <h1>Order files for PCB assembly</h1>
+  <p class="intro">Everything {{ info.name }} needs to make and assemble {{ rev.name }}, <strong>without the parts you fit yourselves</strong>. Those stay on your in-house list for finishing.</p></div>
+  <div class="actions"><a class="btn btn-primary" href="?for={{ assembler }}&amp;get=zip">{% icon 'download' 16 %} Download all ({{ info.name }})</a></div></div>
+
+<nav class="tabs">{% for key, a in assemblers.items %}<a href="?for={{ key }}" class="{% if key == assembler %}active{% endif %}">{{ a.name }}</a>{% endfor %}</nav>
+
+<div class="grid grid-main">
+  <div class="stack">
+    <div class="card"><div class="card-body">
+      <ol class="fab-list">
+        <li class="{% if gerber %}ok{% else %}todo{% endif %}">
+          <div class="fab-head"><strong>Gerber files</strong>
+            {% if gerber %}<a class="btn btn-sm" href="{% url 'design:download' project.key rev.pk gerber.pk %}">{% icon 'download' 14 %} {{ gerber.name }}</a>{% endif %}</div>
+          {% if gerber %}<p class="small muted">Version {{ gerber.version }}, uploaded {{ gerber.uploaded_at|naturaltime }}. <a href="{% url 'design:pcb' project.key rev.pk %}">Check it in the board viewer</a> before ordering.</p>
+          {% else %}<p class="small">No Gerber zip in the <a href="{% url 'design:files' project.key rev.pk %}">design files</a> yet. Upload the zip you'd send to the fab.</p>{% endif %}</li>
+        <li class="{% if p.fab %}ok{% else %}todo{% endif %}">
+          <div class="fab-head"><strong>{{ info.bom }}</strong>
+            {% if p.fab %}<a class="btn btn-sm" href="?for={{ assembler }}&amp;get=bom">{% icon 'download' 14 %} CSV</a>{% endif %}</div>
+          <p class="small muted">{{ p.fab|length }} line{{ p.fab|length|pluralize }}, {{ fab_parts }} part{{ fab_parts|pluralize }} per board placed by {{ info.name }}.
+            {% if p.no_number %}<span class="warn-text">{{ p.no_number|length }} line{{ p.no_number|length|pluralize }} have no {% if assembler == 'jlc' %}LCSC or {% endif %}manufacturer part number: {% for l in p.no_number|slice:":6" %}{{ l.part.ipn }}{% if not forloop.last %}, {% endif %}{% endfor %}.</span>{% endif %}</p></li>
+        <li class="{% if placements %}ok{% elif pnp %}bad{% else %}todo{% endif %}">
+          <div class="fab-head"><strong>{{ info.cpl }}</strong>
+            {% if placements %}<a class="btn btn-sm" href="?for={{ assembler }}&amp;get=cpl">{% icon 'download' 14 %} CSV</a>{% endif %}</div>
+          {% if placements %}<p class="small muted">Made from <code>{{ pnp.name }}</code> (v{{ pnp.version }}): {{ placements|length }} positions read, in-house and do-not-fit parts removed.</p>
+          {% elif pnp %}<p class="small warn-text">{{ pnp_warnings|join:" " }}</p>
+          {% else %}<p class="small">Upload the placement file to the <a href="{% url 'design:files' project.key rev.pk %}">design files</a> — in KiCad: <em>File → Fabrication outputs → Component placement</em>, format CSV, units mm.</p>{% endif %}</li>
+      </ol>
+      {% if p.issues %}<div class="alert alert-warning alert-block">{% for lvl, text in p.issues %}<p>{% if lvl == 'bad' %}<strong>{{ text }}</strong>{% else %}{{ text }}{% endif %}</p>{% endfor %}</div>{% endif %}
+      <p class="small muted">{{ info.note }} Formats follow {{ info.name }}'s upload templates; if their site asks you to match columns, the names are Designator, Mid X, Mid Y, Layer, Rotation.</p>
+    </div></div>
+
+    <div class="card"><div class="card-head"><h2>{% icon 'tool' 16 %} Fitted in house</h2>
+      <a class="btn btn-sm" href="?for={{ assembler }}&amp;get=house">{% icon 'download' 14 %} List</a></div>
+      {% if p.house %}<div class="table-wrap"><table class="table">
+        <thead><tr><th>Part</th><th>Description</th><th>References</th><th class="num">Per board</th><th class="num">In stock</th></tr></thead><tbody>
+        {% for l in p.house %}<tr><td class="key"><a href="{{ l.part.get_absolute_url }}">{{ l.part.ipn }}</a></td><td>{{ l.part.description }}</td>
+          <td class="small">{{ l.references }}</td><td class="num">{{ l.quantity }}</td><td class="num">{{ l.part.stock }}</td></tr>{% endfor %}
+      </tbody></table></div>
+      {% else %}<div class="card-body small muted">Nothing is marked “fitted in house”, so {{ info.name }} places every part. Usually through-hole connectors and parts they don't stock are fitted by hand —
+        mark them on the <a href="{% url 'inventory:bom' rev.pk %}">BOM</a>.</div>{% endif %}
+      <div class="card-foot small muted">These parts aren't in the files above. When the boards come back, they become the finishing checklist of the build.</div>
+    </div>
+  </div>
+  <div class="stack">
+    <div class="card"><div class="card-head"><h3>This revision</h3></div><div class="card-body small">
+      <div class="kv"><span>Placed by {{ info.name }}</span><strong>{{ fab_parts }} parts</strong></div>
+      <div class="kv"><span>Fitted in house</span><strong>{{ house_parts }} parts</strong></div>
+      <div class="kv"><span>Not fitted (DNP)</span><span>{{ p.dnp|length }} line{{ p.dnp|length|pluralize }}</span></div>
+      <p></p><a class="btn btn-sm" href="{% url 'inventory:bom' rev.pk %}">{% icon 'list' 14 %} Change who fits what</a>
+    </div></div>
+    {% if user.can_manage_procurement %}<div class="card"><div class="card-body">
+      <a class="btn" href="{% url 'production:build_create' %}?revision={{ rev.pk }}">{% icon 'factory' 16 %} Plan a build of {{ rev.name }}</a></div></div>{% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,62 @@
+{% extends "base.html" %}{% load workbench humanize %}
+{% block title %}Design files · {{ rev }}{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles">
+  <div class="crumbs"><a href="{% url 'projects:list' %}">Projects</a> / <a href="{{ project.get_absolute_url }}">{{ project.name }}</a> / <a href="{{ rev.get_absolute_url }}">{{ rev.name }}</a> /</div>
+  <h1>Design files {% status_badge rev.status rev.get_status_display %}</h1>
+  <p class="intro">Gerbers, schematic, layout, pick-and-place and everything else that defines {{ rev.name }}. Uploading a file with the same name adds a new version; older versions are kept.</p></div>
+  <div class="actions">
+    {% if groups %}<a class="btn" href="{% url 'design:download_all' project.key rev.pk %}">{% icon 'download' 16 %} Download all</a>{% endif %}
+    <a class="btn" href="{% url 'production:fab_package' rev.pk %}">{% icon 'box' 16 %} Order files for JLC / Seeed</a>
+  </div></div>
+
+{% if locked %}<div class="alert alert-info">{% icon 'lock' 16 %}<span>{{ rev.name }} is released for production, so its design files are locked. Start a new revision to change the design.</span></div>{% endif %}
+
+<div class="grid grid-main">
+  <div class="stack">
+    {% if can_edit %}
+    <div class="dropzone" data-dropzone data-upload-url="{% url 'design:upload' project.key rev.pk %}">
+      <form method="post" enctype="multipart/form-data" action="{% url 'design:upload' project.key rev.pk %}" class="btn-row">{% csrf_token %}
+        {% icon 'upload' 22 %}<span><strong>Drag design files here</strong> or <label class="link-btn">choose files<input class="hidden" type="file" name="files" multiple data-autoupload></label>.
+        The type is recognised automatically<span class="hide-sm"> —</span>
+        <select name="category" data-upload-extra aria-label="File type" class="select-sm"><option value="">detect type</option>{% for v, l in categories %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select></span>
+      </form>
+      <div class="upload-progress hidden"><div class="progress"><span class="w-0" data-bar></span></div><span class="small" data-status></span></div>
+    </div>
+    {% endif %}
+
+    {% for g in groups %}
+    <div class="card"><div class="card-head"><h3>{{ g.label }}</h3>
+      {% if g.key == 'gerber' or g.key == 'drill' %}<a class="btn btn-sm" href="{% url 'design:pcb' project.key rev.pk %}">{% icon 'eye' 14 %} View board</a>{% endif %}</div>
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>File</th><th>Version</th><th>Uploaded</th><th class="num">Size</th><th></th></tr></thead><tbody>
+        {% for f in g.files %}<tr>
+          <td><a href="{{ f.get_absolute_url }}">{{ f.name }}</a>{% if f.note %}<div class="small faint">{{ f.note }}</div>{% endif %}</td>
+          <td>v{{ f.version }}{% if f.version_count > 1 %} <span class="small faint">({{ f.version_count }} kept)</span>{% endif %}</td>
+          <td class="small">{{ f.uploaded_at|naturaltime }}<br><span class="faint">{{ f.uploaded_by|default:"" }}</span></td>
+          <td class="num">{{ f.size|filesizeformat }}</td>
+          <td class="right nowrap">{% if f.viewer == 'pcb' %}<a class="btn btn-sm" href="{% url 'design:pcb' project.key rev.pk %}{% if f.is_gerber_zip %}?file={{ f.pk }}{% endif %}">View</a>{% elif f.viewer %}<a class="btn btn-sm" href="{{ f.get_absolute_url }}">View</a>{% endif %}
+            <a class="btn btn-sm btn-ghost" href="{% url 'design:download' project.key rev.pk f.pk %}" aria-label="Download {{ f.name }}">{% icon 'download' 14 %}</a></td>
+        </tr>{% endfor %}
+      </tbody></table></div></div>
+    {% empty %}
+    <div class="card"><div class="empty"><h3>No design files yet</h3>
+      <p>Upload the Gerber zip you send to the fab, the schematic PDF, the pick-and-place file and anything else for {{ rev.name }}.</p></div></div>
+    {% endfor %}
+  </div>
+
+  <div class="stack">
+    {% include "design/_board_card.html" %}
+    {% if missing and can_edit %}
+    <div class="card"><div class="card-head"><h3>Still missing</h3></div><div class="card-body small">
+      <ul class="bullets">{% for key, label, help in missing %}<li><strong>{{ label }}</strong> — {{ help }}</li>{% endfor %}</ul>
+    </div></div>{% endif %}
+    <div class="card"><div class="card-head"><h3>Tips</h3></div><div class="card-body small">
+      <ul class="bullets">
+        <li>From KiCad: <em>File → Fabrication outputs → Gerbers</em> (tick “Generate drill files”), then zip the folder and drop it here.</li>
+        <li>Upload the same zip again after changes — it becomes version 2, and the board picture updates.</li>
+        <li>The pick-and-place file (<em>.pos</em> or CPL) is used to make the files JLCPCB and Seeed need for assembly.</li>
+      </ul></div></div>
+  </div>
+</div>
+{% endblock %}

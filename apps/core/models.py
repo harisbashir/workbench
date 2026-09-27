@@ -139,3 +139,71 @@ class ExportJob(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+
+
+class StorageSettings(models.Model):
+    """Where uploaded files are kept (System → Storage). One row.
+
+    Configs are dicts: {"kind": "local", "path": …} or {"kind": "s3", "provider": …,
+    "bucket": …, "region": …, "endpoint": …, "prefix": …, "access_key": "enc:…",
+    "secret_key": "enc:…"}. Secrets are encrypted with the installation key.
+    """
+
+    active = models.JSONField(default=dict, blank=True)     # empty = the default folder (data/files)
+    draft = models.JSONField(default=dict, blank=True)      # being set up / tested
+    previous = models.JSONField(default=dict, blank=True)   # fallback for reads after a move
+    locked = models.BooleanField(default=False)
+    locked_at = models.DateTimeField(null=True, blank=True)
+    draft_tested_at = models.DateTimeField(null=True, blank=True)
+    draft_test_ok = models.BooleanField(default=False)
+    draft_test_message = models.CharField(max_length=300, blank=True)
+    rev = models.PositiveIntegerField(default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "storage settings"
+
+    @classmethod
+    def load(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def save(self, *args, **kwargs):
+        self.rev += 1
+        super().save(*args, **kwargs)
+        from .storage import reset_cache
+        reset_cache()
+
+
+class StorageMove(models.Model):
+    """Copying every file from one storage to another, then switching to it."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Waiting to start"
+        RUNNING = "running", "Copying files"
+        DONE = "done", "Finished"
+        FAILED = "failed", "Stopped"
+
+    requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
+    source = models.JSONField(default=dict)
+    target = models.JSONField(default=dict)
+    lock_after = models.BooleanField(default=False)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    total = models.PositiveIntegerField(default=0)
+    done_count = models.PositiveIntegerField(default=0)
+    copied = models.PositiveIntegerField(default=0)
+    skipped = models.PositiveIntegerField(default=0)
+    failed = models.PositiveIntegerField(default=0)
+    bytes_copied = models.BigIntegerField(default=0)
+    failures = models.JSONField(default=list, blank=True)
+    message = models.CharField(max_length=300, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    @property
+    def percent(self):
+        return int(self.done_count * 100 / self.total) if self.total else (100 if self.status == "done" else 0)

@@ -1,6 +1,7 @@
 import zoneinfo
 
 from django import forms
+from django.conf import settings
 from django.contrib.auth.password_validation import validate_password
 from django.utils.crypto import constant_time_compare
 
@@ -107,3 +108,94 @@ class LogoForm(forms.Form):
                 except forms.ValidationError as e:
                     self.add_error(field, e)
         return data
+
+
+class StorageLocationForm(forms.Form):
+    """Where uploaded files should be kept (System → Storage)."""
+
+    kind = forms.ChoiceField(label="Keep files in", widget=forms.RadioSelect, choices=[
+        ("local", "A folder on this server"), ("s3", "Cloud storage (Amazon S3 and compatible services)")])
+    path = forms.CharField(label="Folder", required=False, max_length=300,
+                           help_text="The default is <code>/data/files</code> (the data folder). For another disk or a NAS share, "
+                                     "mount it into the container first — see <em>Help → Installation → Storage</em>.")
+    provider = forms.ChoiceField(label="Service", required=False, choices=[])
+    bucket = forms.CharField(label="Bucket name", required=False, max_length=63)
+    region = forms.CharField(required=False, max_length=40)
+    endpoint = forms.CharField(label="Endpoint address", required=False, max_length=200,
+                               help_text="Filled in for you for most services.")
+    prefix = forms.CharField(label="Folder inside the bucket", required=False, max_length=100, initial="workbench",
+                             help_text="Lets several installations share one bucket.")
+    access_key = forms.CharField(label="Access key ID", required=False, max_length=200)
+    secret_key = forms.CharField(label="Secret access key", required=False, max_length=200,
+                                 widget=forms.PasswordInput(render_value=False))
+
+    def __init__(self, *args, saved=None, **kwargs):
+        from .storage import PROVIDERS
+        self.saved = saved or {}
+        super().__init__(*args, **kwargs)
+        self.fields["provider"].choices = [(k, v["label"]) for k, v in PROVIDERS.items()]
+        self.fields["provider"].widget.attrs["data-provider-select"] = "1"
+        for name in ("bucket", "region", "endpoint", "prefix", "access_key"):
+            self.fields[name].widget.attrs.update(autocomplete="off", spellcheck="false")
+        if self.saved.get("secret_key"):
+            self.fields["secret_key"].help_text = "Saved. Leave blank to keep it."
+        self.fields["access_key"].help_text = "Leave both keys blank on AWS if the server has an IAM role."
+        # Needed for cloud storage (checked in clean()), so don't label them optional.
+        for name in ("provider", "bucket", "region", "endpoint", "access_key", "secret_key"):
+            self.fields[name].conditionally_required = True
+
+    def clean(self):
+        import re
+
+        from .storage import PROVIDERS
+        d = super().clean()
+        if d.get("kind") == "local":
+            path = (d.get("path") or "").strip() or str(settings.FILES_DIR)
+            if not path.startswith("/"):
+                self.add_error("path", "Use a full path starting with /, e.g. /mnt/storage/workbench.")
+            elif any(path.rstrip("/") == str(p).rstrip("/") or path.startswith(str(p).rstrip("/") + "/")
+                     for p in (settings.BACKUP_DIR, settings.DB_DIR)):
+                self.add_error("path", "Pick a folder outside the database and backup folders.")
+            d["path"] = path.rstrip("/") or "/"
+            return d
+        provider = d.get("provider") or "aws"
+        info = PROVIDERS.get(provider)
+        if not info:
+            self.add_error("provider", "Choose a service.")
+            return d
+        bucket = (d.get("bucket") or "").strip()
+        if not re.fullmatch(r"[a-z0-9][a-z0-9.\-]{1,61}[a-z0-9]", bucket):
+            self.add_error("bucket", "Bucket names are 3–63 lowercase letters, numbers, dots and hyphens.")
+        d["bucket"] = bucket
+        d["region"] = (d.get("region") or "").strip() or info.get("region", "")
+        tmpl = info.get("endpoint", "")
+        if (provider == "aws" or "{region}" in tmpl) and not d["region"]:
+            self.add_error("region", "Enter the bucket's region.")
+        endpoint = (d.get("endpoint") or "").strip().rstrip("/")
+        if endpoint:
+            if not re.fullmatch(r"https?://[A-Za-z0-9.\-]+(:\d+)?(/[\w.\-/]*)?", endpoint):
+                self.add_error("endpoint", "Enter an address like https://s3.example.com.")
+            elif endpoint.startswith("http://") and provider != "minio":
+                self.add_error("endpoint", "Use https:// for internet services.")
+            elif "ACCOUNT_ID" in endpoint:
+                self.add_error("endpoint", "Replace ACCOUNT_ID with your Cloudflare account ID.")
+        elif provider in ("r2", "minio"):
+            self.add_error("endpoint", "Enter the service's endpoint address.")
+        d["endpoint"] = endpoint
+        d["prefix"] = re.sub(r"[^A-Za-z0-9._\-/]", "", (d.get("prefix") or "").strip().strip("/"))
+        d["access_key"] = (d.get("access_key") or "").strip()
+        secret = d.get("secret_key") or ""
+        if not secret and d["access_key"] and d["access_key"] == self.saved.get("access_key"):
+            secret = self.saved.get("secret_key", "")  # keep the saved secret
+        d["secret_key"] = secret
+        if d["access_key"] and not secret:
+            self.add_error("secret_key", "Enter the secret access key.")
+        if not d["access_key"] and provider != "aws":
+            self.add_error("access_key", "This service needs an access key.")
+        return d
+
+    def config(self):
+        d = self.cleaned_data
+        if d["kind"] == "local":
+            return {"kind": "local", "path": d["path"]}
+        return {"kind": "s3", **{k: d[k] for k in ("provider", "bucket", "region", "endpoint", "prefix", "access_key", "secret_key")}}

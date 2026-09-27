@@ -9,7 +9,13 @@
 <pre><code>docker compose up -d</code></pre>
 <p>Open <code>http://&lt;server&gt;:8000</code>. The first page asks for a setup code, which is printed in the log:</p>
 <pre><code>docker compose logs workbench</code></pre>
-<p>On a fresh Ubuntu or Debian server, <code>./install.sh</code> does it all: it installs Docker, asks for your domain, turns on HTTPS and prints the setup code.</p>
+<h3>New server, straight from GitHub (recommended)</h3>
+<p>Your repository is private, so the server gets its own <strong>read-only deploy key</strong>. Copy <code>install.sh</code> to the server and run it with your repository's SSH address:</p>
+<pre><code>scp install.sh you@server:
+ssh you@server
+bash install.sh git@github.com:YOUR-ORG/workbench.git</code></pre>
+<p>It installs git and Docker, creates the key and shows it. Add it in GitHub under <em>Repository → Settings → Deploy keys → Add deploy key</em> (leave <em>Allow write access</em> off), press Enter, and the script checks GitHub's host fingerprint, downloads the newest release to <code>/opt/workbench</code>, asks for your domain (for HTTPS), starts Workbench and prints the setup code.</p>
+<p>Already have a copy that was cloned over HTTPS? Run <code>./install.sh --deploy-key</code> inside it to switch it to a deploy key.</p>
 
 <h2>HTTPS for internet access</h2>
 <p>If people connect over the internet, use HTTPS. Point a domain name (e.g. <code>workbench.yourcompany.com</code>) at the server, then:</p>
@@ -19,33 +25,21 @@ docker compose --profile https up -d</code></pre>
 <p>Without a domain, Workbench still works, for example inside a company VPN or over Tailscale. Administrators see a reminder banner about HTTPS.</p>
 
 <h2 id="storage">Where uploaded files are stored</h2>
-<p>By default, files live in <code>data/files</code> on the server. There are two alternatives:</p>
+<p>Administrators choose this in <a href="{% url 'core:storage' %}">System → Storage</a>. The options:</p>
 <ul>
-  <li><strong>Another folder or disk</strong>, such as a larger drive, a NAS mount or an AWS EBS volume. Mount it into the container and set <code>WORKBENCH_FILES_DIR</code>:
-<pre><code># docker-compose.override.yml
-services:
-  workbench:
-    environment:
-      WORKBENCH_FILES_DIR: /files
-    volumes:
-      - /mnt/nas/workbench-files:/files</code></pre></li>
-  <li><strong>Amazon S3</strong>, or any S3-compatible service such as Wasabi, Backblaze B2, Cloudflare R2 or MinIO. Add to <code>.env</code>:
-<pre><code>WORKBENCH_STORAGE=s3
-WORKBENCH_S3_BUCKET=acme-workbench-files
-WORKBENCH_S3_REGION=ca-central-1
-# Leave the keys out on AWS EC2/ECS and use an IAM role instead:
-WORKBENCH_S3_ACCESS_KEY_ID=...
-WORKBENCH_S3_SECRET_ACCESS_KEY=...
-# Only for non-AWS services:
-# WORKBENCH_S3_ENDPOINT_URL=https://s3.eu-central-1.wasabisys.com</code></pre>
-  Keep the bucket private (block all public access). Files are stored encrypted (SSE-S3) and only ever downloaded through Workbench, which checks permissions. Nightly backups are also copied to <code>backups/</code> in the bucket.</li>
+  <li><strong>A folder on this server</strong> — the default, <code>data/files</code>. Can be pointed at a bigger disk or a NAS share mounted into the container.</li>
+  <li><strong>Cloud storage</strong> with the S3 protocol: Amazon S3, Cloudflare R2, Backblaze B2, Wasabi, DigitalOcean Spaces, Google Cloud Storage (HMAC keys), or your own MinIO / Synology / QNAP S3 server. Choose the service and the address is filled in for you.</li>
 </ul>
-<p><strong>Moving existing files.</strong> To copy the files you already have into S3, run this with S3 configured, then set <code>WORKBENCH_STORAGE=s3</code> and restart:</p>
-<pre><code>docker compose exec workbench manage migrate_storage --to s3 --dry-run   # see what will be copied
-docker compose exec workbench manage migrate_storage --to s3
-docker compose up -d                                                     # after changing .env</code></pre>
-<p>The command copies files and never deletes them, so you can run it again safely. <code>--to local</code> copies the other way.</p>
-<p>The IAM policy needs <code>s3:GetObject</code>, <code>s3:PutObject</code>, <code>s3:DeleteObject</code> and <code>s3:ListBucket</code> on the bucket.</p>
+<ol>
+  <li>Create a <strong>private</strong> bucket and an access key limited to it (on AWS, an IAM role on the server works without keys). It needs to list, read, write and delete objects.</li>
+  <li>Enter the details and press <em>Save and test connection</em>. Workbench writes, reads back and deletes a test file.</li>
+  <li>Press <em>Move files and switch</em>. Every file is copied and checked in the background; Workbench only switches when all of them made it, and people can keep working and uploading meanwhile. Nothing is deleted from the old place.</li>
+  <li>With <em>Lock storage here</em> ticked (the default), the choice is permanent: the page only allows updating keys for the same bucket. To change it anyway, an administrator runs <code>docker compose exec workbench manage storage --unlock</code> on the server.</li>
+  <li>The old storage stays available as a fallback until you press <em>Stop using the old storage</em>.</li>
+</ol>
+<p>Keys are stored encrypted. Files are always downloaded through Workbench, so permissions apply wherever they're kept. With cloud storage, nightly backups still contain every file, and a copy of each backup is also kept in the bucket under <code>backups/</code>.</p>
+<p>From the server: <code>manage storage</code> shows where files are, <code>manage storage --test</code> checks the connection.</p>
+<p>Setting <code>WORKBENCH_STORAGE</code> in <code>.env</code> (as in version 1.2) still works and overrides the page.</p>
 
 <h2>Download everything</h2>
 <p><em>System &amp; backups → Download everything</em> creates a zip organised for people: every file in its folders, each firmware release with binaries and notes, BOMs and tasks as spreadsheets, and chat transcripts. Use it for handovers, audits or an archive. Restoring Workbench itself needs a backup instead.</p>
@@ -64,9 +58,11 @@ docker compose start workbench</code></pre>
 <p>Your data from before the restore is kept in <code>data/pre-restore-…</code> until you delete it.</p>
 
 <h2>Update</h2>
-<pre><code>git pull
-docker compose up -d --build</code></pre>
-<p>Database changes are applied automatically when the container starts. Take a backup first.</p>
+<pre><code>cd /opt/workbench
+./update.sh --check     # is there a new version?
+./update.sh             # update</code></pre>
+<p><code>update.sh</code> takes a backup, downloads the new version from GitHub, builds it while the current version keeps running, restarts and checks that Workbench is healthy. If the new version doesn't start, it goes back to the previous version and restores the backup by itself. <code>./update.sh --to v1.3.0</code> goes to a specific version. Everything is logged in <code>data/update.log</code>.</p>
+<p>By default the server follows <strong>release tags</strong> (<code>v1.3.0</code>…), so pushing work-in-progress to <code>main</code> never reaches it. Install with <code>--branch main</code> to follow a branch instead.</p>
 
 <h2>Move to another server</h2>
 <p>Stop Workbench, copy the whole <code>data</code> folder to the new server, and run <code>docker compose up -d</code> there.</p>

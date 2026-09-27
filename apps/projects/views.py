@@ -344,6 +344,7 @@ def task_delete(request, key, number):
 def revision_detail(request, key, pk):
     from decimal import Decimal
 
+    from apps.design.views import board_summary
     from apps.production.models import BuildOrder
 
     project = _project_for(request, key)
@@ -365,6 +366,8 @@ def revision_detail(request, key, pk):
         "revisions": project.revisions.all(),
         "firmware": [(fw, fw.recommended_for(rev), fw.releases.filter(revisions=rev, status="testing").order_by("-sort_key").first())
                      for fw in project.firmwares.all()],
+        "board": board_summary(rev),
+        "design_files": rev.design_files.filter(is_current=True).order_by("category", "name"),
     })
 
 

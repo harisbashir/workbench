@@ -114,8 +114,27 @@ class BuildOrder(models.Model):
         COMPLETED = "completed", "Completed"
         CANCELLED = "cancelled", "Cancelled"
 
+    class Assembly(models.TextChoices):
+        FAB = "fab", "Assembled by JLCPCB, Seeed or another assembly house, then finished in house"
+        HOUSE = "house", "Assembled completely in house"
+
+    class Stage(models.TextChoices):
+        PLANNED = "planned", "Planned"
+        AT_FAB = "at_fab", "At the assembly house"
+        FINISHING = "finishing", "Finishing in house"
+        TESTING = "testing", "Test & flash"
+        DONE = "done", "Done"
+
     number = models.CharField(max_length=20, unique=True, editable=False)
     revision = models.ForeignKey("projects.Revision", on_delete=models.PROTECT, related_name="builds")
+    assembly = models.CharField("How are the boards assembled?", max_length=8, choices=Assembly.choices, default=Assembly.FAB)
+    stage = models.CharField(max_length=12, choices=Stage.choices, default=Stage.PLANNED)
+    fab_order_ref = models.CharField("Assembly order number", max_length=80, blank=True,
+                                     help_text="e.g. the JLCPCB order number (SO…), for tracking and re-orders.")
+    fab_tracking = models.CharField("Shipping tracking", max_length=120, blank=True)
+    fab_ordered_at = models.DateField(null=True, blank=True)
+    received_qty = models.PositiveIntegerField(null=True, blank=True, help_text="Boards received from the assembly house.")
+    received_at = models.DateTimeField(null=True, blank=True)
     quantity = models.PositiveIntegerField(help_text="Number of boards to build.")
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PLANNED)
     manufacturer = models.ForeignKey(Supplier, null=True, blank=True, on_delete=models.SET_NULL,
@@ -148,10 +167,43 @@ class BuildOrder(models.Model):
             self.number = _next_number(BuildOrder, "BO")
         super().save(*args, **kwargs)
 
+    @property
+    def by_fab(self):
+        return self.assembly == self.Assembly.FAB
+
+    def stock_lines(self):
+        """BOM lines whose parts come out of our own stock: all of them for an in-house
+        build; only the ones fitted in house when an assembly house does the rest."""
+        lines = self.revision.bom_lines.select_related("part").filter(dnp=False)
+        return lines.filter(fitted_by="house") if self.by_fab else lines
+
+    @property
+    def board_qty(self):
+        """Boards to finish: what came back from the fab if known, else what was ordered."""
+        return self.received_qty if self.received_qty is not None else self.quantity
+
+    def create_steps(self):
+        """Finishing checklist from the BOM (in-house parts), unless it exists already."""
+        if self.steps.exists():
+            return
+        for i, line in enumerate(self.stock_lines().order_by("part__category", "part__ipn")):
+            if line.part.category == "pcb":
+                continue
+            desc = line.part.description
+            if line.part.value and line.part.value.lower() not in desc.lower():
+                desc = f"{line.part.value} — {desc}"
+            BuildStep.objects.create(build=self, bom_line=line, order=i, per_board=line.quantity,
+                                     title=f"Fit {line.references or line.part.ipn}", detail=desc[:200])
+
+    @property
+    def steps_done(self):
+        steps = list(self.steps.all())
+        return bool(steps) and all(s.done_qty >= self.board_qty for s in steps)
+
     def requirements(self):
         """Parts needed for this build vs. what's in stock."""
         rows = []
-        for line in self.revision.bom_lines.select_related("part").filter(dnp=False):
+        for line in self.stock_lines():
             need = line.quantity * self.quantity
             have = line.part.stock
             rows.append({
@@ -190,3 +242,38 @@ class BuildOrder(models.Model):
     def yield_percent(self):
         tested = self.completed_qty + self.failed_qty
         return round(100 * self.completed_qty / tested) if tested else None
+
+
+class BuildStep(models.Model):
+    """One job in finishing a build: fit a part (from the BOM) or another task (wash, coat, label…).
+
+    Progress is counted in boards, so a technician can tap +1 / +5 as they go.
+    """
+
+    build = models.ForeignKey(BuildOrder, on_delete=models.CASCADE, related_name="steps")
+    bom_line = models.ForeignKey("inventory.BomLine", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    title = models.CharField(max_length=160)
+    detail = models.CharField(max_length=200, blank=True)
+    per_board = models.PositiveIntegerField(default=1, help_text="Parts per board")
+    order = models.PositiveIntegerField(default=0)
+    done_qty = models.PositiveIntegerField(default=0)
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    updated_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["order", "id"]
+
+    def __str__(self):
+        return self.title
+
+    @property
+    def total(self):
+        return self.build.board_qty
+
+    @property
+    def percent(self):
+        return min(100, round(100 * self.done_qty / self.total)) if self.total else 0
+
+    @property
+    def complete(self):
+        return self.done_qty >= self.total

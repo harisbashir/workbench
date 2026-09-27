@@ -335,7 +335,7 @@ def trash_action(request, pk):
 
 @admin_required
 def storage(request):
-    from apps.core.storage import storage_info
+    from apps.core.storage import local_root, storage_info
     from apps.core.system import disk_usage
     alive = Document.objects.alive()
     by_space = []
@@ -351,7 +351,7 @@ def storage(request):
         "old_versions_size": DocumentVersion.objects.exclude(number=F("document__version_count")).aggregate(s=Sum("size"))["s"] or 0,
         "by_space": by_space, "by_user": by_user,
         "largest": alive.select_related("project").order_by("-size")[:15],
-        "disk": disk_usage(), "storage": storage_info(),
+        "disk": disk_usage(local_root()), "storage": storage_info(),
     })
 
 

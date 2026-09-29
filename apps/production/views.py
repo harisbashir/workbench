@@ -192,7 +192,7 @@ def build_create(request):
         b = form.save(commit=False)
         b.created_by = request.user
         b.save()
-        log_activity(b.revision.project, f"planned build {b.number}: {b.quantity} × {b.revision.name}", actor=request.user, url=b.get_absolute_url())
+        log_activity(b.revision.project, f"planned build {b.number}: {b.quantity} × {b.revision.title}", actor=request.user, url=b.get_absolute_url())
         audit(request, "build.created", b)
         if not b.revision.bom_lines.exists():
             messages.warning(request, f"{b.revision} has no BOM yet, so Workbench can't check parts. Import the BOM first.")
@@ -214,7 +214,7 @@ def build_detail(request, pk):
         elif r.status != "released":
             issues.append(("warn", f"{r.get_status_display()} — not released yet"))
         if not r.revisions.filter(pk=b.revision_id).exists():
-            issues.append(("warn", f"not marked compatible with {b.revision.name}"))
+            issues.append(("warn", f"not marked compatible with {b.revision.title}"))
         newer = r.firmware.recommended_for(b.revision)
         if newer and newer.sort_key > r.sort_key:
             issues.append(("warn", f"newer release {newer.version} is available"))
@@ -267,7 +267,7 @@ def build_action(request, pk):
         b.stage = BuildOrder.Stage.AT_FAB if b.by_fab else BuildOrder.Stage.FINISHING
         b.save(update_fields=["stage"])
         log_activity(project, f"started build {b.number}", actor=request.user, url=b.get_absolute_url())
-        post_system_message(project, f"Build {b.number} ({b.quantity} × {b.revision.name}) has started. Parts have been taken from stock.", b.get_absolute_url())
+        post_system_message(project, f"Build {b.number} ({b.quantity} × {b.revision.title}) has started. Parts have been taken from stock.", b.get_absolute_url())
         messages.success(request, f"{b.number} started. Parts for {b.quantity} boards were taken out of stock.")
     elif action == "complete" and b.status in (BuildOrder.Status.PLANNED, BuildOrder.Status.IN_PROGRESS):
         form = CompleteForm(request.POST)

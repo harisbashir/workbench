@@ -73,8 +73,58 @@ class Project(models.Model):
         return user.can_manage_projects or self.is_member(user)
 
 
+class Board(models.Model):
+    """One PCB (assembly) of a product, e.g. the power board, control board or an I/O board.
+
+    A product with a single PCB simply has one board. Each board has its own
+    revisions, and each revision its own BOM, design files and builds.
+    """
+
+    class Kind(models.TextChoices):
+        MAIN = "main", "Main / controller board"
+        POWER = "power", "Power board"
+        CONTROL = "control", "Control board"
+        PERIPHERAL = "peripheral", "Peripheral / I/O board"
+        INTERFACE = "interface", "Interface / connector board"
+        DISPLAY = "display", "Display / user interface board"
+        SENSOR = "sensor", "Sensor board"
+        RF = "rf", "RF / wireless module"
+        OTHER = "other", "Other"
+
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="boards")
+    name = models.CharField(max_length=80, help_text="e.g. Power board, Control board, Front panel")
+    code = models.CharField(max_length=12, blank=True,
+                            help_text="Optional short code or part number printed on the PCB, e.g. PB or PCB-1001.")
+    kind = models.CharField(max_length=20, choices=Kind.choices, default=Kind.MAIN)
+    description = models.TextField(blank=True, help_text="What this board does and how it connects to the others.")
+    order = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["project", "order", "id"]
+        unique_together = [("project", "name")]
+
+    def __str__(self):
+        return f"{self.project.key} {self.name}"
+
+    def get_absolute_url(self):
+        return reverse("projects:hw_board", args=[self.project.key, self.pk])
+
+    @property
+    def latest_revision(self):
+        return self.revisions.order_by("-created_at").first()
+
+
+def default_board(project):
+    """The project's board, creating a 'Main board' for projects that have none yet."""
+    board = project.boards.order_by("order", "id").first()
+    if board is None:
+        board = Board.objects.create(project=project, name="Main board", kind=Board.Kind.MAIN)
+    return board
+
+
 class Revision(models.Model):
-    """A hardware/firmware revision of the product, e.g. Rev A, Rev B."""
+    """One revision of a board, e.g. Power board Rev A, Rev B."""
 
     class Status(models.TextChoices):
         DESIGN = "design", "In design"
@@ -83,6 +133,7 @@ class Revision(models.Model):
         OBSOLETE = "obsolete", "Obsolete"
 
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="revisions")
+    board = models.ForeignKey(Board, on_delete=models.CASCADE, related_name="revisions")
     name = models.CharField(max_length=40, help_text="e.g. Rev A, v1.2, EVT")
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.DESIGN)
     target_date = models.DateField(null=True, blank=True)
@@ -91,11 +142,33 @@ class Revision(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ["project", "-created_at"]
-        unique_together = [("project", "name")]
+        ordering = ["project", "board__order", "board_id", "-created_at"]
+        unique_together = [("board", "name")]
 
     def __str__(self):
-        return f"{self.project.key} {self.name}"
+        if self.single_board:
+            return f"{self.project.key} {self.name}"
+        return f"{self.project.key} {self.board.name} {self.name}"
+
+    @property
+    def single_board(self):
+        """True when the product has only one board, so the board's name adds nothing to labels."""
+        project = self.project
+        if not hasattr(project, "_board_count"):
+            project._board_count = project.boards.count()
+        return project._board_count <= 1
+
+    def save(self, *args, **kwargs):
+        if self.board_id and not self.project_id:
+            self.project = self.board.project
+        elif self.project_id and not self.board_id:
+            self.board = default_board(self.project)
+        super().save(*args, **kwargs)
+
+    @property
+    def title(self):
+        """'Rev B' for single-board products, 'Power board Rev B' otherwise."""
+        return self.name if self.single_board else f"{self.board.name} {self.name}"
 
     def get_absolute_url(self):
         return reverse("projects:revision", args=[self.project.key, self.pk])

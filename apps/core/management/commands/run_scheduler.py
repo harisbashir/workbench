@@ -34,6 +34,9 @@ def tick(now=None):
     from apps.core import export, storage_move
     if storage_move.run_pending():
         done.append("storage move")
+    from apps.cad import jobs as cad_jobs
+    if cad_jobs.run_pending():
+        done.append("3d previews")
     if export.run_pending():
         export.prune_exports()
         done.append("export")
@@ -58,6 +61,8 @@ class Command(BaseCommand):
         # A move interrupted by a restart continues where it stopped (copied files are skipped).
         from apps.core.models import StorageMove
         StorageMove.objects.filter(status=StorageMove.Status.RUNNING).update(status=StorageMove.Status.PENDING)
+        from apps.cad.jobs import recover_interrupted
+        recover_interrupted()
         while True:
             close_old_connections()
             try:

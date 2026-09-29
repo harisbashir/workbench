@@ -144,7 +144,7 @@ def audit_log(request):
 
 @login_required
 def help_page(request, topic="start"):
-    topics = ["start", "projects", "reviews", "firmware", "chat", "files", "time", "parts", "production", "github", "security", "install"]
+    topics = ["start", "projects", "hardware", "reviews", "firmware", "chat", "files", "time", "parts", "production", "github", "security", "install"]
     if topic not in topics:
         raise Http404
     return render(request, f"core/help/{topic}.html", {"topic": topic, "topics": topics})

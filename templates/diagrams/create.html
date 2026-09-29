@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}New block diagram{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles">
+  <div class="crumbs"><a href="{% url 'projects:list' %}">Projects</a> / <a href="{{ project.get_absolute_url }}">{{ project.name }}</a> / <a href="{% url 'projects:hardware' project.key %}">Hardware</a> /{% if board %} <a href="{{ board.get_absolute_url }}">{{ board.name }}</a> /{% endif %}</div>
+  <h1>New block diagram</h1>
+  <p class="intro">Hardware block diagrams usually come in three levels: a <strong>system</strong> diagram of the whole product (its boards and how they're cabled together), a <strong>high-level</strong> diagram per board (power, processor, interfaces, sensors) and a <strong>detailed</strong> diagram per board (actual ICs and part numbers, power rails with voltages and currents, buses with addresses and pins).</p>
+</div></div>
+<div class="card form-card"><div class="card-body">
+  <form method="post" novalidate>{% csrf_token %}
+    {% include "partials/form.html" %}
+    <div class="form-actions"><button class="btn btn-primary">Create and start drawing</button><a class="btn btn-ghost" href="{% if board %}{{ board.get_absolute_url }}{% else %}{% url 'projects:hardware' project.key %}{% endif %}">Cancel</a></div>
+  </form>
+</div></div>
+{% endblock %}

@@ -14,12 +14,12 @@
 <div class="grid grid-main">
   <div class="stack">
     <div class="card">
-      <div class="card-head"><h2>Revisions &amp; BOMs</h2>{% if can_edit %}<a class="btn btn-sm" href="{% url 'projects:revision_create' project.key %}">{% icon 'plus' 14 %} Add revision</a>{% endif %}</div>
+      <div class="card-head"><h2>Boards &amp; revisions</h2><a class="btn btn-sm" href="{% url 'projects:hardware' project.key %}">{% icon 'pcb' 14 %} Hardware</a>{% if can_edit %}<a class="btn btn-sm" href="{% url 'projects:revision_create' project.key %}">{% icon 'plus' 14 %} Add revision</a>{% endif %}</div>
       {% if revisions %}
       <div class="table-wrap"><table class="table">
-        <thead><tr><th>Revision</th><th>Status</th><th>Target date</th><th class="num">Tasks</th><th class="num">BOM lines</th><th></th></tr></thead>
+        <thead><tr>{% if multi_board %}<th>Board</th>{% endif %}<th>Revision</th><th>Status</th><th>Target date</th><th class="num">Tasks</th><th class="num">BOM lines</th><th></th></tr></thead>
         <tbody>{% for r in revisions %}
-          <tr><td><a href="{{ r.get_absolute_url }}"><strong>{{ r.name }}</strong></a>{% if r.git_ref %} <span class="key">@{{ r.git_ref }}</span>{% endif %}</td>
+          <tr>{% if multi_board %}<td><a href="{{ r.board.get_absolute_url }}">{{ r.board.name }}</a></td>{% endif %}<td><a href="{{ r.get_absolute_url }}"><strong>{{ r.name }}</strong></a>{% if r.git_ref %} <span class="key">@{{ r.git_ref }}</span>{% endif %}</td>
             <td>{% status_badge r.status r.get_status_display %}</td>
             <td>{{ r.target_date|default:"—" }}</td>
             <td class="num"><a href="{% url 'projects:board' project.key %}?revision={{ r.pk }}">{{ r.task_count }}</a></td>

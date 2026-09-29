@@ -2,7 +2,7 @@
 {% block title %}{{ f.name }} · {{ rev }}{% endblock %}
 {% block content %}
 <div class="page-head"><div class="titles">
-  <div class="crumbs"><a href="{{ project.get_absolute_url }}">{{ project.name }}</a> / <a href="{{ rev.get_absolute_url }}">{{ rev.name }}</a> / <a href="{% url 'design:files' project.key rev.pk %}">Design files</a> /</div>
+  <div class="crumbs"><a href="{{ project.get_absolute_url }}">{{ project.name }}</a> / <a href="{{ rev.get_absolute_url }}">{{ rev.title }}</a> / <a href="{% url 'design:files' project.key rev.pk %}">Design files</a> /</div>
   <h1>{{ f.name }}</h1>
   <p class="intro"><span class="meta-item">{{ f.get_category_display }}</span><span class="meta-item">version {{ f.version }}{% if not f.is_current %} (an older version){% endif %}</span><span class="meta-item">{{ f.size|filesizeformat }}</span><span class="meta-item">uploaded {{ f.uploaded_at|naturaltime }}{% if f.uploaded_by %} by {{ f.uploaded_by }}{% endif %}</span></p></div>
   <div class="actions">
@@ -12,7 +12,8 @@
 
 <div class="grid grid-main">
   <div class="stack">
-    {% if f.viewer == 'pdf' %}<div class="card preview"><iframe src="{% url 'design:download' project.key rev.pk f.pk %}?inline=1" title="{{ f.name }}"></iframe></div>
+    {% if f.viewer == '3d' %}<div class="card">{% include "cad/_viewer.html" with obj=f height="large" %}</div>
+    {% elif f.viewer == 'pdf' %}<div class="card preview"><iframe src="{% url 'design:download' project.key rev.pk f.pk %}?inline=1" title="{{ f.name }}"></iframe></div>
     {% elif f.viewer == 'image' %}<div class="card preview"><div class="card-body center"><img src="{% url 'design:download' project.key rev.pk f.pk %}?inline=1" alt="{{ f.name }}"></div></div>
     {% elif preview.header %}<div class="card"><div class="card-head"><h3>{{ preview.total }} row{{ preview.total|pluralize }}</h3></div><div class="table-wrap"><table class="table table-compact">
       <thead><tr>{% for h in preview.header %}<th>{{ h }}</th>{% endfor %}</tr></thead>

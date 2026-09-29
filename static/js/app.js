@@ -21,6 +21,10 @@
     document.querySelectorAll("form[data-confirm]").forEach((f) => {
       f.addEventListener("submit", (e) => { if (!window.confirm(f.dataset.confirm)) e.preventDefault(); });
     });
+    // …or on a single button: <button data-confirm="Delete it?">
+    document.querySelectorAll("button[data-confirm]").forEach((b) => {
+      b.addEventListener("click", (e) => { if (!window.confirm(b.dataset.confirm)) e.preventDefault(); });
+    });
 
     // Auto-submit filter forms when a select changes
     document.querySelectorAll("[data-autosubmit]").forEach((el) => {

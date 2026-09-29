@@ -11,6 +11,9 @@ urlpatterns = [
     path("files/", include("apps.files.urls")),
     path("", include("apps.firmware.urls")),
     path("", include("apps.design.urls")),
+    path("", include("apps.cad.urls")),
+    path("", include("apps.mechanical.urls")),
+    path("", include("apps.diagrams.urls")),
     path("time/", include("apps.timesheets.urls")),
 ]
 

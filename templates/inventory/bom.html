@@ -3,7 +3,7 @@
 {% block content %}
 <div class="page-head"><div class="titles">
   <div class="crumbs"><a href="{% url 'projects:list' %}">Projects</a> / <a href="{{ project.get_absolute_url }}">{{ project.name }}</a> /</div>
-  <h1>BOM · {{ rev.name }} {% status_badge rev.status rev.get_status_display %}</h1>
+  <h1>BOM · {{ rev.title }} {% status_badge rev.status rev.get_status_display %}</h1>
   {% if rev.status == 'released' %}<p class="intro">{% icon 'lock' 14 %} Released for production — only leads can change this BOM.</p>{% endif %}
 </div>
 <div class="actions">

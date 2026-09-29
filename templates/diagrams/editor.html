@@ -1,0 +1,46 @@
+{% extends "base.html" %}{% load static workbench %}
+{% block title %}Edit · {{ d.name }}{% endblock %}
+{% block extra_head %}<script src="{% static 'js/diagram_geometry.js' %}" defer></script><script src="{% static 'js/diagram.js' %}" defer></script>{% endblock %}
+{% block content %}
+{{ style|json_script:"diagram-style" }}{{ data|json_script:"diagram-data" }}{{ meta|json_script:"diagram-meta" }}
+<div class="dg-editor" data-diagram-editor>
+  <div class="dg-top">
+    <div class="dg-title"><div class="crumbs"><a href="{{ project.get_absolute_url }}" data-leave>{{ project.name }}</a> / {% if d.board %}<a href="{{ d.board.get_absolute_url }}" data-leave>{{ d.board.name }}</a>{% else %}<a href="{% url 'projects:hardware' project.key %}" data-leave>System</a>{% endif %} /</div>
+      <strong>{{ d.name }}</strong> <span class="small muted">{{ d.get_level_display }}</span> <span class="small" data-save-status></span></div>
+    <div class="dg-tools">
+      <button type="button" class="btn btn-sm" data-action="undo" title="Undo (Ctrl+Z)">↶</button><button type="button" class="btn btn-sm" data-action="redo" title="Redo (Ctrl+Y)">↷</button>
+      <span class="dg-sep"></span>
+      <button type="button" class="btn btn-sm" data-action="zoom-out" title="Zoom out">−</button><span class="small dg-zoom" data-zoom-label>100%</span><button type="button" class="btn btn-sm" data-action="zoom-in" title="Zoom in">+</button><button type="button" class="btn btn-sm" data-action="fit" title="Fit everything">Fit</button>
+      <span class="dg-sep"></span>
+      <details class="menu"><summary class="btn btn-sm">{% icon 'download' 14 %} Export</summary><div class="menu-list">
+        <button type="button" data-action="pdf">PDF, A4 with title block</button><button type="button" data-action="pdf3">PDF, A3 with title block</button>
+        <button type="button" data-action="png">PNG image</button><button type="button" data-action="svg">SVG (vector)</button></div></details>
+      <input type="text" class="input-sm dg-note" data-save-note placeholder="What changed? (optional)" aria-label="Change note" maxlength="300">
+      <button type="button" class="btn btn-primary btn-sm" data-action="save" title="Save a new version (Ctrl+S)">{% icon 'check' 14 %} Save version</button>
+      <a class="btn btn-sm" href="{{ d.get_absolute_url }}" data-leave>Done</a>
+    </div>
+  </div>
+  <div class="alert alert-info dg-draft" data-draft hidden>{% icon 'restore' 16 %}<span>You have unsaved changes from <span data-when></span>.</span><button type="button" class="btn btn-sm" data-restore>Restore them</button><button type="button" class="btn btn-sm btn-ghost" data-discard>Discard</button></div>
+  <div class="dg-body">
+    <aside class="dg-palette" aria-label="Shapes">
+      <div class="dg-group-title">Blocks</div>
+      <div class="dg-shapes">{% for key, s in shapes %}{% if key != 'frame' and key != 'text' %}<button type="button" class="dg-shape" data-shape="{{ key }}" draggable="true"><span>{{ s.label }}</span></button>{% endif %}{% endfor %}</div>
+      <div class="dg-group-title">Layout</div>
+      <div class="dg-shapes"><button type="button" class="dg-shape" data-shape="frame" draggable="true"><span>Group frame</span></button><button type="button" class="dg-shape" data-shape="text" draggable="true"><span>Text</span></button></div>
+      <div class="dg-group-title">New connections</div>
+      <div class="dg-kinds">{% for key, k in edge_kinds %}<button type="button" class="dg-kind{% if key == 'signal' %} active{% endif %}" data-kind="{{ key }}"><span>{{ k.label }}</span></button>{% endfor %}</div>
+    </aside>
+    <div class="dg-canvas" data-canvas tabindex="0">
+      <svg xmlns="http://www.w3.org/2000/svg" font-family="Helvetica, Arial, sans-serif" aria-label="Diagram canvas">
+        <defs><pattern id="dg-grid" width="50" height="50" patternUnits="userSpaceOnUse">
+          <path d="M 10 0 V 50 M 20 0 V 50 M 30 0 V 50 M 40 0 V 50 M 0 10 H 50 M 0 20 H 50 M 0 30 H 50 M 0 40 H 50" stroke="#eef1f5" stroke-width="0.6"/>
+          <path d="M 0 0 H 50 V 50" fill="none" stroke="#dde2ea" stroke-width="0.8"/></pattern></defs>
+        <g data-layer="grid"><rect fill="url(#dg-grid)"/></g>
+        <g data-layer="drawing"></g><g data-layer="hits"></g><g data-layer="overlay"></g>
+      </svg>
+    </div>
+    <aside class="dg-props" data-props aria-label="Properties"></aside>
+  </div>
+</div>
+{% csrf_token %}
+{% endblock %}

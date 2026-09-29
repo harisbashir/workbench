@@ -1,0 +1,13 @@
+{% load workbench %}<div class="grid grid-3">
+{% for m in parts %}{% with pv=m.preview_file %}
+  <a class="card space-card hw-card" href="{{ m.get_absolute_url }}">
+    <div class="hw-thumb hw-thumb-light">{% if pv and pv.thumb %}<img src="{{ pv.thumb_url }}" alt="{{ m.name }}" loading="lazy">{% else %}<span class="hw-thumb-icon">{% icon 'cube' 40 %}</span>{% endif %}</div>
+    <div class="card-body">
+      <div class="btn-row"><strong>{{ m.name }}</strong><span class="key">rev {{ m.revision }}</span></div>
+      <p class="small muted">{{ m.get_kind_display }}{% if m.process %} · {{ m.get_process_display }}{% endif %}{% if m.material %} · {{ m.material }}{% endif %}</p>
+      <div class="kv"><span>Status</span><span>{% status_badge m.status m.get_status_display %}</span></div>
+      <div class="kv"><span>Files</span><span>{{ m.file_count }}</span></div>
+      {% if m.boards.all %}<div class="kv"><span>Holds</span><span class="small">{% for b in m.boards.all %}{{ b.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</span></div>{% endif %}
+    </div></a>
+{% endwith %}{% endfor %}
+</div>

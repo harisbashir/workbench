@@ -3,8 +3,8 @@
 {% block extra_head %}<script src="{% static 'js/pcb.js' %}" defer></script>{% endblock %}
 {% block content %}
 <div class="page-head"><div class="titles">
-  <div class="crumbs"><a href="{{ project.get_absolute_url }}">{{ project.name }}</a> / <a href="{{ rev.get_absolute_url }}">{{ rev.name }}</a> / <a href="{% url 'design:files' project.key rev.pk %}">Design files</a> /</div>
-  <h1>{{ project.key }} {{ rev.name }} board</h1>
+  <div class="crumbs"><a href="{{ project.get_absolute_url }}">{{ project.name }}</a> / <a href="{{ rev.get_absolute_url }}">{{ rev.title }}</a> / <a href="{% url 'design:files' project.key rev.pk %}">Design files</a> /</div>
+  <h1>{{ project.key }} {{ rev.title }} board</h1>
   <p class="intro">Drawn from {% for s in board.sources %}<code>{{ s.name }}</code>{% if s.version > 1 %} v{{ s.version }}{% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}. Scroll to zoom, drag to move.</p></div>
   <div class="actions">
     {% if zips|length > 1 %}<form method="get" class="inline"><select name="file" data-autosubmit aria-label="Gerber version">

@@ -7,7 +7,7 @@ class SecurityHeadersMiddleware:
 
     CSP = (
         "default-src 'self'; "
-        "img-src 'self' data:; "
+        "img-src 'self' data: blob:; "
         "style-src 'self'; "
         "script-src 'self'; "
         "connect-src 'self'; "

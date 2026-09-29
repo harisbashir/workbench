@@ -33,7 +33,7 @@ def _revision(request, key, pk, edit=False):
         if not project.can_edit(request.user):
             raise PermissionDenied("You can view this project but not change it.")
         if rev.status == Revision.Status.RELEASED:
-            raise PermissionDenied(f"{rev.name} is released, so its design files are locked. Start a new revision for changes.")
+            raise PermissionDenied(f"{rev.title} is released, so its design files are locked. Start a new revision for changes.")
     return project, rev
 
 
@@ -101,7 +101,7 @@ def upload(request, key, pk):
     if added:
         names = ", ".join(f"{o.name}" + (f" (v{o.version})" if o.version > 1 else "") for o in added[:4])
         more = f" and {len(added) - 4} more" if len(added) > 4 else ""
-        log_activity(project, f"uploaded design files to {rev.name}: {names}{more}", actor=request.user,
+        log_activity(project, f"uploaded design files to {rev.title}: {names}{more}", actor=request.user,
                      url=f"{rev.get_absolute_url()}design/")
         messages.success(request, f"Uploaded {len(added)} file{'s' if len(added) != 1 else ''}.")
     if same:
@@ -194,7 +194,7 @@ def download_all(request, key, pk):
     if not files:
         raise Http404
     buf = io.BytesIO()
-    base = f"{project.key}-{rev.name}".replace(" ", "-")
+    base = f"{project.key}-{rev.title}".replace(" ", "-")
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         for f in files:
             with f.file.open("rb") as fh:
@@ -211,9 +211,11 @@ def delete(request, key, pk, file_id):
     f = _file(rev, file_id)
     all_versions = DesignFile.objects.filter(revision=rev, name=f.name)
     n = all_versions.count()
+    from apps.cad.jobs import delete_previews
     for v in all_versions:
+        delete_previews(v)
         v.file.delete(save=False)
-    all_versions.delete()
+        v.delete()
     audit(request, "design.deleted", rev, file=f.name, versions=n)
     messages.success(request, f"Deleted {f.name}" + (f" and its {n - 1} older version{'s' if n > 2 else ''}." if n > 1 else "."))
     return redirect("design:files", key=project.key, pk=rev.pk)

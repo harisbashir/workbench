@@ -4,7 +4,7 @@
   <a class="btn btn-sm" href="{% url 'design:pcb' project.key rev.pk %}">{% icon 'eye' 14 %} Open viewer</a></div>
   {% if board.ok %}
   <a class="board-thumb" href="{% url 'design:pcb' project.key rev.pk %}" aria-label="Open the board viewer">
-    <img src="{% url 'design:pcb_svg' project.key rev.pk %}?view=thumb" alt="Top of the {{ rev.name }} board, drawn from its Gerber files" loading="lazy"></a>
+    <img src="{% url 'design:pcb_svg' project.key rev.pk %}?view=thumb" alt="Top of the {{ rev.title }} board, drawn from its Gerber files" loading="lazy"></a>
   <div class="card-body board-facts">
     {% with i=board.info %}
     <div><span>Size</span><strong>{{ i.width|floatformat:1 }} × {{ i.height|floatformat:1 }} mm</strong></div>

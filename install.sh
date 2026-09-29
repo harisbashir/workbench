@@ -224,6 +224,7 @@ else
   ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
   url="http://${ip:-localhost}:8000"
 fi
+git config core.fileMode false   # ignore lost "executable" flags (see update.sh)
 chmod +x install.sh update.sh 2>/dev/null || true
 
 # --- 5. Start --------------------------------------------------------------------------

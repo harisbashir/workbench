@@ -1,7 +1,7 @@
 {% extends "base.html" %}{% load workbench %}
 {% block title %}Import BOM · {{ rev }}{% endblock %}
 {% block content %}
-<div class="page-head"><div class="titles"><div class="crumbs"><a href="{{ rev.project.get_absolute_url }}">{{ rev.project.name }}</a> / <a href="{% url 'inventory:bom' rev.pk %}">BOM · {{ rev.name }}</a> /</div>
+<div class="page-head"><div class="titles"><div class="crumbs"><a href="{{ rev.project.get_absolute_url }}">{{ rev.project.name }}</a> / <a href="{% url 'inventory:bom' rev.pk %}">BOM · {{ rev.title }}</a> /</div>
   <h1>Import BOM for {{ rev }}</h1></div></div>
 {% if not preview %}
 <div class="grid grid-main">
@@ -20,7 +20,7 @@
 </div>
 {% else %}
 <div class="tip"><strong>Check before saving.</strong> {{ preview.rows|length }} lines found. {{ preview.new }} will create new parts in the library; the rest match existing parts.
-  {% if preview.replace %}The current BOM for {{ rev.name }} will be replaced.{% else %}Lines will be added to the current BOM.{% endif %}</div>
+  {% if preview.replace %}The current BOM for {{ rev.title }} will be replaced.{% else %}Lines will be added to the current BOM.{% endif %}</div>
 <div class="card"><div class="table-wrap"><table class="table">
   <thead><tr><th>References</th><th>Value</th><th>Footprint</th><th class="num">Qty</th><th>MPN</th><th>Matches</th></tr></thead>
   <tbody>{% for r in preview.rows %}

@@ -10,7 +10,10 @@ that open anywhere, without Workbench.
       Projects/PWR - Power management board/
         Files/<folders>/<files>              (latest versions; older ones in _older versions/ if chosen)
         Firmware/<firmware>/<version> (<status>)/<binaries> + RELEASE NOTES.md
-        Revisions/<rev>/BOM.csv, Release checklist.csv, Design files/<type>/<files>
+        Hardware/<board>/<rev>/BOM.csv, Release checklist.csv, Design files/<type>/<files>
+        Hardware/<board>/Block diagrams/<name> v<n>.pdf + .svg
+        Hardware/System diagrams/<name> v<n>.pdf + .svg
+        Hardware/Mechanical/<part> rev <x>/<type>/<files>
         Tasks.csv, Task comments.csv, Time entries.csv, Chat - #pwr.txt
       Parts/Parts.csv, Suppliers.csv, Stock movements.csv
       Production/Purchase orders.csv, Builds.csv
@@ -62,6 +65,9 @@ class Writer:
     def text(self, parts, content):
         self.z.writestr(self.path(*parts), content)
 
+    def bytes(self, parts, content):
+        self.z.writestr(self.path(*parts), content)
+
     def csv(self, parts, header, rows):
         buf = io.StringIO()
         buf.write("﻿")  # so Excel opens UTF-8 correctly
@@ -97,6 +103,23 @@ def _files(w, base, docs, include_versions):
         if include_versions:
             for v in versions[1:]:
                 w.stored(base + _folder_parts(d.folder) + ["_older versions", d.name, f"v{v.number} - {d.name}"], v.file)
+    return n
+
+
+def _diagram(w, base, d):
+    """A diagram's newest version (and the approved one, if different) as PDF and SVG."""
+    from apps.diagrams import render
+    from apps.diagrams.views import title_block
+    n = 0
+    wanted = {d.current_version}
+    if d.approved_version:
+        wanted.add(d.approved_version)
+    for v in d.versions.filter(number__in=wanted).select_related("created_by"):
+        tag = " (approved)" if v.number == d.approved_version else (" (draft)" if d.status != "approved" else "")
+        name = clean(f"{d.name} v{v.number}{tag}")
+        w.bytes(base + [name + ".pdf"], render.to_pdf(v.data, title_block=title_block(d, v)))
+        w.text(base + [name + ".svg"], render.to_svg(v.data))
+        n += 2
     return n
 
 
@@ -142,16 +165,27 @@ def build_export(include_versions=False, user=None):
                     lines = [f"# {fw.name} {rel.version}", "",
                              f"Status: {rel.get_status_display()}" + (f" — {rel.status_note}" if rel.status_note else ""),
                              f"Built from: {rel.git_ref or '—'}",
-                             f"Compatible board revisions: {', '.join(r.name for r in rel.revisions.all()) or '—'}",
+                             f"Compatible board revisions: {', '.join(r.title for r in rel.revisions.all()) or '—'}",
                              f"Created: {fmt(rel.created_at)} by {rel.created_by or 'GitHub'}",
                              f"Released: {fmt(rel.released_at)} by {rel.released_by or '—'}" if rel.released_at else "", "",
                              "## Files (SHA-256)", ""]
                     lines += [f"- {a.name}  {a.sha256}" for a in rel.artifacts.all()] or ["- none"]
                     lines += ["", "## Release notes", "", rel.notes or "(none)", ""]
                     w.text(rbase + ["RELEASE NOTES.md"], "\n".join(x for x in lines if x is not None))
-            # Revisions: BOM + checklist
-            for rev in p.revisions.all():
-                rb = pbase + ["Revisions", rev.name]
+            # Hardware: boards → revisions (BOM, checklist, design files) and diagrams; mechanical parts
+            hw = pbase + ["Hardware"]
+            for d in p.diagrams.select_related("board", "approved_by"):
+                counts["files"] += _diagram(w, hw + ([d.board.name, "Block diagrams"] if d.board else ["System diagrams"]), d)
+            for part in p.mechanical_parts.all():
+                mb = hw + ["Mechanical", f"{part.name} rev {part.revision}"]
+                for mf in part.files.order_by("kind", "name", "-version"):
+                    if mf.is_current:
+                        w.stored(mb + [mf.get_kind_display(), mf.name], mf.file)
+                        counts["files"] += 1
+                    elif include_versions:
+                        w.stored(mb + [mf.get_kind_display(), "_older versions", f"v{mf.version} - {mf.name}"], mf.file)
+            for rev in p.revisions.select_related("board"):
+                rb = hw + [rev.board.name, rev.name]
                 w.csv(rb + ["BOM.csv"], ["Part number", "Qty per board", "References", "Description", "Value", "Footprint",
                                          "Manufacturer", "MPN", "Supplier", "Unit cost", "Do not populate"],
                       [[l.part.ipn, l.quantity, l.references, l.part.description, l.part.value, l.part.footprint,
@@ -170,7 +204,7 @@ def build_export(include_versions=False, user=None):
             w.csv(pbase + ["Tasks.csv"], ["ID", "Title", "Type", "Status", "Priority", "Assignee", "Reviewer", "Revision",
                                           "Due", "Blocked by", "Created", "Completed", "Description"],
                   [[t.key, t.title, t.get_kind_display(), t.get_status_display(), t.get_priority_display(),
-                    t.assignee or "", t.reviewer or "", t.revision.name if t.revision else "", t.due_date or "",
+                    t.assignee or "", t.reviewer or "", t.revision.title if t.revision else "", t.due_date or "",
                     t.blocked_reason, fmt(t.created_at), fmt(t.completed_at), t.description] for t in tasks])
             comments = [[t.key, fmt(c.created_at), c.author or "", c.body] for t in tasks for c in t.comments.select_related("author")]
             if comments:
@@ -206,7 +240,7 @@ def build_export(include_versions=False, user=None):
                for po in PurchaseOrder.objects.select_related("supplier") for l in po.lines.select_related("part")])
         w.csv(["Production", "Builds.csv"], ["Build", "Project", "Revision", "Quantity", "Status", "Built by", "Firmware",
                                             "Passed", "Failed", "Started", "Completed", "Notes"],
-              [[b.number, b.revision.project.key, b.revision.name, b.quantity, b.get_status_display(), b.manufacturer or "In-house",
+              [[b.number, b.revision.project.key, b.revision.title, b.quantity, b.get_status_display(), b.manufacturer or "In-house",
                 "; ".join(str(r) for r in b.firmware_releases.all()), b.completed_qty, b.failed_qty, fmt(b.started_at),
                 fmt(b.completed_at), b.notes] for b in BuildOrder.objects.select_related("revision__project", "manufacturer")])
 

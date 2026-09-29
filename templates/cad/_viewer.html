@@ -1,0 +1,26 @@
+{% load static workbench %}{# A 3D viewer for any stored CAD file with a mesh preview. Use: include "cad/_viewer.html" with obj=file height="large|small" #}
+<div class="cad-viewer cad-{{ height|default:'large' }}" data-cad-viewer data-mesh-url="{{ obj.mesh_url }}" data-status-url="{{ obj.mesh_status_url }}"
+     data-status="{{ obj.mesh_status }}" data-message="{{ obj.mesh_message }}" data-name="{{ obj.name }}">
+  {% if obj.mesh_status == 'ready' or obj.mesh_status == 'pending' or obj.mesh_status == 'converting' %}
+  <div class="cad-toolbar" role="toolbar" aria-label="3D view controls">
+    <span class="seg"><button type="button" class="btn btn-sm" data-view="iso" title="3D view">3D</button><button type="button" class="btn btn-sm" data-view="top">Top</button><button type="button" class="btn btn-sm" data-view="front">Front</button><button type="button" class="btn btn-sm" data-view="right">Side</button><button type="button" class="btn btn-sm" data-view="bottom">Bottom</button></span>
+    <button type="button" class="btn btn-sm" data-fit title="Fit the model in view">Fit</button>
+    <button type="button" class="btn btn-sm" data-ortho title="Orthographic (no perspective)">Ortho</button>
+    <button type="button" class="btn btn-sm" data-wire title="Show triangle edges">Edges</button>
+    <button type="button" class="btn btn-sm" data-measure title="Measure the distance between two points">Measure</button>
+    {% if height != 'small' %}<span class="cad-section"><label>Section <select data-section-axis aria-label="Section plane"><option value="">off</option><option value="x">X</option><option value="y">Y</option><option value="z">Z</option></select></label>
+      <input type="range" min="0" max="1000" value="500" data-section-pos disabled aria-label="Section position"><button type="button" class="btn btn-sm" data-section-flip disabled title="Keep the other side">⇄</button></span>
+    <button type="button" class="btn btn-sm" data-parts-toggle>Parts</button>{% endif %}
+    <span class="right"><button type="button" class="btn btn-sm" data-shot title="Save a PNG picture">{% icon 'image' 14 %} PNG</button>
+    <button type="button" class="btn btn-sm" data-full title="Full screen">⛶</button></span>
+  </div>
+  {% endif %}
+  <div class="cad-stage"><canvas aria-label="3D model of {{ obj.name }}"></canvas>
+    <div class="cad-overlay" data-overlay hidden></div>
+    <div class="cad-readout" data-readout hidden></div>
+    {% if height != 'small' %}<div class="cad-parts" data-parts hidden><div class="btn-row"><strong>Parts</strong><button type="button" class="btn btn-sm btn-ghost right" data-parts-all>Show all</button></div><ul></ul></div>{% endif %}
+  </div>
+  <div class="cad-foot small muted"><span data-info>{% if obj.mesh_info.size %}{{ obj.mesh_info.size.0 }} × {{ obj.mesh_info.size.1 }} × {{ obj.mesh_info.size.2 }} mm{% endif %}</span>
+    {% if obj.mesh_status == 'ready' or obj.mesh_status == 'pending' or obj.mesh_status == 'converting' %}<span class="right faint">{{ obj.format_label }} · drag to rotate, right-drag to move, scroll to zoom, double-click to centre</span>{% endif %}</div>
+</div>
+<script src="{% static 'js/cad3d.js' %}" defer></script>

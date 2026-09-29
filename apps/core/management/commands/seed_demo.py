@@ -66,8 +66,9 @@ class Command(BaseCommand):
             s[name] = Supplier.objects.get_or_create(name=name, defaults=dict(kind=kind, country=country, lead_time_days=lead, website=web))[0]
 
         # Projects
-        pwr = Project.objects.create(key="PWR", name="Power management board", lead=u["ayesha"], github_repo="acme-embedded/power-board",
-                                     description="USB-C powered buck converter board with an STM32G0 supervisor for the field logger product.")
+        pwr = Project.objects.create(key="PWR", name="Power management unit", lead=u["ayesha"], github_repo="acme-embedded/power-board",
+                                     description="Field logger power unit: a power board, a control board and a front panel "
+                                                 "board in a 3D-printed enclosure.")
         pwr.members.add(u["ayesha"], u["bilal"], u["sana"], u["usman"], u["haris"])
         sens = Project.objects.create(key="SENS", name="Environmental sensor node", lead=u["ayesha"], github_repo="acme-embedded/sensor-node",
                                       description="Low-power LoRa sensor node: temperature, humidity and pressure.")
@@ -333,6 +334,10 @@ class Command(BaseCommand):
                                          started_at=now - timedelta(days=40), completed_at=now - timedelta(days=33),
                                          notes="Unit 7 failed: solder bridge on U1. Reworked later.")
         log_activity(pwr, f"completed build {done.number}: 9 passed, 1 failed (90% yield)", actor=u["fatima"], url=done.get_absolute_url())
+
+        # Hardware: the product's three boards, 3D models, enclosure and block diagrams
+        from apps.core import demo_hardware
+        demo_hardware.seed(pwr, u, rev_a, rev_b, now)
 
         self.stdout.write(self.style.SUCCESS("Demo data loaded."))
         self.stdout.write(f"Sign in as any of: {', '.join(u)}  —  password: {o['password']}")

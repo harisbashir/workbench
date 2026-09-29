@@ -1,0 +1,11 @@
+{% load workbench humanize %}<div class="grid {% if compact %}grid-2{% else %}grid-3{% endif %} diagram-cards">
+{% for d in diagrams %}
+  <a class="card space-card diagram-card" href="{{ d.get_absolute_url }}">
+    <div class="diagram-thumb">{% if d.current_version %}<img src="{% url 'diagrams:export' d.project.key d.pk d.current_version 'svg' %}?thumb=1" alt="{{ d.name }}" loading="lazy">{% endif %}</div>
+    <div class="card-body">
+      <strong>{{ d.name }}</strong>
+      <p class="small muted">{{ d.get_level_display }} · v{{ d.current_version }} · {{ d.updated_at|naturaltime }}</p>
+      <div class="btn-row">{% status_badge d.status d.get_status_display %}{% if d.approved_version and d.approved_version != d.current_version %}<span class="small faint">v{{ d.approved_version }} approved</span>{% endif %}</div>
+    </div></a>
+{% endfor %}
+</div>

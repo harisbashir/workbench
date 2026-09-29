@@ -2,7 +2,7 @@
 {% block title %}{{ rev }}{% endblock %}
 {% block content %}
 <div class="page-head"><div class="titles">
-  <div class="crumbs"><a href="{% url 'projects:list' %}">Projects</a> / <a href="{{ project.get_absolute_url }}">{{ project.name }}</a> /</div>
+  <div class="crumbs"><a href="{% url 'projects:list' %}">Projects</a> / <a href="{{ project.get_absolute_url }}">{{ project.name }}</a> / <a href="{% url 'projects:hardware' project.key %}">Hardware</a> / <a href="{{ rev.board.get_absolute_url }}">{{ rev.board.name }}</a> /</div>
   <h1>{{ rev.name }} {% status_badge rev.status rev.get_status_display %}</h1>
   <p class="intro">{% if rev.target_date %}<span class="meta-item">Target {{ rev.target_date|naturalday }}</span>{% endif %}{% if rev.git_ref %}<span class="meta-item">git <code>{{ rev.git_ref }}</code></span>{% endif %}{% if rev.notes %}<span class="meta-item">{{ rev.notes }}</span>{% endif %}</p></div>
   <div class="actions">
@@ -36,6 +36,8 @@
       {% if design_files %}<div class="file-chips">{% for f in design_files %}<a class="file-chip" href="{{ f.get_absolute_url }}"><span class="small faint">{{ f.get_category_display }}</span>{{ f.name }}{% if f.version > 1 %} <span class="faint">v{{ f.version }}</span>{% endif %}</a>{% endfor %}</div>
       {% else %}<p class="muted small">No Gerbers, schematic or pick-and-place files yet.{% if can_edit %} <a href="{% url 'design:files' project.key rev.pk %}">Upload them</a> to see the board here.{% endif %}</p>{% endif %}
     </div></div>
+  {% if model_file %}<div class="card" id="model3d"><div class="card-head"><h2>{% icon 'cube' 18 %} 3D model</h2><a class="btn btn-sm" href="{{ model_file.get_absolute_url }}">{{ model_file.name }}</a></div>
+    {% include "cad/_viewer.html" with obj=model_file height="small" %}</div>{% endif %}
   <div class="card" id="checklist"><div class="card-head"><h2>Release checklist</h2><span class="small muted">All items must be signed off before the revision can be released for production.</span></div>
     <div class="card-body">
     {% if checks %}<ul class="checklist">
@@ -58,7 +60,7 @@
       {% else %}<p class="muted small">Nothing open for this revision.</p>{% endif %}
       {% if can_edit %}<a class="btn btn-sm" href="{% url 'projects:task_create' project.key %}?revision={{ rev.pk }}">{% icon 'plus' 14 %} Task for {{ rev.name }}</a>{% endif %}
     </div></div>
-    <div class="card"><div class="card-head"><h3>{% icon 'cpu' 16 %} Firmware for {{ rev.name }}</h3></div><div class="card-body">
+    <div class="card"><div class="card-head"><h3>{% icon 'cpu' 16 %} Firmware for {{ rev.title }}</h3></div><div class="card-body">
       {% for fw, rec, testing in firmware %}<div class="kv"><a href="{{ fw.get_absolute_url }}">{{ fw.name }}</a>
         <span>{% if rec %}<a class="mono" href="{{ rec.get_absolute_url }}"><strong>{{ rec.version }}</strong></a>{% else %}<span class="faint">none released</span>{% endif %}{% if testing %} <a class="small" href="{{ testing.get_absolute_url }}">({{ testing.version }} testing)</a>{% endif %}</span></div>
       {% empty %}<p class="muted small">No firmware yet. <a href="{% url 'firmware:project' project.key %}">Add firmware</a></p>{% endfor %}
@@ -69,7 +71,7 @@
       {% if user.can_manage_procurement %}<a class="btn btn-sm" href="{% url 'production:build_create' %}?revision={{ rev.pk }}">Plan a build</a>{% endif %}
     </div></div>
     {% if revisions|length > 1 %}<div class="card"><div class="card-head"><h3>Other revisions</h3></div><div class="card-body">
-      {% for r in revisions %}{% if r != rev %}<div class="kv"><a href="{{ r.get_absolute_url }}">{{ r.name }}</a><a class="small" href="{% url 'inventory:bom_compare' rev.pk r.pk %}">Compare BOM</a></div>{% endif %}{% endfor %}
+      {% for r in revisions %}{% if r != rev %}<div class="kv"><a href="{{ r.get_absolute_url }}">{{ r.title }}</a><a class="small" href="{% url 'inventory:bom_compare' rev.pk r.pk %}">Compare BOM</a></div>{% endif %}{% endfor %}
     </div></div>{% endif %}
   </div>
 </div>

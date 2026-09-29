@@ -1,6 +1,6 @@
 # Workbench
 
-**One self-hosted web app for a hardware team:** chat, projects and task boards, design and code reviews linked to GitHub, firmware releases, PCB design files with a built-in Gerber viewer, a parts library with KiCad BOM import, purchasing, production builds, and timesheets.
+**One self-hosted web app for a hardware team:** chat, projects and task boards, design and code reviews linked to GitHub, products with several PCBs, enclosures and 3D CAD models, hardware block diagrams, firmware releases, PCB design files with a built-in Gerber viewer, a parts library with KiCad BOM import, purchasing, production builds, and timesheets.
 
 Built for small embedded/electronics teams — especially **remote and distributed ones** — who are tired of stitching together Slack, Jira, a spreadsheet of parts and a shared drive. Everything is written in this codebase (no third-party apps embedded, no trackers, no CDNs), it runs as **one Docker container**, and everything it stores lives in **one `data` folder**.
 
@@ -17,18 +17,48 @@ Built for small embedded/electronics teams — especially **remote and distribut
 [Security](#security) ·
 [Troubleshooting](#troubleshooting) ·
 [Uninstall](#uninstall) ·
-[Development](#development)
+[Development](#development) ·
+[License](#license)
 
 ---
 
 ## Features
 
 ### Projects and tasks
-- A project per product or board, each with a **task board** (To do → In progress → In review → Done), a list view with filters, and an overview page.
+- A project per product, each with a **task board** (To do → In progress → In review → Done), a list view with filters, and an overview page.
 - Task IDs like `PWR-12`, types (schematic, PCB layout, firmware, test…), priorities, due dates, reviewers, **blocked** flags with a reason, comments with **@mentions**, attachments, and time logging.
-- **Revisions** (Rev A, Rev B, EVT…) with a **release checklist** (ERC/DRC clean, MPNs complete, footprints checked…) that must be signed off before a revision can be released for production.
 
 ![Task board](docs/screenshots/task-board.png)
+
+### Hardware: boards, enclosures and diagrams
+Each product has a **Hardware** tab that holds everything physical about it.
+
+![Hardware tab](docs/screenshots/hardware.png)
+
+**Several boards per product.** A product can have any number of PCBs — for example a power board, a control board and a front panel board. Each board has its own **revisions** (Rev A, Rev B, EVT…), and each revision its own BOM, design files, 3D model, **release checklist** (ERC/DRC clean, MPNs complete, footprints checked…), builds and compatible firmware. Revisions are always shown with their board ("PWR Control board Rev A"), so tasks, builds and firmware point at the right PCB.
+
+**3D models of boards.** Upload the 3D model KiCad exports (STEP, VRML or glTF) to a revision's design files and it's shown on the board and revision pages.
+
+![Board 3D model](docs/screenshots/board-3d.png)
+
+**Enclosures and mechanical parts.** Enclosures, lids, brackets, bezels, buttons, light pipes, gaskets and heatsinks — each with a revision letter, status (Concept → Prototype → Released → Obsolete), manufacturing process, material, finish, supplier, and the boards it holds. Upload the CAD source (SolidWorks, Fusion 360, Inventor, CATIA, Creo, FreeCAD…), STEP/3MF exports, print files and drawings; every upload of the same name becomes a new version with a SHA-256 checksum. Released parts are locked.
+
+**Built-in 3D viewer** (written for this project, running in the browser with WebGL):
+- Views **STEP / STP, IGES, STL, 3MF, OBJ, glTF / GLB and VRML**. Native files (SolidWorks `.sldprt`/`.sldasm`, Fusion 360 `.f3d`, Inventor, CATIA, Creo…) are stored and versioned; upload a STEP or 3MF export next to them to view them.
+- Rotate, pan, zoom (mouse or touch), standard views (3D, top, front, side, bottom), orthographic mode, edges, **section cuts** along X/Y/Z to check how boards sit in the enclosure, **measure** between two points, show/hide parts of an assembly, and save a PNG.
+- Large STEP files are converted in the background (with OpenCASCADE) and cached, so they open instantly afterwards.
+
+![Enclosure in the 3D viewer](docs/screenshots/enclosure-3d.png)
+
+**Hardware block diagrams**, drawn in a built-in editor and saved with the product or board:
+- Three levels, as hardware teams usually keep them: **System** (the whole product: its boards, external parts and the power, buses and cables between them), **High-level** per board (functional blocks) and **Detailed** per board (real ICs with part numbers, rails with voltages and currents, buses with addresses and pins).
+- Start from a starter layout, a copy of another diagram, or an empty page.
+- Shapes for blocks, ICs/MCUs, power, connectors, sensors, memory, batteries, external items, boards and group frames; connection types for **signal, power, ground, digital bus, high-speed/differential, analog, RF and cable**, each with its own colour and line style and a legend in exports.
+- Drag to connect, align and distribute, undo/redo, keyboard shortcuts, and unsaved work kept in the browser.
+- **Versions, review and approval:** submit for review, comment on the whole diagram or on one block, approve or ask for changes. Approved versions stay on record.
+- **Exports:** PDF (A4 or A3, vector, with a title block: product, board, level, version, status, approver, author, date), SVG, PNG and JSON.
+
+![Block diagram editor](docs/screenshots/diagram-editor.png)
 
 ### Chat
 - A channel for every project (created automatically), topic channels, private channels and **direct messages**.
@@ -52,7 +82,7 @@ Built for small embedded/electronics teams — especially **remote and distribut
 ![Firmware release](docs/screenshots/firmware-release.png)
 
 ### PCB design files and Gerber viewer
-- Each revision stores its **Gerbers, drill files, schematic and PCB files** (KiCad, Eagle, Altium), pick-and-place, BOM, STEP models and PDFs — sorted by type, every version kept.
+- Each board revision stores its **Gerbers, drill files, schematic and PCB files** (KiCad, Eagle, Altium), pick-and-place, BOM, 3D models and PDFs — sorted by type, every version kept.
 - A **built-in Gerber and Excellon viewer** (its own renderer, nothing external): top and bottom views with solder mask colour and finish, a layer view with toggles, zoom, pan and a **measure** tool.
 - Board facts for ordering: size, copper layers, thickness and finish (from the job file), hole counts, smallest drill, thinnest track.
 
@@ -90,7 +120,7 @@ Built for small embedded/electronics teams — especially **remote and distribut
 - Five roles: **Administrator**, **Engineering lead**, **Engineer**, **Procurement / production**, **Viewer** (read-only). Engineers only see their projects.
 - Invite links (or emailed invites), company name and **logo** (SVG or transparent PNG), time zone, SMTP email, GitHub webhook secret.
 - **Storage settings in the app**: a folder on the server or S3-compatible cloud storage, with a verified background move.
-- Nightly **backups**, restore from the command line, **"Download everything"** as an organised zip, and an **audit log** of sign-ins, permission changes, downloads and stock changes.
+- Nightly **backups**, restore from the command line, **"Download everything"** as an organised zip (with a *Hardware* folder per product: boards, revisions, design files, 3D models, block diagrams as PDF and SVG, and mechanical parts), and an **audit log** of sign-ins, permission changes, downloads and stock changes.
 - **Help & guides** built in, and a short explanation on every page.
 
 ---
@@ -194,7 +224,7 @@ docker compose logs workbench        # shows the one-time setup code
 
 Open **http://localhost:8000**, enter the setup code and create your account.
 
-To explore with example data instead — projects, tasks, chat, parts, firmware, a sample board and builds — load the demo **instead of** creating your own account:
+To explore with example data instead — projects, tasks, chat, parts, firmware, a product with three boards, board 3D models, an enclosure, block diagrams and builds — load the demo **instead of** creating your own account:
 
 ```bash
 docker compose exec workbench manage seed_demo
@@ -242,6 +272,10 @@ chmod +x install.sh update.sh
 ```
 
 If `git pull` complains about local changes, run `git stash` and try again.
+
+### Upgrading to 1.4
+
+Version 1.4 adds boards to products. Existing revisions are moved onto a board called **Main board** in each project automatically; rename it, or add more boards, under the project's **Hardware** tab. Updating takes a little longer than usual the first time, because the container installs the 3D converter.
 
 ### Which version does a server get?
 
@@ -453,7 +487,7 @@ docker image rm workbench:latest caddy:2
 
 ## Development
 
-Workbench is a [Django](https://www.djangoproject.com/) 5 app with server-rendered pages and hand-written CSS and JavaScript (no frontend framework, no build step). The database is SQLite by default (PostgreSQL optional); files go through Django's storage API (local disk, or S3 via `django-storages`).
+Workbench is a [Django](https://www.djangoproject.com/) 5 app with server-rendered pages and hand-written CSS and JavaScript (no frontend framework, no build step). The Gerber viewer, 3D viewer and diagram editor are written from scratch; STEP/IGES files are converted with OpenCASCADE through [`cascadio`](https://pypi.org/project/cascadio/). The database is SQLite by default (PostgreSQL optional); files go through Django's storage API (local disk, or S3 via `django-storages`).
 
 ```bash
 git clone https://github.com/harisbashir/workbench.git && cd workbench
@@ -462,7 +496,7 @@ pip install -r requirements-dev.txt
 export WORKBENCH_DEBUG=1
 python manage.py migrate && python manage.py seed_demo
 python manage.py runserver                     # http://localhost:8000 — haris / Workbench-demo-2026!
-python manage.py test apps                     # 159 tests (S3 is tested against a local mock)
+python manage.py test apps                     # 172 tests (S3 is tested against a local mock)
 ruff check apps config --select F,E9           # lint
 ```
 
@@ -490,19 +524,32 @@ config/              settings (zero-config: data folder, generated secrets, stor
 apps/accounts/       users, roles, 2FA, invites, lockout
 apps/core/           dashboard, search, notifications, audit log, help, setup wizard,
                      system page, backups, export, storage, logo, scheduler, email
-apps/projects/       projects, revisions and release checklists, tasks, activity
+apps/projects/       projects, boards, revisions and release checklists, tasks, activity
 apps/chat/           channels, messages, file sharing
 apps/files/          file library: spaces, folders, versions, trash, storage
 apps/firmware/       firmware components, releases, artifacts
 apps/design/         revision design files, Gerber/Excellon parser and board renderer
+apps/cad/            3D formats (STEP, IGES, STL, 3MF, OBJ, glTF, VRML), mesh cache, thumbnails
+apps/mechanical/     enclosures and mechanical parts with versioned CAD files
+apps/diagrams/       block diagrams: layout engine, versions, review, SVG/PDF export
 apps/inventory/      parts, suppliers, stock, BOMs, KiCad import
 apps/production/     purchase orders, builds, assembly-house files, finishing
 apps/timesheets/     time entries, weekly report
 apps/integrations/   GitHub webhook
-templates/ static/   UI (hand-written CSS and JavaScript)
+templates/ static/   UI (hand-written CSS and JavaScript, WebGL 3D viewer, diagram editor)
 docs/                screenshots, sample BOM, KiBot setup for hardware repositories
 Dockerfile docker-compose.yml docker-entrypoint.sh deploy/
 install.sh update.sh server install and safe updates
 ```
 
 Hardware repositories can run ERC/DRC and produce fabrication files in CI with [KiBot](https://github.com/INTI-CMNB/KiBot): copy [`docs/examples/kibot.yml`](docs/examples/kibot.yml) to `.github/workflows/` and [`docs/examples/.kibot.yaml`](docs/examples/.kibot.yaml) to the repository root. The results show up on the linked Workbench tasks.
+
+---
+
+## Contributing
+
+Issues and pull requests are welcome. For a change of any size, open an issue first to talk it through. Please include tests for new behaviour and make sure `python manage.py test apps` and the linter pass.
+
+## License
+
+Workbench is released under the [MIT License](LICENSE). Copyright © 2026 Haris Bashir.

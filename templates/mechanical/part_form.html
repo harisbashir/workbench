@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}{% if part %}Edit {{ part.name }}{% else %}New mechanical part{% endif %}{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles">
+  <div class="crumbs"><a href="{% url 'projects:list' %}">Projects</a> / <a href="{{ project.get_absolute_url }}">{{ project.name }}</a> / <a href="{% url 'projects:hardware' project.key %}">Hardware</a> /</div>
+  <h1>{% if part %}Edit {{ part.name }}{% else %}New mechanical part{% endif %}</h1>
+  <p class="intro">An enclosure, lid, bracket, panel or any other mechanical part of the product. Upload its CAD files on the next page. Released parts are locked; to change one, the lead sets it back to <em>Prototype</em> with the next revision letter.</p>
+</div></div>
+<div class="card form-card"><div class="card-body">
+  <form method="post" novalidate>{% csrf_token %}
+    {% include "partials/form.html" with grid=True %}
+    <div class="form-actions"><button class="btn btn-primary">Save part</button><a class="btn btn-ghost" href="{% if part %}{{ part.get_absolute_url }}{% else %}{% url 'projects:hardware' project.key %}{% endif %}">Cancel</a>
+    {% if can_delete %}<button class="btn btn-danger right" name="action" value="delete" formnovalidate data-confirm="Delete {{ part.name }} and all its files?">Delete part</button>{% endif %}</div>
+  </form>
+</div></div>
+{% endblock %}

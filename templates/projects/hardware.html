@@ -1,0 +1,41 @@
+{% extends "base.html" %}{% load workbench humanize %}
+{% block title %}Hardware · {{ project.name }}{% endblock %}
+{% block content %}
+{% include "projects/_head.html" with tab="hardware" %}
+<p class="intro">Everything physical in this product: its <strong>boards</strong> (each with revisions, design files, 3D model, BOM and block diagrams), its <strong>enclosure and mechanical parts</strong>, and <strong>system diagrams</strong> that show how the boards connect. <a href="{% url 'core:help_topic' 'hardware' %}">How this is organised →</a></p>
+
+<div class="section-title"><h2>{% icon 'pcb' 18 %} Boards</h2>
+  {% if can_edit %}<a class="btn btn-sm" href="{% url 'projects:hw_board_create' project.key %}">{% icon 'plus' 14 %} Add board</a>{% endif %}</div>
+{% if cards %}
+<div class="grid grid-3">
+{% for c in cards %}{% with b=c.board %}
+  <a class="card space-card hw-card" href="{{ b.get_absolute_url }}">
+    <div class="hw-thumb">{% if c.has_gerbers %}<img src="{% url 'design:pcb_svg' project.key c.latest.pk %}?view=thumb" alt="{{ b.name }} {{ c.latest.name }}" loading="lazy">{% elif c.model %}<img src="{{ c.model.thumb_url }}" alt="{{ b.name }} 3D model" loading="lazy">{% else %}<span class="hw-thumb-icon">{% icon 'pcb' 40 %}</span>{% endif %}</div>
+    <div class="card-body">
+      <div class="btn-row"><strong>{{ b.name }}</strong>{% if b.code %}<span class="key">{{ b.code }}</span>{% endif %}</div>
+      <p class="small muted">{{ b.get_kind_display }}{% if b.description %} · {{ b.description|truncatewords:14 }}{% endif %}</p>
+      <div class="kv"><span>Latest revision</span><span>{% if c.latest %}<strong>{{ c.latest.name }}</strong> {% status_badge c.latest.status c.latest.get_status_display %}{% else %}<span class="faint">none yet</span>{% endif %}</span></div>
+      <div class="kv"><span>Revisions</span><span>{{ c.revisions|length }}</span></div>
+    </div></a>
+{% endwith %}{% endfor %}
+</div>
+{% else %}
+<div class="card"><div class="empty">{% icon 'pcb' 40 %}<h3>No boards yet</h3><p>Add each PCB of the product — for example a power board, a control board and an I/O board. Each board gets its own revisions, BOM, design files and diagrams.</p>
+  {% if can_edit %}<a class="btn btn-primary" href="{% url 'projects:hw_board_create' project.key %}">Add a board</a>{% endif %}</div></div>
+{% endif %}
+
+{% if system_diagrams is not None %}
+<div class="section-title"><h2>{% icon 'diagram' 18 %} System diagrams</h2>
+  {% if can_edit %}<a class="btn btn-sm" href="{% url 'diagrams:create' project.key %}?level=system">{% icon 'plus' 14 %} New system diagram</a>{% endif %}</div>
+{% if system_diagrams %}{% include "diagrams/_list.html" with diagrams=system_diagrams %}
+{% else %}<div class="card"><div class="card-body muted small">A system diagram shows the whole product: which boards there are and how they connect (power, buses, cables, connectors). Board-level diagrams live on each board's page.</div></div>{% endif %}
+{% endif %}
+
+{% if mech_parts is not None %}
+<div class="section-title"><h2>{% icon 'cube' 18 %} Enclosure &amp; mechanical parts</h2>
+  {% if can_edit %}<a class="btn btn-sm" href="{% url 'mechanical:create' project.key %}">{% icon 'plus' 14 %} Add part</a>{% endif %}</div>
+{% if mech_parts %}{% include "mechanical/_list.html" with parts=mech_parts %}
+{% else %}<div class="card"><div class="empty">{% icon 'cube' 40 %}<h3>No mechanical parts yet</h3><p>Add the enclosure, lids, brackets, light pipes or panels, and upload their CAD files (STEP, STL, 3MF, SolidWorks, Fusion 360…). STEP, STL, 3MF, OBJ and glTF files can be viewed in 3D here.</p>
+  {% if can_edit %}<a class="btn btn-primary" href="{% url 'mechanical:create' project.key %}">Add a part</a>{% endif %}</div></div>{% endif %}
+{% endif %}
+{% endblock %}

@@ -300,6 +300,17 @@ def stored_files():
     from django.apps import apps
     if apps.is_installed("apps.design"):
         sources.append(apps.get_model("design", "DesignFile").objects.values_list("file", "size"))
+    if apps.is_installed("apps.mechanical"):
+        sources.append(apps.get_model("mechanical", "MechanicalFile").objects.values_list("file", "size"))
+    # 3D previews can be rebuilt, but copying them saves converting every model again
+    for label in ("design.DesignFile", "mechanical.MechanicalFile"):
+        try:
+            model = apps.get_model(label)
+        except LookupError:
+            continue
+        for field in ("mesh", "thumb"):
+            names = model.objects.exclude(**{field: ""}).values_list(field, flat=True).distinct()
+            sources.append([(n, None) for n in names])
     for qs in sources:
         for name, size in qs:
             if name and name not in seen:

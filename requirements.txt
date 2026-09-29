@@ -7,3 +7,5 @@ gunicorn>=22               # web server
 whitenoise>=6.7            # serves CSS/JS
 django-storages[s3]>=1.14  # optional Amazon S3 / S3-compatible file storage
 psycopg[binary]>=3.2       # optional PostgreSQL database
+numpy>=1.26               # 3D model conversion and thumbnails
+cascadio>=0.1.1            # converts STEP/IGES CAD files (KiCad board models, enclosures) for the 3D viewer

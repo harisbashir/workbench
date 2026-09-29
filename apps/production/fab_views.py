@@ -50,7 +50,7 @@ def fab_package(request, pk):
     gerber, pnp = _design_files(rev)
     placements, pnp_warnings = _placements(pnp)
     p = fab.plan(rev, placements)
-    base = f"{rev.project.key}-{rev.name}".replace(" ", "")
+    base = f"{rev.project.key}-{rev.title}".replace(" ", "")
     get = request.GET.get("get")
     if get:
         who = fab.ASSEMBLERS[assembler]["name"].replace(" ", "")
@@ -73,7 +73,7 @@ def fab_package(request, pk):
                     z.writestr(f"{base}-CPL-{who}.csv", fab.cpl_csv(p, placements))
                 z.writestr(f"not for {who} - {base}-in-house-parts.csv", fab.house_csv(p))
                 z.writestr("README.txt", (
-                    f"{rev.project.name} {rev.name} — files for {fab.ASSEMBLERS[assembler]['name']}\n\n"
+                    f"{rev.project.name} {rev.title} — files for {fab.ASSEMBLERS[assembler]['name']}\n\n"
                     f"{fab.ASSEMBLERS[assembler]['note']}\n\n"
                     f"The assembler places {sum(len(l.refs) or l.quantity for l in p['fab'])} parts per board. "
                     f"{sum(l.quantity for l in p['house'])} parts are fitted in house afterwards "
@@ -178,7 +178,7 @@ def build_stage(request, pk):
             who = b.manufacturer or "the assembly house"
             log_activity(project, f"ordered assembly of {b.number} from {who}" + (f" ({b.fab_order_ref})" if b.fab_order_ref else ""),
                          actor=request.user, url=b.get_absolute_url())
-            post_system_message(project, f"Build {b.number}: {b.quantity} × {b.revision.name} ordered from {who}. "
+            post_system_message(project, f"Build {b.number}: {b.quantity} × {b.revision.title} ordered from {who}. "
                                          "In-house parts were taken from stock for finishing.", b.get_absolute_url())
             messages.success(request, f"{b.number} is now at {who}. In-house parts for {b.quantity} boards were reserved from stock.")
     elif action == "start_house" and b.stage == BuildOrder.Stage.PLANNED:
@@ -191,7 +191,7 @@ def build_stage(request, pk):
         b.stage = BuildOrder.Stage.FINISHING
         b.save(update_fields=["stage"])
         log_activity(project, f"started build {b.number}", actor=request.user, url=b.get_absolute_url())
-        post_system_message(project, f"Build {b.number} ({b.quantity} × {b.revision.name}) has started. Parts have been taken from stock.", b.get_absolute_url())
+        post_system_message(project, f"Build {b.number} ({b.quantity} × {b.revision.title}) has started. Parts have been taken from stock.", b.get_absolute_url())
         messages.success(request, f"{b.number} started. Parts for {b.quantity} boards were taken out of stock.")
     elif action == "received" and b.stage == BuildOrder.Stage.AT_FAB:
         form = ReceiveForm(request.POST)

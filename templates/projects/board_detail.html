@@ -1,0 +1,77 @@
+{% extends "base.html" %}{% load workbench humanize %}
+{% block title %}{{ b.name }} · {{ project.name }}{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles">
+  <div class="crumbs"><a href="{% url 'projects:list' %}">Projects</a> / <a href="{{ project.get_absolute_url }}">{{ project.name }}</a> / <a href="{% url 'projects:hardware' project.key %}">Hardware</a> /</div>
+  <h1>{{ b.name }} {% if b.code %}<span class="key">{{ b.code }}</span>{% endif %}</h1>
+  <p class="intro">{{ b.get_kind_display }}{% if b.description %} · {{ b.description|linebreaksbr }}{% endif %}</p></div>
+  <div class="actions">
+    {% if can_edit %}<a class="btn btn-primary" href="{% url 'projects:revision_create' project.key %}?board={{ b.pk }}">{% icon 'plus' 16 %} Add revision</a>
+    <a class="btn" href="{% url 'diagrams:create' project.key %}?board={{ b.pk }}">{% icon 'diagram' 16 %} New block diagram</a>
+    <a class="btn" href="{% url 'projects:hw_board_edit' project.key b.pk %}">{% icon 'edit' 16 %} Edit</a>{% endif %}
+  </div></div>
+
+<div class="grid grid-main">
+<div class="stack">
+  <div class="card"><div class="card-head"><h2>Revisions</h2></div>
+  {% if revisions %}<div class="table-wrap"><table class="table">
+    <thead><tr><th>Revision</th><th>Status</th><th>Target</th><th class="num">Design files</th><th class="num">BOM lines</th><th class="num">Tasks</th><th class="num">Builds</th></tr></thead>
+    <tbody>{% for r in revisions %}<tr>
+      <td><a href="{{ r.get_absolute_url }}"><strong>{{ r.name }}</strong></a>{% if r.git_ref %} <span class="key">@{{ r.git_ref }}</span>{% endif %}</td>
+      <td>{% status_badge r.status r.get_status_display %}</td><td>{{ r.target_date|default:"—" }}</td>
+      <td class="num"><a href="{% url 'design:files' project.key r.pk %}">{{ r.file_count }}</a></td>
+      <td class="num"><a href="{% url 'inventory:bom' r.pk %}">{{ r.bom_count }}</a></td>
+      <td class="num"><a href="{% url 'projects:board' project.key %}?revision={{ r.pk }}">{{ r.task_count }}</a></td>
+      <td class="num">{{ r.build_count }}</td></tr>{% endfor %}</tbody></table></div>
+  {% else %}<div class="empty"><h3>No revisions yet</h3><p>Add the first revision of this board (e.g. “Rev A”). Its design files, BOM, 3D model and release checklist live on the revision.</p>
+    {% if can_edit %}<a class="btn btn-primary" href="{% url 'projects:revision_create' project.key %}?board={{ b.pk }}">Add first revision</a>{% endif %}</div>{% endif %}
+  </div>
+
+  {% if diagrams is not None %}
+  <div class="card"><div class="card-head"><h2>{% icon 'diagram' 18 %} Block diagrams</h2>
+    {% if can_edit %}<a class="btn btn-sm" href="{% url 'diagrams:create' project.key %}?board={{ b.pk }}">{% icon 'plus' 14 %} New diagram</a>{% endif %}</div>
+    <div class="card-body">
+      <div class="grid grid-2 diagram-cards">{% for lvl, label, d in slots %}
+        {% if d %}<a class="card space-card diagram-card" href="{{ d.get_absolute_url }}">
+          <div class="diagram-thumb"><img src="{% url 'diagrams:export' project.key d.pk d.current_version 'svg' %}?thumb=1" alt="{{ d.name }}" loading="lazy"></div>
+          <div class="card-body"><span class="small muted">{{ label }}</span><br><strong>{{ d.name }}</strong>
+            <div class="btn-row">{% status_badge d.status d.get_status_display %}<span class="small faint">v{{ d.current_version }} · {{ d.updated_at|naturaltime }}</span></div></div></a>
+        {% else %}<div class="card diagram-slot"><div class="card-body"><span class="small muted">{{ label }}</span>
+          <p class="small">{% if lvl == 'high' %}The main blocks and how they connect: power path, processor, memory, sensors, interfaces.{% else %}The actual ICs with part numbers, power rails with voltages and currents, buses with addresses and pins.{% endif %}</p>
+          {% if can_edit %}<a class="btn btn-sm btn-primary" href="{% url 'diagrams:create' project.key %}?board={{ b.pk }}&level={{ lvl }}">{% icon 'plus' 14 %} Draw it</a>{% endif %}</div></div>{% endif %}
+      {% endfor %}</div>
+      {% if other_diagrams %}<p></p>{% include "diagrams/_list.html" with diagrams=other_diagrams compact=True %}{% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if latest %}
+  <div class="card"><div class="card-head"><h2>{% icon 'cube' 18 %} 3D model · {{ latest.name }}</h2>
+    {% if model_file %}<a class="btn btn-sm" href="{{ model_file.get_absolute_url }}">Open viewer</a>{% else %}<a class="btn btn-sm" href="{% url 'design:files' project.key latest.pk %}">{% icon 'upload' 14 %} Upload</a>{% endif %}</div>
+    {% if model_file %}{% include "cad/_viewer.html" with obj=model_file height="small" %}
+    {% else %}<div class="card-body muted small">Upload the board's 3D model from KiCad to this revision's design files: <em>File → Export → STEP</em> (or VRML / glTF). It's shown here and on the revision page.</div>{% endif %}
+  </div>
+  {% endif %}
+</div>
+
+<div class="stack">
+  {% if latest and summary and summary.ok %}
+  <div class="card"><a class="board-thumb" href="{% url 'design:pcb' project.key latest.pk %}"><img src="{% url 'design:pcb_svg' project.key latest.pk %}?view=thumb" alt="{{ b.name }} {{ latest.name }}"></a>
+    <div class="card-body board-facts">{% with i=summary.info %}
+      <div class="kv"><span>Size</span><span>{{ i.width|floatformat:1 }} × {{ i.height|floatformat:1 }} mm</span></div>
+      <div class="kv"><span>Copper layers</span><span>{{ i.copper_layers|default:"—" }}</span></div>{% endwith %}
+    </div></div>
+  {% endif %}
+
+  {% if firmware %}<div class="card"><div class="card-head"><h2>{% icon 'cpu' 18 %} Firmware</h2></div><div class="card-body">
+    {% for fw, rows in firmware %}<p class="small"><a href="{{ fw.get_absolute_url }}"><strong>{{ fw.name }}</strong></a></p>
+      {% for r, rel in rows %}<div class="kv"><span>{{ r.name }}</span><span>{% if rel %}<a href="{{ rel.get_absolute_url }}">{{ rel.version }}</a>{% else %}<span class="faint">none released</span>{% endif %}</span></div>{% endfor %}
+    {% endfor %}</div></div>{% endif %}
+
+  {% if housings is not None %}<div class="card"><div class="card-head"><h2>{% icon 'cube' 18 %} Housed in</h2></div><div class="card-body">
+    {% if housings %}<ul class="list-plain">{% for m in housings %}<li><a href="{{ m.get_absolute_url }}">{{ m.name }}</a><span class="right small muted">{{ m.get_kind_display }}</span></li>{% endfor %}</ul>
+    {% else %}<p class="muted small">No enclosure is linked to this board yet. Link boards from an enclosure's page under <a href="{% url 'projects:hardware' project.key %}">Hardware</a>.</p>{% endif %}
+  </div></div>{% endif %}
+</div>
+</div>
+{% endblock %}

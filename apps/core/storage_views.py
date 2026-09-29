@@ -26,8 +26,11 @@ def _file_totals():
         n += model.objects.count()
         size += agg["s"] or 0
     from django.apps import apps
-    if apps.is_installed("apps.design"):
-        m = apps.get_model("design", "DesignFile")
+    for label in ("design.DesignFile", "mechanical.MechanicalFile"):
+        try:
+            m = apps.get_model(label)
+        except LookupError:
+            continue
         n += m.objects.count()
         size += m.objects.aggregate(s=Sum("size"))["s"] or 0
     return n, size

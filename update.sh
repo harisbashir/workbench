@@ -31,6 +31,9 @@ while [ $# -gt 0 ]; do
 done
 
 [ -d .git ] || die "This folder isn't a git checkout of Workbench."
+# Copies uploaded through the GitHub website or from Windows can lose the scripts'
+# "executable" flag. Don't treat that as a local change, and put the flag back.
+git config core.fileMode false
 DOCKER="docker"
 docker info >/dev/null 2>&1 || DOCKER="sudo docker"
 profile=()
@@ -129,6 +132,7 @@ healthy() {
 
 if healthy; then
   $DOCKER image prune -f >/dev/null 2>&1 || true
+  chmod +x install.sh update.sh 2>/dev/null || true
   log "ok: now $target_version"
   say "Workbench $target_version is running."
   [ -n "$backup" ] && info "The backup from before the update is data/backups/$backup"

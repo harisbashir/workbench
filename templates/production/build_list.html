@@ -8,7 +8,7 @@
 <div class="card">{% if builds %}<div class="table-wrap"><table class="table">
   <thead><tr><th>Build</th><th>Board</th><th class="num">Quantity</th><th>Assembly</th><th>Due</th><th>Stage</th><th class="num">Yield</th></tr></thead>
   <tbody>{% for b in builds %}<tr><td><a href="{{ b.get_absolute_url }}"><strong>{{ b.number }}</strong></a></td>
-    <td>{{ b.revision.project.name }} · {{ b.revision.name }}</td><td class="num">{{ b.quantity }}</td>
+    <td>{{ b.revision.project.name }} · {{ b.revision.title }}</td><td class="num">{{ b.quantity }}</td>
     <td>{% if b.by_fab %}{{ b.manufacturer|default:"Assembly house" }} + in house{% else %}In house{% endif %}</td><td>{{ b.due_date|default:"—" }}</td>
     <td>{% if b.status == 'cancelled' %}{% status_badge b.status b.get_status_display %}{% else %}{% status_badge b.stage b.get_stage_display %}{% endif %}</td>
     <td class="num">{% if b.yield_percent is not None %}{{ b.yield_percent }}%{% else %}—{% endif %}</td></tr>{% endfor %}</tbody></table></div>

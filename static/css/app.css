@@ -568,3 +568,122 @@ details.recall form { margin-top: 8px; display: grid; gap: 8px; justify-items: s
 .badge-at_fab { background: var(--info-soft); color: var(--info); }
 .badge-finishing { background: var(--warning-soft); color: var(--warning); }
 .badge-testing { background: var(--info-soft); color: var(--info); }
+
+/* --- 3D viewer ------------------------------------------------------------ */
+.cad-viewer { display: flex; flex-direction: column; background: var(--surface); border-radius: inherit; }
+.cad-toolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.cad-toolbar .seg { display: inline-flex; }
+.cad-toolbar .seg .btn { border-radius: 0; margin-left: -1px; }
+.cad-toolbar .seg .btn:first-child { border-radius: 6px 0 0 6px; margin-left: 0; }
+.cad-toolbar .seg .btn:last-child { border-radius: 0 6px 6px 0; }
+.cad-toolbar .btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.cad-toolbar .right { margin-left: auto; display: inline-flex; gap: 6px; }
+.cad-section { display: inline-flex; align-items: center; gap: 6px; font-size: .85rem; color: var(--text-2); }
+.cad-section select { padding: 2px 6px; font-size: .85rem; }
+.cad-section input[type=range] { width: 120px; }
+.cad-stage { position: relative; background: #21262d; }
+.cad-large .cad-stage { height: 560px; }
+.cad-small .cad-stage { height: 300px; }
+.cad-stage canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+.cad-stage canvas:active { cursor: grabbing; }
+.cad-stage canvas.measuring { cursor: crosshair; }
+.cad-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 24px; color: #d5dbe3; font-size: .95rem; }
+.cad-overlay.error { color: #f4c9a0; }
+.cad-readout { position: absolute; left: 10px; bottom: 10px; background: rgba(0, 0, 0, .65); color: #ffd33d; padding: 4px 10px; border-radius: 6px; font-family: var(--mono, monospace); font-size: .85rem; }
+.cad-parts { position: absolute; top: 10px; right: 10px; width: 240px; max-height: calc(100% - 20px); overflow: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: .85rem; }
+.cad-parts ul { list-style: none; margin: 6px 0 0; padding: 0; }
+.cad-parts li label { display: flex; align-items: center; gap: 6px; padding: 2px 0; cursor: pointer; }
+.cad-parts li span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cad-swatch { width: 12px; height: 12px; border-radius: 3px; background: var(--swatch, #aaa); flex: none; border: 1px solid rgba(0,0,0,.2); }
+.cad-foot { display: flex; gap: 10px; padding: 7px 12px; border-top: 1px solid var(--border); }
+.cad-foot .right { margin-left: auto; }
+.cad-viewer:fullscreen { background: var(--surface); }
+.cad-viewer:fullscreen .cad-stage { flex: 1; height: auto; }
+.hw-thumb { background: #23272e; height: 150px; display: flex; align-items: center; justify-content: center; border-radius: 10px 10px 0 0; overflow: hidden; }
+.hw-thumb img { max-width: 92%; max-height: 136px; }
+.hw-thumb-icon { color: #7d8794; }
+.hw-card .card-body { padding-top: 12px; }
+@media (max-width: 700px) { .cad-large .cad-stage { height: 380px; } .cad-foot .right { display: none; } }
+.cad-section label { display: inline-flex; align-items: center; gap: 6px; }
+.hw-thumb-light { background: #eaeef3; }
+.row-active td { background: var(--accent-soft, rgba(31, 111, 92, .07)); }
+
+/* --- block diagrams ----------------------------------------------------------------- */
+.badge-concept { background: var(--surface-2); color: var(--text-2); border-color: var(--border); }
+.badge-prototype { background: var(--purple-soft); color: var(--purple); }
+.badge-obsolete { background: var(--surface-2); color: var(--text-3); text-decoration: line-through; }
+details.menu { position: relative; display: inline-block; }
+details.menu > summary { list-style: none; cursor: pointer; }
+details.menu > summary::-webkit-details-marker { display: none; }
+.menu-list { position: absolute; right: 0; top: calc(100% + 4px); z-index: 30; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.12); min-width: 220px; padding: 6px; display: flex; flex-direction: column; }
+.menu-list a, .menu-list button { text-align: left; padding: 7px 10px; border-radius: 6px; color: var(--text); background: none; border: 0; font: inherit; cursor: pointer; }
+.menu-list a:hover, .menu-list button:hover { background: var(--surface-2); text-decoration: none; }
+.stack-sm { display: flex; flex-direction: column; gap: 8px; }
+.stack-sm label { display: flex; flex-direction: column; gap: 4px; }
+.diagram-thumb { background: #fff; height: 170px; display: flex; align-items: center; justify-content: center; border-bottom: 1px solid var(--border); border-radius: 10px 10px 0 0; overflow: hidden; padding: 8px; }
+.diagram-thumb img { max-width: 100%; max-height: 100%; }
+.diagram-canvas { height: 560px; overflow: hidden; background: #fff; border-radius: 10px 10px 0 0; cursor: grab; touch-action: none; }
+.diagram-canvas:active { cursor: grabbing; }
+.diagram-canvas svg { width: 100%; height: 100%; display: block; }
+.diagram-canvas .hl { outline: none; }
+.diagram-comment { padding: 10px 0; border-bottom: 1px solid var(--border); }
+.diagram-comment[data-node-ref] { cursor: pointer; }
+.diagram-comment[data-node-ref]:hover { background: var(--surface-2); }
+.diagram-comment.resolved { opacity: .55; }
+.diagram-comment .comment-text { margin: 6px 0 0 34px; }
+.tag-node { display: inline-flex; align-items: center; gap: 3px; font-size: .75rem; background: #fff4e0; color: #7a4a00; border-radius: 10px; padding: 1px 8px; }
+
+/* --- diagram editor ------------------------------------------------------------------- */
+.dg-editor { display: flex; flex-direction: column; height: calc(100vh - 110px); min-height: 520px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); overflow: hidden; }
+.dg-top { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.dg-title .crumbs { margin: 0; }
+.dg-tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.dg-sep { width: 1px; height: 22px; background: var(--border); margin: 0 4px; }
+.dg-zoom { min-width: 42px; text-align: center; color: var(--text-2); }
+.dg-note { width: 210px; }
+.dg-draft { margin: 8px 12px 0; }
+.dg-body { flex: 1; display: grid; grid-template-columns: 200px 1fr 280px; min-height: 0; }
+.dg-palette { border-right: 1px solid var(--border); overflow-y: auto; padding: 10px; }
+.dg-group-title { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-3); margin: 10px 0 6px; font-weight: 700; }
+.dg-group-title:first-child { margin-top: 0; }
+.dg-shapes { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.dg-shape { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 2px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); cursor: grab; font-size: .72rem; color: var(--text-2); }
+.dg-shape:hover { border-color: var(--accent); color: var(--text); }
+.dg-kinds { display: flex; flex-direction: column; gap: 3px; }
+.dg-kind { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border: 1px solid transparent; border-radius: 6px; background: none; cursor: pointer; font-size: .76rem; color: var(--text-2); text-align: left; }
+.dg-kind:hover { background: var(--surface-2); }
+.dg-kind.active { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
+.dg-kind svg { flex: none; }
+.dg-canvas { position: relative; overflow: hidden; background: #fff; outline: none; }
+.dg-canvas svg { width: 100%; height: 100%; display: block; user-select: none; touch-action: none; }
+.dg-canvas.panning svg { cursor: grab; }
+.dg-hit { fill: transparent; cursor: move; }
+.dg-hit-frame { fill: none; stroke: transparent; stroke-width: 10; cursor: move; pointer-events: stroke; }
+.dg-hit-edge { fill: none; stroke: transparent; stroke-width: 12; cursor: pointer; }
+.dg-sel { fill: none; stroke: #2563eb; pointer-events: none; }
+.dg-handle { fill: #fff; stroke: #2563eb; cursor: nwse-resize; }
+.dg-handle.dg-ne, .dg-handle.dg-sw { cursor: nesw-resize; }
+.dg-edge-sel { fill: none; stroke: rgba(37, 99, 235, .28); stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+.dg-port circle { fill: #fff; stroke: #2563eb; cursor: crosshair; }
+.dg-port path { stroke: #2563eb; pointer-events: none; }
+.dg-port:hover circle { fill: #2563eb; }
+.dg-port:hover path { stroke: #fff; }
+.dg-band { fill: rgba(37, 99, 235, .07); stroke: #2563eb; pointer-events: none; }
+.dg-temp { fill: none; stroke: #2563eb; pointer-events: none; }
+.dg-props { border-left: 1px solid var(--border); overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.dg-props h3 { margin: 0; font-size: .95rem; }
+.dg-field { display: flex; flex-direction: column; gap: 4px; font-size: .8rem; color: var(--text-2); }
+.dg-field textarea, .dg-field input, .dg-field select { font-size: .88rem; }
+.dg-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.dg-swatches { display: flex; flex-wrap: wrap; gap: 5px; }
+.dg-swatch { width: 24px; height: 24px; border-radius: 6px; border: 2px solid var(--stroke); background: var(--fill); cursor: pointer; padding: 0; }
+.dg-swatch.active { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px #2563eb; }
+.dg-align { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+.dg-check { font-size: .85rem; display: flex; gap: 6px; align-items: flex-start; }
+.dg-tips ul { padding-left: 18px; margin: 6px 0 0; color: var(--text-2); }
+.dg-tips li { margin-bottom: 4px; }
+.dg-tips kbd { font-size: .72rem; border: 1px solid var(--border); border-radius: 3px; padding: 0 3px; background: var(--surface-2); }
+@media (max-width: 1100px) { .dg-body { grid-template-columns: 150px 1fr 230px; } .dg-note { width: 140px; } }
+@media (max-width: 800px) { .dg-body { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; } .dg-palette { border-right: 0; border-bottom: 1px solid var(--border); max-height: 150px; } .dg-shapes { grid-template-columns: repeat(6, 1fr); } .dg-props { border-left: 0; border-top: 1px solid var(--border); max-height: 220px; } }
+.diagram-slot { border-style: dashed; display: flex; align-items: center; }
+.diagram-slot p { margin: 6px 0 10px; color: var(--text-2); }

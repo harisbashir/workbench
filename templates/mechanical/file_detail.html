@@ -1,0 +1,33 @@
+{% extends "base.html" %}{% load workbench humanize %}
+{% block title %}{{ f.name }} · {{ part.name }}{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles">
+  <div class="crumbs"><a href="{{ project.get_absolute_url }}">{{ project.name }}</a> / <a href="{% url 'projects:hardware' project.key %}">Hardware</a> / <a href="{{ part.get_absolute_url }}">{{ part.name }}</a> /</div>
+  <h1>{{ f.name }}</h1>
+  <p class="intro"><span class="meta-item">{{ f.get_kind_display }}</span><span class="meta-item">{{ f.format_label }}</span><span class="meta-item">version {{ f.version }}{% if not f.is_current %} (an older version){% endif %}</span><span class="meta-item">{{ f.size|filesizeformat }}</span><span class="meta-item">uploaded {{ f.uploaded_at|naturaltime }}{% if f.uploaded_by %} by {{ f.uploaded_by }}{% endif %}</span></p></div>
+  <div class="actions"><a class="btn btn-primary" href="{% url 'mechanical:download' project.key part.pk f.pk %}">{% icon 'download' 16 %} Download</a></div></div>
+<div class="grid grid-main">
+  <div class="stack">
+    {% if f.mesh_status %}<div class="card">{% include "cad/_viewer.html" with obj=f height="large" %}</div>
+    {% elif f.ext == 'pdf' %}<div class="card preview"><iframe src="{% url 'mechanical:download' project.key part.pk f.pk %}?inline=1" title="{{ f.name }}"></iframe></div>
+    {% elif f.ext == 'png' or f.ext == 'jpg' or f.ext == 'jpeg' %}<div class="card preview"><div class="card-body center"><img src="{% url 'mechanical:download' project.key part.pk f.pk %}?inline=1" alt="{{ f.name }}"></div></div>
+    {% else %}<div class="card"><div class="empty"><h3>No preview for this type of file</h3><p>Download it to open it in your CAD program.</p></div></div>{% endif %}
+    {% if f.note %}<div class="card"><div class="card-body">{{ f.note }}</div></div>{% endif %}
+  </div>
+  <div class="stack">
+    <div class="card"><div class="card-head"><h3>Versions</h3></div><div class="card-body">
+      {% for v in versions %}<div class="kv"><span>{% if v.pk == f.pk %}<strong>v{{ v.version }}</strong>{% else %}<a href="{{ v.get_absolute_url }}">v{{ v.version }}</a>{% endif %}
+        <span class="small faint">{{ v.uploaded_at|naturaltime }}{% if v.uploaded_by %} · {{ v.uploaded_by }}{% endif %}</span></span>
+        <a class="small" href="{% url 'mechanical:download' project.key part.pk v.pk %}">Download</a></div>{% endfor %}
+      <p class="small faint mono">SHA-256 {{ f.sha256|truncatechars:20 }}</p>
+    </div></div>
+    {% if can_edit %}<div class="card"><div class="card-head"><h3>Manage</h3></div><div class="card-body">
+      <form method="post" action="{% url 'mechanical:file_action' project.key part.pk f.pk %}" class="btn-row">{% csrf_token %}<input type="hidden" name="action" value="kind">
+        <select name="kind" aria-label="File type">{% for v, l in kinds %}<option value="{{ v }}" {% if v == f.kind %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+        <button class="btn btn-sm">Change type</button></form><p></p>
+      <form method="post" action="{% url 'mechanical:file_action' project.key part.pk f.pk %}" data-confirm="Delete {{ f.name }} and all its versions?">{% csrf_token %}
+        <button class="btn btn-sm btn-danger" name="action" value="delete">{% icon 'trash' 14 %} Delete this file</button></form>
+    </div></div>{% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -2,7 +2,7 @@ from django import forms
 
 from apps.accounts.models import User
 
-from .models import Project, Revision, Task, TaskComment
+from .models import Board, Project, Revision, Task, TaskComment, default_board
 
 
 class DateInput(forms.DateInput):
@@ -32,11 +32,54 @@ class ProjectForm(forms.ModelForm):
         return self.cleaned_data["key"].upper()
 
 
+class BoardForm(forms.ModelForm):
+    class Meta:
+        model = Board
+        fields = ["name", "kind", "code", "description"]
+        widgets = {"description": forms.Textarea(attrs={"rows": 3})}
+        labels = {"kind": "Type", "code": "Code / PCB part number"}
+
+    def __init__(self, *args, project=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.project = project
+
+    def clean_name(self):
+        name = self.cleaned_data["name"].strip()
+        qs = Board.objects.filter(project=self.project, name__iexact=name)
+        if self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise forms.ValidationError("This product already has a board with that name.")
+        return name
+
+
 class RevisionForm(forms.ModelForm):
     class Meta:
         model = Revision
-        fields = ["name", "status", "target_date", "git_ref", "notes"]
+        fields = ["board", "name", "status", "target_date", "git_ref", "notes"]
         widgets = {"target_date": DateInput(), "notes": forms.Textarea(attrs={"rows": 3})}
+
+    def __init__(self, *args, project=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.project = project
+        self.fields["board"].queryset = Board.objects.filter(project=project)
+        self.fields["board"].empty_label = None
+        self.fields["board"].required = False  # defaults to the product's first board
+        self.fields["board"].help_text = "Which PCB of the product this is a revision of."
+
+    def clean(self):
+        data = super().clean()
+        if not data.get("board") and self.project is not None:
+            data["board"] = self.instance.board if self.instance.board_id else default_board(self.project)
+            self.instance.board = data["board"]
+        board, name = data.get("board"), data.get("name")
+        if board and name:
+            qs = Revision.objects.filter(board=board, name__iexact=name.strip())
+            if self.instance.pk:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                self.add_error("name", f"{board.name} already has a revision called {name}.")
+        return data
 
 
 class TaskForm(forms.ModelForm):

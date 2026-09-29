@@ -115,4 +115,5 @@ class DesignFileTests(TestCase):
         self.upload(self.c, up("pwr-board-pos.csv", demo_board.pos_csv()))
         path, _counts = export.build_export(include_versions=True)
         with zipfile.ZipFile(path) as z:
-            self.assertTrue(any(n.endswith("Revisions/Rev B/Design files/Pick and place (CPL)/pwr-board-pos.csv") for n in z.namelist()))
+            names = z.namelist()
+            self.assertTrue(any(n.endswith("Hardware/Main board/Rev B/Design files/Pick and place (CPL)/pwr-board-pos.csv") for n in names), names)

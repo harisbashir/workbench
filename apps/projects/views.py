@@ -14,8 +14,8 @@ from apps.accounts.models import User
 from apps.chat.models import Channel, post_system_message
 from apps.core.utils import audit, manager_required, notify
 
-from .forms import CommentForm, ProjectForm, RevisionForm, TaskForm
-from .models import Project, Revision, RevisionCheck, Task, log_activity
+from .forms import BoardForm, CommentForm, ProjectForm, RevisionForm, TaskForm
+from .models import Board, Project, Revision, RevisionCheck, Task, default_board, log_activity
 
 MENTION_RE = re.compile(r"@([\w.@+-]+)")
 
@@ -65,6 +65,7 @@ def project_edit(request, key=None):
                 topic=f"Discussion for {project.name}. GitHub and task updates are posted here automatically.",
             )
             log_activity(project, "created the project", actor=request.user)
+            default_board(project)
             for m in project.members.exclude(pk=request.user.pk):
                 notify(m, f"You were added to project {project.key} · {project.name}", project.get_absolute_url())
             messages.success(request, f"Project {project.key} created. Next: add a revision (e.g. Rev A), then create tasks.")
@@ -83,11 +84,12 @@ def project_detail(request, key):
         counts[row["status"]] = row["n"]
     total = sum(counts.values())
     progress = round(100 * counts["done"] / total) if total else 0
-    revisions = project.revisions.annotate(task_count=Count("tasks", distinct=True), bom_count=Count("bom_lines", distinct=True))
+    revisions = project.revisions.select_related("board").annotate(task_count=Count("tasks", distinct=True), bom_count=Count("bom_lines", distinct=True))
     return render(request, "projects/project_detail.html", {
         "project": project,
         "counts": counts, "total": total, "progress": progress, "progress_step": progress // 5 * 5,
         "revisions": revisions,
+        "multi_board": project.boards.count() > 1,
         "activity": project.activities.select_related("actor", "task")[:25],
         "pulls": project.pull_requests.exclude(state="closed")[:10],
         "members": project.members.all(),
@@ -148,7 +150,11 @@ def revision_edit(request, key, pk=None):
     project = _project_for(request, key, edit=True)
     revision = get_object_or_404(Revision, pk=pk, project=project) if pk else None
     old_status = revision.status if revision else None  # read before the form updates the instance
-    form = RevisionForm(request.POST or None, instance=revision)
+    default_board(project)
+    initial = {}
+    if not revision and request.GET.get("board"):
+        initial["board"] = project.boards.filter(pk=request.GET["board"]).first()
+    form = RevisionForm(request.POST or None, instance=revision, project=project, initial=initial)
     if request.method == "POST" and form.is_valid():
         creating = revision is None
         rev = form.save(commit=False)
@@ -160,14 +166,106 @@ def revision_edit(request, key, pk=None):
         rev.save()
         if creating:
             rev.add_default_checks()
-            log_activity(project, f"added revision {rev.name}", actor=request.user)
-            messages.success(request, f"{rev.name} added with a standard release checklist. Next: import its BOM from KiCad.")
+            log_activity(project, f"added revision {rev.title}", actor=request.user)
+            messages.success(request, f"{rev.title} added with a standard release checklist. Next: upload its design files and import its BOM from KiCad.")
         elif old_status != rev.status:
-            log_activity(project, f"changed {rev.name} to “{rev.get_status_display()}”", actor=request.user)
-            post_system_message(project, f"{request.user.display_name} marked {rev.name} as {rev.get_status_display()}.")
+            log_activity(project, f"changed {rev.title} to “{rev.get_status_display()}”", actor=request.user)
+            post_system_message(project, f"{request.user.display_name} marked {rev.title} as {rev.get_status_display()}.")
         audit(request, "revision.saved", rev, status=rev.status)
         return redirect(rev)
     return render(request, "projects/revision_form.html", {"form": form, "project": project, "revision": revision})
+
+
+# --- Hardware: boards ------------------------------------------------------------
+
+def _board_cards(project):
+    from apps.design.views import board_summary
+    cards = []
+    for b in project.boards.all():
+        revs = list(b.revisions.all())
+        latest = revs[0] if revs else None
+        summary = board_summary(latest) if latest else None
+        model = None
+        if latest:
+            model = latest.design_files.filter(is_current=True, category="model").exclude(thumb="").order_by("-uploaded_at").first()
+        cards.append({"board": b, "revisions": revs, "latest": latest, "model": model,
+                      "has_gerbers": bool(summary and summary.get("ok"))})
+    return cards
+
+
+@login_required
+def hardware(request, key):
+    """Everything physical about the product: its boards, mechanical parts and system diagrams."""
+    project = _project_for(request, key)
+    if not project.boards.exists() and project.can_edit(request.user):
+        default_board(project)
+    ctx = {"project": project, "cards": _board_cards(project), "can_edit": project.can_edit(request.user)}
+    from django.apps import apps
+    if apps.is_installed("apps.mechanical"):
+        from apps.mechanical.views import parts_with_stats
+        ctx["mech_parts"] = parts_with_stats(project)
+    if apps.is_installed("apps.diagrams"):
+        ctx["system_diagrams"] = project.diagrams.filter(board__isnull=True)
+    return render(request, "projects/hardware.html", ctx)
+
+
+@login_required
+def board_edit(request, key, pk=None):
+    project = _project_for(request, key, edit=True)
+    board_obj = get_object_or_404(Board, pk=pk, project=project) if pk else None
+    form = BoardForm(request.POST or None, instance=board_obj, project=project)
+    if request.method == "POST":
+        if request.POST.get("action") == "delete" and board_obj:
+            if board_obj.revisions.exists():
+                messages.error(request, "Only a board without revisions can be deleted.")
+                return redirect(board_obj)
+            board_obj.delete()
+            log_activity(project, f"removed board {board_obj.name}", actor=request.user)
+            messages.success(request, f"{board_obj.name} deleted.")
+            return redirect("projects:hardware", project.key)
+        if form.is_valid():
+            b = form.save(commit=False)
+            b.project = project
+            if not board_obj:
+                last = project.boards.order_by("-order").first()
+                b.order = (last.order + 1) if last else 0
+            b.save()
+            audit(request, "board.saved", b)
+            if not board_obj:
+                log_activity(project, f"added board {b.name}", actor=request.user, url=b.get_absolute_url())
+                messages.success(request, f"{b.name} added. Next: add its first revision (e.g. Rev A).")
+            else:
+                messages.success(request, "Board saved.")
+            return redirect(b)
+    return render(request, "projects/board_form.html", {"form": form, "project": project, "board_obj": board_obj})
+
+
+@login_required
+def board_detail(request, key, pk):
+    from apps.design.views import board_summary
+    project = _project_for(request, key)
+    b = get_object_or_404(Board, pk=pk, project=project)
+    revs = list(b.revisions.annotate(task_count=Count("tasks", distinct=True), bom_count=Count("bom_lines", distinct=True),
+                                     file_count=Count("design_files", filter=Q(design_files__is_current=True), distinct=True),
+                                     build_count=Count("builds", distinct=True)))
+    latest = revs[0] if revs else None
+    ctx = {"project": project, "b": b, "revisions": revs, "latest": latest,
+           "summary": board_summary(latest) if latest else None,
+           "can_edit": project.can_edit(request.user),
+           "firmware": [(fw, [(r, fw.recommended_for(r)) for r in revs]) for fw in project.firmwares.all()]}
+    from django.apps import apps
+    if apps.is_installed("apps.diagrams"):
+        ds = list(b.diagrams.select_related("updated_by", "project"))
+        ctx["diagrams"] = ds
+        ctx["slots"] = [(lvl, label, next((d for d in ds if d.level == lvl), None))
+                        for lvl, label in (("high", "High-level"), ("detailed", "Detailed (low-level)"))]
+        ctx["other_diagrams"] = [d for d in ds if d not in [x[2] for x in ctx["slots"]]]
+    if apps.is_installed("apps.mechanical"):
+        ctx["housings"] = b.housings.all()
+    if latest and apps.is_installed("apps.design"):
+        from apps.design.models import Category
+        ctx["model_file"] = latest.design_files.filter(is_current=True, category=Category.MODEL).order_by("-uploaded_at").first()
+    return render(request, "projects/board_detail.html", ctx)
 
 
 # --- Tasks -------------------------------------------------------------------
@@ -368,6 +466,7 @@ def revision_detail(request, key, pk):
                      for fw in project.firmwares.all()],
         "board": board_summary(rev),
         "design_files": rev.design_files.filter(is_current=True).order_by("category", "name"),
+        "model_file": rev.design_files.filter(is_current=True, category="model").exclude(mesh_status="").order_by("-uploaded_at").first(),
     })
 
 
@@ -391,12 +490,12 @@ def revision_check(request, key, pk):
         elif item.done_at:
             item.done_at, item.done_by = None, None
             item.save()
-            log_activity(project, f"un-ticked “{item.text}” on {rev.name}", actor=request.user, url=rev.get_absolute_url())
+            log_activity(project, f"un-ticked “{item.text}” on {rev.title}", actor=request.user, url=rev.get_absolute_url())
         else:
             item.done_at, item.done_by = timezone.now(), request.user
             item.note = (request.POST.get("note") or "")[:200]
             item.save()
-            log_activity(project, f"signed off “{item.text}” on {rev.name}", actor=request.user, url=rev.get_absolute_url())
+            log_activity(project, f"signed off “{item.text}” on {rev.title}", actor=request.user, url=rev.get_absolute_url())
             if rev.checklist_done and project.lead:
                 notify(project.lead, f"{rev} checklist is complete — ready to release", rev.get_absolute_url())
     return redirect(f"{rev.get_absolute_url()}#checklist")

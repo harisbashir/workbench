@@ -1,0 +1,61 @@
+{% extends "core/help/_layout.html" %}
+{% block help_title %}Boards, 3D models &amp; block diagrams{% endblock %}
+{% block help %}
+<h1>Boards, 3D models &amp; block diagrams</h1>
+<p>Each project's <strong>Hardware</strong> tab holds everything physical about the product: its boards, its enclosure and other mechanical parts, and block diagrams at three levels.</p>
+
+<h2>Boards</h2>
+<p>A product often has several PCBs — for example a <em>power board</em>, a <em>control board</em> and a <em>front panel</em> or I/O board. Add each one under <em>Hardware → Add board</em>. Every board has its own revisions (Rev A, Rev B…), and every revision its own BOM, design files, 3D model, release checklist and builds. A product with a single PCB just has one board.</p>
+<p>Board revisions appear everywhere with the board's name — "PWR Control board Rev A" — so tasks, builds and firmware compatibility always point at the right PCB.</p>
+
+<h2>3D models of boards</h2>
+<p>Export the board's 3D model from KiCad and upload it to the revision's <em>Design files</em>:</p>
+<ul>
+  <li><strong>STEP</strong> — <em>File → Export → STEP</em> (best: real component models and colours).</li>
+  <li><strong>VRML</strong> (.wrl) — <em>File → Export → VRML</em>.</li>
+  <li><strong>glTF</strong> (.glb) — <em>File → Export → glTF</em> (KiCad 8 and later).</li>
+</ul>
+<p>It's shown on the revision and board pages. In CI, <code>kicad-cli pcb export step</code> (or KiBot) can produce it automatically.</p>
+
+<h2>Enclosures and mechanical parts</h2>
+<p>Under <em>Hardware → Add part</em>, add the enclosure, lids, brackets, bezels, light pipes and so on. Each part has a revision letter, a status (<em>Concept → Prototype → Released → Obsolete</em>), a manufacturing process, material and finish, and the boards it holds.</p>
+<p>Upload its files: the CAD source (SolidWorks, Fusion 360, Inventor…), a STEP or 3MF export, print files and drawings. Every upload of the same name becomes a new version. Released parts are locked; the project lead can reopen them.</p>
+
+<h2>The 3D viewer</h2>
+<p><strong>Viewable formats:</strong> STEP / STP, IGES, STL, 3MF, OBJ, glTF / GLB and VRML. Native files from SolidWorks (.sldprt, .sldasm), Fusion 360 (.f3d), Inventor, CATIA, Creo and others are stored and versioned but open only in their own program — upload a STEP or 3MF export next to them to view them here.</p>
+<ul>
+  <li><strong>Drag</strong> to rotate, <strong>right-drag</strong> (or Shift+drag) to move, <strong>scroll</strong> to zoom, <strong>double-click</strong> to centre on a point. On a phone: one finger rotates, two fingers zoom.</li>
+  <li><strong>3D / Top / Front / Side / Bottom</strong> views, <strong>Fit</strong>, and <strong>Ortho</strong> for a view without perspective.</li>
+  <li><strong>Section</strong> cuts through the model along X, Y or Z — use it to check how boards sit in the enclosure.</li>
+  <li><strong>Measure</strong>: click two points to get the distance and ΔX / ΔY / ΔZ in millimetres.</li>
+  <li><strong>Parts</strong> lists the parts of an assembly; untick one to hide it.</li>
+  <li><strong>PNG</strong> saves a picture of the current view.</li>
+</ul>
+<p>Large STEP files are prepared in the background and can take a minute the first time; after that they open instantly.</p>
+
+<h2>Block diagrams</h2>
+<p>Hardware teams usually keep three levels of block diagram:</p>
+<ul>
+  <li><strong>System</strong> (on the Hardware tab): the whole product — its boards and external parts, and the power, buses and cables between them.</li>
+  <li><strong>High-level</strong> (per board): the main functional blocks — power path, processor, memory, sensors, interfaces.</li>
+  <li><strong>Detailed</strong> (per board): real ICs with part numbers, power rails with voltages and currents, buses with addresses and pins.</li>
+</ul>
+<p>New diagrams can start from a starter layout, a copy of another diagram (e.g. the high-level one when you start the detailed one), or an empty page.</p>
+
+<h3>Drawing</h3>
+<ul>
+  <li>Drag a shape from the left (block, IC/MCU, power, connector, sensor, memory, battery, external, decision, board), or double-click the canvas.</li>
+  <li>Hover a block and drag one of its <strong>+</strong> handles onto another block to connect them; drop on empty space to make a new block already connected.</li>
+  <li>Choose the <strong>connection type</strong> first: signal, power, ground, digital bus, high-speed/differential, analog, RF or cable. Each has its own colour and line style, and exports include a legend.</li>
+  <li>The panel on the right edits the selected item: name, detail (part number, rating), shape, colour, size, notes; for connections the label (e.g. "I²C 0x48" or "3V3, 500 mA"), type, arrows, route and sides.</li>
+  <li>Select several with Shift-click or by dragging a box, then align or space them evenly. <em>Group frames</em> carry the blocks inside them when moved.</li>
+  <li>Keys: <kbd>Delete</kbd>, <kbd>Ctrl</kbd>+<kbd>Z</kbd>/<kbd>Y</kbd> undo/redo, <kbd>Ctrl</kbd>+<kbd>C</kbd>/<kbd>V</kbd>/<kbd>D</kbd>, arrow keys to nudge, <kbd>Alt</kbd> while dragging turns off grid snapping, <kbd>Ctrl</kbd>+<kbd>S</kbd> saves.</li>
+</ul>
+<p>Unsaved work is kept in your browser, so a closed tab doesn't lose it: you'll be offered to restore it next time.</p>
+
+<h3>Versions, review and approval</h3>
+<p><em>Save version</em> stores a numbered version (with an optional note). On the diagram's page, <em>Submit for review</em> notifies the project lead. Reviewers comment on the whole diagram or on one block (clicking the comment highlights the block). The lead <em>approves</em> the version or asks for changes. Saving a new version of an approved diagram starts a new draft; the approved version stays on record.</p>
+
+<h3>Exports</h3>
+<p><strong>PDF</strong> (A4 or A3, vector, with a title block: product, board, level, version, status, approver, author and date), <strong>SVG</strong>, <strong>PNG</strong> and <strong>JSON</strong>. Every version can be downloaded, and <em>Download everything</em> includes the newest and approved version of every diagram.</p>
+{% endblock %}

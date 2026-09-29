@@ -248,7 +248,7 @@ class ExportTests(TransactionTestCase):
             notes = z.read(f"{root}/Projects/PWR - Power board/Firmware/Main app/1.2.0 (Released)/RELEASE NOTES.md").decode()
             self.assertIn("Rev B", notes)
             self.assertIn("Notes here", notes)
-            self.assertTrue(has("Projects/PWR - Power board/Revisions/Rev B/BOM.csv"))
+            self.assertTrue(has("Projects/PWR - Power board/Hardware/Main board/Rev B/BOM.csv"), names)
             self.assertTrue(has("Parts/Parts.csv") and has("People.csv") and has("README.txt"))
             self.assertEqual(z.read(f"{root}/Projects/PWR - Power board/Files/Test reports/thermal.csv"), b"v2")
         r = c.post(reverse("core:system_action"), {"action": "download_export", "name": job.file_name})

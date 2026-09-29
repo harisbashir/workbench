@@ -22,7 +22,7 @@
 <div class="section-title"><h2>Which firmware goes on which board</h2></div>
 <div class="card">{% if matrix %}<div class="table-wrap"><table class="table">
   <thead><tr><th>Board revision</th>{% for fw in firmwares %}<th>{{ fw.name }}</th>{% endfor %}</tr></thead>
-  <tbody>{% for row in matrix %}<tr><td><a href="{{ row.rev.get_absolute_url }}"><strong>{{ row.rev.name }}</strong></a> {% status_badge row.rev.status row.rev.get_status_display %}</td>
+  <tbody>{% for row in matrix %}<tr><td><a href="{{ row.rev.get_absolute_url }}"><strong>{{ row.rev.title }}</strong></a> {% status_badge row.rev.status row.rev.get_status_display %}</td>
     {% for rel in row.cells %}<td>{% if rel %}<a href="{{ rel.get_absolute_url }}"><strong>{{ rel.version }}</strong></a>{% else %}<span class="faint small">no released version</span>{% endif %}</td>{% endfor %}</tr>{% endfor %}</tbody>
 </table></div>
 <div class="card-foot small muted">Shows the newest <em>released</em> version marked compatible with each revision — that's the one to flash.</div>

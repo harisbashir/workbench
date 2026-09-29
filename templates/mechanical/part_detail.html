@@ -1,0 +1,72 @@
+{% extends "base.html" %}{% load workbench humanize %}
+{% block title %}{{ part.name }} · {{ project.name }}{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles">
+  <div class="crumbs"><a href="{% url 'projects:list' %}">Projects</a> / <a href="{{ project.get_absolute_url }}">{{ project.name }}</a> / <a href="{% url 'projects:hardware' project.key %}">Hardware</a> /</div>
+  <h1>{{ part.name }} <span class="key">rev {{ part.revision }}</span> {% status_badge part.status part.get_status_display %}</h1>
+  <p class="intro">{{ part.get_kind_display }}{% if part.part_number %} · <span class="mono">{{ part.part_number }}</span>{% endif %}{% if part.notes %} · {{ part.notes|linebreaksbr }}{% endif %}</p></div>
+  <div class="actions">
+    {% if files %}<a class="btn" href="{% url 'mechanical:download_all' project.key part.pk %}">{% icon 'download' 16 %} Download all</a>{% endif %}
+    {% if can_edit %}<a class="btn" href="{% url 'mechanical:edit' project.key part.pk %}">{% icon 'edit' 16 %} Edit</a>{% endif %}
+  </div></div>
+
+{% if locked %}<div class="alert alert-info">{% icon 'lock' 16 %}<span>Rev {{ part.revision }} is released for production, so its files are locked{% if can_edit %} (you can still change them as the project lead){% endif %}.</span></div>{% endif %}
+
+<div class="grid grid-main">
+<div class="stack">
+  {% if preview %}<div class="card"><div class="card-head"><h2>{% icon 'cube' 18 %} {{ preview.name }}</h2><span class="small muted">v{{ preview.version }}</span></div>
+    {% include "cad/_viewer.html" with obj=preview height="large" %}</div>
+  {% elif files %}<div class="card"><div class="empty">{% icon 'cube' 40 %}<h3>No 3D preview</h3><p>None of the files can be drawn here. Export a <strong>STEP</strong>, <strong>3MF</strong> or <strong>STL</strong> from your CAD program and upload it next to the source file to see it in 3D.</p></div></div>{% endif %}
+
+  {% if can_edit %}
+  <div class="dropzone" data-dropzone data-upload-url="{% url 'mechanical:upload' project.key part.pk %}">
+    <form method="post" enctype="multipart/form-data" action="{% url 'mechanical:upload' project.key part.pk %}" class="btn-row">{% csrf_token %}
+      {% icon 'upload' 22 %}<span><strong>Drag CAD files here</strong> or <label class="link-btn">choose files<input class="hidden" type="file" name="files" multiple data-autoupload></label>.
+      STEP, STL, 3MF, OBJ, glTF, SolidWorks, Fusion 360, drawings (PDF/DXF)… Uploading a file with the same name adds a new version.</span>
+    </form>
+    <div class="upload-progress hidden"><div class="progress"><span class="w-0" data-bar></span></div><span class="small" data-status></span></div>
+  </div>
+  {% endif %}
+
+  {% for label, fs in groups %}
+  <div class="card"><div class="card-head"><h3>{{ label }}</h3></div>
+    <div class="table-wrap"><table class="table">
+      <tbody>{% for f in fs %}<tr{% if preview and f.pk == preview.pk %} class="row-active"{% endif %}>
+        <td><a href="{{ f.get_absolute_url }}"><strong>{{ f.name }}</strong></a>{% if f.note %}<div class="small muted">{{ f.note }}</div>{% endif %}</td>
+        <td class="small">{{ f.format_label }}</td>
+        <td class="small nowrap">v{{ f.version }}{% if f.version_count > 1 %} <span class="faint">({{ f.version_count }} versions)</span>{% endif %}</td>
+        <td class="num small">{{ f.size|filesizeformat }}</td>
+        <td class="small muted nowrap">{{ f.uploaded_at|naturaltime }}</td>
+        <td class="right nowrap">{% if f.mesh_status == 'ready' %}<a class="btn btn-sm" href="?file={{ f.pk }}">{% icon 'eye' 14 %} View</a>{% elif f.mesh_status == 'pending' or f.mesh_status == 'converting' %}<span class="small muted">preparing…</span>{% endif %}
+          <a class="btn btn-sm btn-ghost" href="{% url 'mechanical:download' project.key part.pk f.pk %}" aria-label="Download {{ f.name }}">{% icon 'download' 14 %}</a></td>
+      </tr>{% endfor %}</tbody></table></div></div>
+  {% empty %}
+  <div class="card"><div class="empty">{% icon 'cube' 40 %}<h3>No files yet</h3><p>Upload the CAD source (SolidWorks, Fusion 360…), a STEP or 3MF export for viewing and manufacturing, and drawings.</p></div></div>
+  {% endfor %}
+</div>
+
+<div class="stack">
+  <div class="card"><div class="card-head"><h3>Details</h3></div><div class="card-body">
+    <div class="kv"><span>Type</span><span>{{ part.get_kind_display }}</span></div>
+    <div class="kv"><span>Revision</span><span>{{ part.revision }}</span></div>
+    <div class="kv"><span>Status</span><span>{% status_badge part.status part.get_status_display %}</span></div>
+    {% if part.part_number %}<div class="kv"><span>Part number</span><span class="mono">{{ part.part_number }}</span></div>{% endif %}
+    <div class="kv"><span>Process</span><span>{{ part.get_process_display|default:"—" }}</span></div>
+    <div class="kv"><span>Material</span><span>{{ part.material|default:"—" }}</span></div>
+    <div class="kv"><span>Colour / finish</span><span>{{ part.finish|default:"—" }}</span></div>
+    <div class="kv"><span>Per product</span><span>{{ part.quantity }}</span></div>
+    {% if part.supplier %}<div class="kv"><span>Made by</span><span>{{ part.supplier }}</span></div>{% endif %}
+    {% if preview.mesh_info.size %}<div class="kv"><span>Size</span><span>{{ preview.mesh_info.size.0 }} × {{ preview.mesh_info.size.1 }} × {{ preview.mesh_info.size.2 }} mm</span></div>{% endif %}
+    <div class="kv"><span>Updated</span><span>{{ part.updated_at|naturaltime }}</span></div>
+  </div></div>
+  <div class="card"><div class="card-head"><h3>{% icon 'pcb' 16 %} Boards it holds</h3></div><div class="card-body">
+    {% if boards %}<ul class="list-plain">{% for b in boards %}<li><a href="{{ b.get_absolute_url }}">{{ b.name }}</a>{% with r=b.latest_revision %}{% if r %}<span class="right small muted">{{ r.name }}</span>{% endif %}{% endwith %}</li>{% endfor %}</ul>
+    {% else %}<p class="muted small">Not linked to a board yet.{% if can_edit %} <a href="{% url 'mechanical:edit' project.key part.pk %}">Choose boards</a>.{% endif %}</p>{% endif %}
+  </div></div>
+  <div class="card"><div class="card-body small muted">
+    <p><strong>Viewing in 3D:</strong> STEP, IGES, STL, 3MF, OBJ, glTF and VRML files open in the viewer. SolidWorks, Fusion 360, Inventor and other native files are stored and versioned; export a STEP or 3MF next to them to view.</p>
+    <p>Use <em>Section</em> to cut through the model and check how the boards fit, and <em>Measure</em> for clearances.</p>
+  </div></div>
+</div>
+</div>
+{% endblock %}

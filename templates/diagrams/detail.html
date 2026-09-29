@@ -1,0 +1,74 @@
+{% extends "base.html" %}{% load static workbench humanize %}
+{% block title %}{{ d.name }}{% endblock %}
+{% block extra_head %}<script src="{% static 'js/diagram_view.js' %}" defer></script>{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles">
+  <div class="crumbs"><a href="{% url 'projects:list' %}">Projects</a> / <a href="{{ project.get_absolute_url }}">{{ project.name }}</a> / <a href="{% url 'projects:hardware' project.key %}">Hardware</a> /{% if d.board %} <a href="{{ d.board.get_absolute_url }}">{{ d.board.name }}</a> /{% endif %}</div>
+  <h1>{{ d.name }} {% status_badge d.status d.get_status_display %}</h1>
+  <p class="intro"><span class="meta-item">{{ d.get_level_display }}</span><span class="meta-item">{% if d.board %}{{ d.board.name }}{% else %}Whole product{% endif %}</span>
+    <span class="meta-item">v{{ v.number }}{% if not is_current %} (an older version — <a href="{{ d.get_absolute_url }}">see the newest</a>){% endif %}</span>
+    {% if d.approved_version %}<span class="meta-item">v{{ d.approved_version }} approved by {{ d.approved_by|default:"—" }} {{ d.approved_at|naturalday }}</span>{% endif %}</p></div>
+  <div class="actions">
+    {% if can_edit %}<a class="btn btn-primary" href="{% url 'diagrams:edit' project.key d.pk %}">{% icon 'edit' 16 %} Edit</a>{% endif %}
+    <details class="menu"><summary class="btn">{% icon 'download' 16 %} Download</summary><div class="menu-list">
+      <a href="{% url 'diagrams:export' project.key d.pk v.number 'pdf' %}">PDF (A4, with title block)</a>
+      <a href="{% url 'diagrams:export' project.key d.pk v.number 'pdf' %}?page=A3">PDF (A3)</a>
+      <a href="{% url 'diagrams:export' project.key d.pk v.number 'svg' %}?download=1">SVG (vector image)</a>
+      <button type="button" data-png="{% url 'diagrams:export' project.key d.pk v.number 'svg' %}" data-name="{{ d.name|slugify }}-v{{ v.number }}.png">PNG (image)</button>
+      <a href="{% url 'diagrams:export' project.key d.pk v.number 'json' %}">JSON (data)</a>
+    </div></details>
+  </div></div>
+
+{% if d.description %}<p class="intro">{{ d.description|linebreaksbr }}</p>{% endif %}
+
+<div class="grid grid-main">
+<div class="stack">
+  <div class="card diagram-view"><div class="diagram-canvas" data-diagram-view>{{ svg|safe }}</div>
+    <div class="card-foot small muted">Click a comment to highlight its block. Scroll to zoom, drag to move.</div></div>
+
+  <div class="card" id="comments"><div class="card-head"><h2>Review comments</h2>{% if open_comments %}<span class="badge badge-review">{{ open_comments }} open</span>{% endif %}</div>
+    <div class="card-body">
+    {% for c in comments %}<div class="diagram-comment{% if c.resolved %} resolved{% endif %}" {% if c.node_id %}data-node-ref="{{ c.node_id }}"{% endif %}>
+      <div class="btn-row"><span class="avatar sm">{{ c.author.initials|default:"?" }}</span><strong>{{ c.author|default:"—" }}</strong>
+        <span class="small faint">on v{{ c.version }} · {{ c.created_at|naturaltime }}</span>
+        {% if c.node_label %}<span class="tag-node">{% icon 'tag' 12 %} {{ c.node_label }}</span>{% endif %}
+        {% if can_edit %}<form method="post" action="{% url 'diagrams:comment' project.key d.pk %}" class="right">{% csrf_token %}<button class="btn btn-sm btn-ghost" name="resolve" value="{{ c.pk }}">{% if c.resolved %}Reopen{% else %}Resolve{% endif %}</button></form>{% endif %}</div>
+      <div class="comment-text">{{ c.text|linebreaksbr }}</div></div>
+    {% empty %}<p class="muted small">No comments yet. Reviewers can comment on the whole diagram or on one block.</p>{% endfor %}
+    <form method="post" action="{% url 'diagrams:comment' project.key d.pk %}" class="stack-sm">{% csrf_token %}
+      <textarea name="text" rows="3" placeholder="Add a review comment…" aria-label="Comment" required></textarea>
+      <div class="btn-row"><select name="node" aria-label="About which block"><option value="">About the whole diagram</option>{% for nid, label in node_choices %}<option value="{{ nid }}">About: {{ label }}</option>{% endfor %}</select>
+        <button class="btn btn-primary btn-sm">Comment</button></div>
+    </form></div></div>
+</div>
+
+<div class="stack">
+  <div class="card"><div class="card-head"><h3>Review</h3></div><div class="card-body">
+    {% if d.status == 'draft' %}<p class="small">This diagram is a <strong>draft</strong>. When it's ready, ask for a review; the project lead approves it.</p>
+      {% if can_edit %}<form method="post" action="{% url 'diagrams:status' project.key d.pk %}">{% csrf_token %}<button class="btn btn-primary" name="action" value="submit">Submit v{{ d.current_version }} for review</button></form>{% endif %}
+    {% elif d.status == 'review' %}<p class="small"><strong>v{{ d.current_version }}</strong> is waiting for review.</p>
+      {% if can_approve %}<form method="post" action="{% url 'diagrams:status' project.key d.pk %}" class="stack-sm">{% csrf_token %}
+        <textarea name="note" rows="2" placeholder="Note (required when asking for changes)" aria-label="Review note"></textarea>
+        <div class="btn-row"><button class="btn btn-primary" name="action" value="approve">{% icon 'check' 14 %} Approve v{{ d.current_version }}</button><button class="btn" name="action" value="changes">Ask for changes</button></div></form>
+      {% else %}<p class="small muted">The project lead or an administrator approves it.</p>{% endif %}
+    {% else %}<p class="small">{% icon 'check' 14 %} <strong>v{{ d.approved_version }}</strong> was approved by {{ d.approved_by|default:"—" }} on {{ d.approved_at|date:"M j, Y" }}. Saving a new version starts a new draft; this approval stays on record.</p>
+      {% if can_approve %}<form method="post" action="{% url 'diagrams:status' project.key d.pk %}">{% csrf_token %}<button class="btn btn-sm" name="action" value="reopen">Reopen as draft</button></form>{% endif %}{% endif %}
+  </div></div>
+
+  <div class="card"><div class="card-head"><h3>Versions</h3></div><div class="card-body">
+    {% for x in versions %}<div class="kv"><span>{% if x.number == v.number %}<strong>v{{ x.number }}</strong>{% else %}<a href="?v={{ x.number }}">v{{ x.number }}</a>{% endif %}
+      {% if x.number == d.approved_version %}<span class="badge badge-approved">approved</span>{% endif %}
+      <span class="small faint">{{ x.created_at|naturaltime }}{% if x.created_by %} · {{ x.created_by }}{% endif %}</span>{% if x.note %}<br><span class="small">{{ x.note }}</span>{% endif %}</span>
+      <a class="small" href="{% url 'diagrams:export' project.key d.pk x.number 'pdf' %}">PDF</a></div>{% endfor %}
+  </div></div>
+
+  {% if can_edit %}<div class="card"><div class="card-head"><h3>Settings</h3></div><div class="card-body">
+    <form method="post" action="{% url 'diagrams:settings' project.key d.pk %}" class="stack-sm">{% csrf_token %}
+      <label class="small">Name<input type="text" name="name" value="{{ d.name }}" maxlength="120"></label>
+      <label class="small">Description<textarea name="description" rows="2">{{ d.description }}</textarea></label>
+      <div class="btn-row"><button class="btn btn-sm">Save</button>
+      {% if can_approve %}<button class="btn btn-sm btn-danger right" name="action" value="delete" data-confirm="Delete this diagram and all its versions?">Delete diagram</button>{% endif %}</div>
+    </form></div></div>{% endif %}
+</div>
+</div>
+{% endblock %}

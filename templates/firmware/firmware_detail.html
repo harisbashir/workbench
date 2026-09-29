@@ -19,7 +19,7 @@
       <tbody>{% for r in releases %}<tr class="{% if r.status == 'recalled' %}row-bad{% elif r.status == 'deprecated' %}row-muted{% endif %}">
         <td><a href="{{ r.get_absolute_url }}"><strong class="mono">{{ r.version }}</strong></a>{% if r.git_ref %}<br><span class="small faint mono">{{ r.git_ref }}</span>{% endif %}</td>
         <td>{% status_badge r.status r.get_status_display %}</td>
-        <td class="small">{% for rev in r.revisions.all %}{{ rev.name }}{% if not forloop.last %}, {% endif %}{% empty %}<span class="warn-text">not set</span>{% endfor %}</td>
+        <td class="small">{% for rev in r.revisions.all %}{{ rev.title }}{% if not forloop.last %}, {% endif %}{% empty %}<span class="warn-text">not set</span>{% endfor %}</td>
         <td class="num">{{ r.n_art }}</td>
         <td class="small nowrap">{% if r.released_at %}{{ r.released_at|naturalday }}{% else %}{{ r.created_at|naturalday }}{% endif %}</td></tr>{% endfor %}</tbody></table></div>
     {% else %}<div class="empty">{% icon 'tag' 36 %}<h3>No releases{% if status %} with this status{% endif %}</h3>
@@ -27,7 +27,7 @@
   </div>
   <div class="stack">
     <div class="card"><div class="card-head"><h3>Recommended per board</h3></div><div class="card-body">
-      {% for rev in revisions %}{% with rec=fw|recommended:rev %}<div class="kv"><a href="{{ rev.get_absolute_url }}">{{ rev.name }}</a><span>{% if rec %}<a href="{{ rec.get_absolute_url }}"><strong>{{ rec.version }}</strong></a>{% else %}<span class="faint">none released</span>{% endif %}</span></div>{% endwith %}
+      {% for rev in revisions %}{% with rec=fw|recommended:rev %}<div class="kv"><a href="{{ rev.get_absolute_url }}">{{ rev.title }}</a><span>{% if rec %}<a href="{{ rec.get_absolute_url }}"><strong>{{ rec.version }}</strong></a>{% else %}<span class="faint">none released</span>{% endif %}</span></div>{% endwith %}
       {% empty %}<p class="muted small">No board revisions yet.</p>{% endfor %}
     </div></div>
     <div class="card"><div class="card-head"><h3>Release statuses</h3></div><div class="card-body small">

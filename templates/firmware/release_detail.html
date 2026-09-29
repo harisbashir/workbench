@@ -65,13 +65,13 @@
     </div></div>
     <div class="card"><div class="card-body">
       <div class="field-label">Compatible board revisions</div>
-      {% for r in revisions %}<div class="kv"><a href="{{ r.get_absolute_url }}">{{ r.name }}</a>{% status_badge r.status r.get_status_display %}</div>{% empty %}<p class="small warn-text">Not set yet.</p>{% endfor %}
+      {% for r in revisions %}<div class="kv"><a href="{{ r.get_absolute_url }}">{{ r.title }}</a>{% status_badge r.status r.get_status_display %}</div>{% empty %}<p class="small warn-text">Not set yet.</p>{% endfor %}
       <p></p>
       {% if rel.git_ref %}<div class="kv"><span>Built from</span>{% if rel.git_url %}<a class="mono" href="{{ rel.git_url }}" target="_blank" rel="noopener">{{ rel.git_ref }}</a>{% else %}<span class="mono">{{ rel.git_ref }}</span>{% endif %}</div>{% endif %}
       {% if rel.source_url %}<div class="kv"><span>Source</span><a href="{{ rel.source_url }}" target="_blank" rel="noopener">GitHub release ↗</a></div>{% endif %}
     </div></div>
     <div class="card"><div class="card-head"><h3>Used in builds</h3></div><div class="card-body">
-      {% for b in builds %}<div class="kv"><a href="{{ b.get_absolute_url }}">{{ b.number }} · {{ b.revision.name }} × {{ b.quantity }}</a>{% status_badge b.status b.get_status_display %}</div>
+      {% for b in builds %}<div class="kv"><a href="{{ b.get_absolute_url }}">{{ b.number }} · {{ b.revision.title }} × {{ b.quantity }}</a>{% status_badge b.status b.get_status_display %}</div>
       {% empty %}<p class="small muted">Not used in a production build yet.</p>{% endfor %}
     </div></div>
     {% if activity %}<div class="card"><div class="card-head"><h3>History</h3></div><div class="card-body"><ul class="feed">

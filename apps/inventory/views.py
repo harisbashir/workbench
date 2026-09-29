@@ -201,9 +201,9 @@ def bom_import_view(request, pk):
             messages.error(request, "The upload expired. Please upload the file again.")
             return redirect("inventory:bom_import", pk=rev.pk)
         created, linked = _apply_import(rev, data["rows"], data["replace"], request.user)
-        log_activity(rev.project, f"imported a BOM for {rev.name} ({len(data['rows'])} lines, {created} new parts)", actor=request.user,
+        log_activity(rev.project, f"imported a BOM for {rev.title} ({len(data['rows'])} lines, {created} new parts)", actor=request.user,
                      url=rev.get_absolute_url())
-        post_system_message(rev.project, f"{request.user.display_name} imported a new BOM for {rev.name}: {len(data['rows'])} lines, {created} new parts added to the library.", rev.get_absolute_url())
+        post_system_message(rev.project, f"{request.user.display_name} imported a new BOM for {rev.title}: {len(data['rows'])} lines, {created} new parts added to the library.", rev.get_absolute_url())
         audit(request, "bom.imported", rev, lines=len(data["rows"]), new_parts=created)
         messages.success(request, f"BOM imported: {len(data['rows'])} lines, {linked} matched to existing parts, {created} new parts created.")
         return redirect("inventory:bom", pk=rev.pk)
@@ -256,7 +256,7 @@ def _apply_import(rev, rows, replace, user):
 def bom_export(request, pk):
     rev = _revision_for(request, pk)
     resp = HttpResponse(content_type="text/csv")
-    fname = f"{rev.project.key}-{rev.name}-BOM.csv".replace(" ", "_")
+    fname = f"{rev.project.key}-{rev.title}-BOM.csv".replace(" ", "_")
     resp["Content-Disposition"] = f'attachment; filename="{fname}"'
     w = csv.writer(resp)
     w.writerow(["Part number", "Qty per board", "References", "Value", "Footprint", "Manufacturer", "MPN",

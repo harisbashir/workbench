@@ -2,15 +2,15 @@
 {% block title %}Design files · {{ rev }}{% endblock %}
 {% block content %}
 <div class="page-head"><div class="titles">
-  <div class="crumbs"><a href="{% url 'projects:list' %}">Projects</a> / <a href="{{ project.get_absolute_url }}">{{ project.name }}</a> / <a href="{{ rev.get_absolute_url }}">{{ rev.name }}</a> /</div>
+  <div class="crumbs"><a href="{% url 'projects:list' %}">Projects</a> / <a href="{{ project.get_absolute_url }}">{{ project.name }}</a> / <a href="{{ rev.get_absolute_url }}">{{ rev.title }}</a> /</div>
   <h1>Design files {% status_badge rev.status rev.get_status_display %}</h1>
-  <p class="intro">Gerbers, schematic, layout, pick-and-place and everything else that defines {{ rev.name }}. Uploading a file with the same name adds a new version; older versions are kept.</p></div>
+  <p class="intro">Gerbers, schematic, layout, pick-and-place and everything else that defines {{ rev.title }}. Uploading a file with the same name adds a new version; older versions are kept.</p></div>
   <div class="actions">
     {% if groups %}<a class="btn" href="{% url 'design:download_all' project.key rev.pk %}">{% icon 'download' 16 %} Download all</a>{% endif %}
     <a class="btn" href="{% url 'production:fab_package' rev.pk %}">{% icon 'box' 16 %} Order files for JLC / Seeed</a>
   </div></div>
 
-{% if locked %}<div class="alert alert-info">{% icon 'lock' 16 %}<span>{{ rev.name }} is released for production, so its design files are locked. Start a new revision to change the design.</span></div>{% endif %}
+{% if locked %}<div class="alert alert-info">{% icon 'lock' 16 %}<span>{{ rev.title }} is released for production, so its design files are locked. Start a new revision to change the design.</span></div>{% endif %}
 
 <div class="grid grid-main">
   <div class="stack">
@@ -41,7 +41,7 @@
       </tbody></table></div></div>
     {% empty %}
     <div class="card"><div class="empty"><h3>No design files yet</h3>
-      <p>Upload the Gerber zip you send to the fab, the schematic PDF, the pick-and-place file and anything else for {{ rev.name }}.</p></div></div>
+      <p>Upload the Gerber zip you send to the fab, the schematic PDF, the pick-and-place file and anything else for {{ rev.title }}.</p></div></div>
     {% endfor %}
   </div>
 

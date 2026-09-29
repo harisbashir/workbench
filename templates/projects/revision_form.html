@@ -4,7 +4,7 @@
 <div class="page-head"><div class="titles">
   <div class="crumbs"><a href="{% url 'projects:list' %}">Projects</a> / <a href="{{ project.get_absolute_url }}">{{ project.name }}</a> /</div>
   <h1>{% if revision %}Edit {{ revision.name }}{% else %}New revision{% endif %}</h1>
-  <p class="intro">A revision is one version of the board — Rev A, Rev B, or EVT/DVT/PVT. It holds a BOM and can be used to group tasks. Mark it <em>Released for production</em> when the design is frozen; after that only leads can change its BOM.</p>
+  <p class="intro">A revision is one version of a board — Rev A, Rev B, or EVT/DVT/PVT. It holds a BOM and can be used to group tasks. Mark it <em>Released for production</em> when the design is frozen; after that only leads can change its BOM.</p>
 </div></div>
 <div class="card form-card"><div class="card-body">
   <form method="post" novalidate>{% csrf_token %}

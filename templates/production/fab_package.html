@@ -2,9 +2,9 @@
 {% block title %}Order files · {{ rev }}{% endblock %}
 {% block content %}
 <div class="page-head"><div class="titles">
-  <div class="crumbs"><a href="{{ project.get_absolute_url }}">{{ project.name }}</a> / <a href="{{ rev.get_absolute_url }}">{{ rev.name }}</a> /</div>
+  <div class="crumbs"><a href="{{ project.get_absolute_url }}">{{ project.name }}</a> / <a href="{{ rev.get_absolute_url }}">{{ rev.title }}</a> /</div>
   <h1>Order files for PCB assembly</h1>
-  <p class="intro">Everything {{ info.name }} needs to make and assemble {{ rev.name }}, <strong>without the parts you fit yourselves</strong>. Those stay on your in-house list for finishing.</p></div>
+  <p class="intro">Everything {{ info.name }} needs to make and assemble {{ rev.title }}, <strong>without the parts you fit yourselves</strong>. Those stay on your in-house list for finishing.</p></div>
   <div class="actions"><a class="btn btn-primary" href="?for={{ assembler }}&amp;get=zip">{% icon 'download' 16 %} Download all ({{ info.name }})</a></div></div>
 
 <nav class="tabs">{% for key, a in assemblers.items %}<a href="?for={{ key }}" class="{% if key == assembler %}active{% endif %}">{{ a.name }}</a>{% endfor %}</nav>
@@ -54,7 +54,7 @@
       <p></p><a class="btn btn-sm" href="{% url 'inventory:bom' rev.pk %}">{% icon 'list' 14 %} Change who fits what</a>
     </div></div>
     {% if user.can_manage_procurement %}<div class="card"><div class="card-body">
-      <a class="btn" href="{% url 'production:build_create' %}?revision={{ rev.pk }}">{% icon 'factory' 16 %} Plan a build of {{ rev.name }}</a></div></div>{% endif %}
+      <a class="btn" href="{% url 'production:build_create' %}?revision={{ rev.pk }}">{% icon 'factory' 16 %} Plan a build of {{ rev.title }}</a></div></div>{% endif %}
   </div>
 </div>
 {% endblock %}

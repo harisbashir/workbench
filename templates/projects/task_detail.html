@@ -54,7 +54,7 @@
         <dt>Reviewer</dt><dd>{% if task.reviewer %}<span class="person"><span class="avatar sm">{{ task.reviewer.initials }}</span>{{ task.reviewer }}</span>{% else %}<span class="faint">None</span>{% endif %}</dd>
         <dt>Type</dt><dd>{{ task.get_kind_display }}</dd>
         <dt>Priority</dt><dd><span class="prio prio-{{ task.priority }}"></span>{{ task.get_priority_display }}</dd>
-        <dt>Revision</dt><dd>{% if task.revision %}<a href="{% url 'inventory:bom' task.revision.pk %}">{{ task.revision.name }}</a>{% else %}—{% endif %}</dd>
+        <dt>Revision</dt><dd>{% if task.revision %}<a href="{% url 'inventory:bom' task.revision.pk %}">{{ task.revision.title }}</a>{% else %}—{% endif %}</dd>
         <dt>Due</dt><dd class="{% if task.is_overdue %}overdue{% endif %}">{{ task.due_date|default:"—" }}</dd>
         <dt>Created</dt><dd class="small">{{ task.created_at|naturalday }} by {{ task.created_by|default:"—" }}</dd>
       </dl>

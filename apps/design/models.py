@@ -11,6 +11,7 @@ from django.conf import settings
 from django.db import models
 from django.urls import reverse
 
+from apps.cad.models import MeshPreview
 from apps.projects.models import Revision
 
 
@@ -35,7 +36,7 @@ CATEGORY_HELP = {
     "pcb": ".kicad_pcb / .brd layout files",
     "pnp": "Component positions for assembly (KiCad .pos / CSV)",
     "bom": "BOM export as sent to the assembler",
-    "model": "STEP / WRL model of the assembled board",
+    "model": "3D model of the assembled board from KiCad: STEP, VRML (.wrl) or glTF (.glb)",
 }
 
 GERBER_EXT = {"gbr", "ger", "pho", "art", "gtl", "gbl", "gts", "gbs", "gto", "gbo", "gtp", "gbp", "gko", "gm1", "gml",
@@ -59,7 +60,7 @@ def guess_category(name, head=b""):
         return Category.PCB
     if ext in ("kicad_pro", "kicad_prl", "pro", "prjpcb", "lbr", "kicad_sym", "kicad_mod", "kicad_dru"):
         return Category.PROJECT
-    if ext in ("step", "stp", "wrl", "igs", "iges", "stl"):
+    if ext in ("step", "stp", "wrl", "vrml", "igs", "iges", "stl", "glb", "gltf", "3mf", "obj"):
         return Category.MODEL
     if ext == "pos" or re.search(r"(^|[-_ .])(pos|cpl|pnp|pick|placement|centroid|xy)([-_ .]|$)", low.rsplit(".", 1)[0]):
         return Category.PNP
@@ -86,7 +87,9 @@ class DesignFileQuerySet(models.QuerySet):
         return self.filter(is_current=True)
 
 
-class DesignFile(models.Model):
+class DesignFile(MeshPreview):
+    MESH_KIND = "design"
+
     revision = models.ForeignKey(Revision, on_delete=models.CASCADE, related_name="design_files")
     category = models.CharField(max_length=12, choices=Category.choices, default=Category.OTHER)
     name = models.CharField(max_length=200)
@@ -118,7 +121,9 @@ class DesignFile(models.Model):
 
     @property
     def viewer(self):
-        """How the file can be looked at in Workbench: 'pcb', 'pdf', 'image', 'text', 'csv' or ''."""
+        """How the file can be looked at in Workbench: 'pcb', '3d', 'pdf', 'image', 'text', 'csv' or ''."""
+        if self.is_3d:
+            return "3d"
         if self.category in (Category.GERBER, Category.DRILL) and (self.ext == "zip" or self.ext not in ("pdf", "txt")):
             return "pcb"
         if self.ext == "pdf":
@@ -135,7 +140,7 @@ class DesignFile(models.Model):
         return reverse("design:file", args=[self.revision.project.key, self.revision.pk, self.pk])
 
     @classmethod
-    def store(cls, revision, uploaded, user, category=None, note=""):
+    def store(cls, revision, uploaded, user, category=None, note="", background=True):
         from apps.files.models import safe_name
         name = safe_name(uploaded.name)
         h = hashlib.sha256()
@@ -153,6 +158,8 @@ class DesignFile(models.Model):
         obj.file.save(name, uploaded, save=False)
         obj.save()
         cls.objects.filter(revision=revision, name=name).exclude(pk=obj.pk).update(is_current=False)
+        from apps.cad import jobs
+        jobs.queue(obj, background=background)
         return obj, True
 
 

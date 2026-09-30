@@ -18,6 +18,54 @@ class GerberError(ValueError):
     pass
 
 
+class GerberLimitError(GerberError):
+    """The files need more work than a web request can afford (a hostile or broken file)."""
+
+
+# Resource limits. A few hundred bytes of Gerber can otherwise ask for billions of
+# shapes (step & repeat, polygon apertures, moiré rings), so every loop that can
+# grow is bounded, and the whole render has a time budget.
+MAX_ELEMENTS = 3_000_000        # SVG elements (draws, flashes, regions, repeated copies) per render
+MAX_REPEAT = 10_000             # step & repeat copies (X × Y) per block
+MAX_POLYGON_VERTICES = 12       # the Gerber spec allows 3–12 for polygon apertures
+MAX_OUTLINE_VERTICES = 10_000   # outline primitive (code 4)
+MAX_MOIRE_RINGS = 100
+MAX_OPEN_CHAINS = 2_000         # outline pieces joined by bridging gaps (quadratic)
+MAX_COORD_MM = 10_000.0         # 10 m: anything larger is a broken or hostile file
+RENDER_SECONDS = 25.0
+
+
+class Budget:
+    """Work and time allowance shared by all files of one render."""
+
+    def __init__(self, seconds=RENDER_SECONDS, max_elements=MAX_ELEMENTS):
+        import time
+        self._clock = time.monotonic
+        self.deadline = self._clock() + seconds
+        self.max_elements = max_elements
+        self.elements = 0
+        self._ticks = 0
+
+    def add(self, n=1):
+        self.elements += n
+        if self.elements > self.max_elements:
+            raise GerberLimitError(f"The drawing would have more than {self.max_elements:,} shapes, so it isn't shown.")
+        self.tick()
+
+    def tick(self):
+        self._ticks += 1
+        if self._ticks & 1023 == 0:
+            self.check_time()
+
+    def check_time(self):
+        if self._clock() > self.deadline:
+            raise GerberLimitError("These files took too long to draw, so the board isn't shown.")
+
+
+def _budget(budget):
+    return budget if budget is not None else Budget()
+
+
 def f(v):
     """Compact number formatting for SVG (0.1 µm resolution)."""
     s = f"{v:.4f}".rstrip("0").rstrip(".")
@@ -199,6 +247,8 @@ def standard_aperture(kind, params, scale):
     elif kind == "P":
         d = p[0] if p else 0.0
         n = int(params[1]) if len(params) > 1 else 3
+        if not 3 <= n <= MAX_POLYGON_VERTICES:
+            raise GerberError(f"Polygon aperture with {n} vertices (3–{MAX_POLYGON_VERTICES} allowed)")
         rot = params[2] if len(params) > 2 else 0.0
         hole = p[3:5]
         pts = [rotate(d / 2, 0, rot + 360.0 * k / max(n, 3)) for k in range(max(n, 3))]
@@ -248,12 +298,13 @@ def thermal_path(cx, cy, do, di, gap, rot):
     return "".join(out)
 
 
-def macro_aperture(blocks, params, scale, warnings, ap_id="m"):
+def macro_aperture(blocks, params, scale, warnings, ap_id="m", budget=None):
     """Build an aperture from an aperture macro's primitives.
 
     Primitives with exposure off cut out what was drawn before them; that's
     done with an SVG mask, defined next to the aperture.
     """
+    budget = _budget(budget)
     variables = {i + 1: v for i, v in enumerate(params)}
     shapes, radius = [], 0.0
     layers = []   # (exposure, element) in order
@@ -275,6 +326,7 @@ def macro_aperture(blocks, params, scale, warnings, ap_id="m"):
         vals = [evaluate(x, variables) for x in parts[1:] if x.strip() != ""]
         if not vals:
             continue
+        budget.add()
         exposure = vals[0]
         el, r = None, 0.0
         s = scale
@@ -301,6 +353,8 @@ def macro_aperture(blocks, params, scale, warnings, ap_id="m"):
             el, r = f'<path d="{poly_path(pts)}"/>', max(math.hypot(*p) for p in pts)
         elif code == 4:  # outline: exposure, n, x0, y0, … xn, yn, rotation
             n = int(vals[1])
+            if not 1 <= n <= MAX_OUTLINE_VERTICES:
+                raise GerberError(f"Outline primitive with {n} vertices")
             coords = vals[2:2 + 2 * (n + 1)]
             rot = vals[2 + 2 * (n + 1)] if len(vals) > 2 + 2 * (n + 1) else 0
             pts = [rotate(coords[k] * s, coords[k + 1] * s, rot) for k in range(0, len(coords) - 1, 2)]
@@ -308,17 +362,24 @@ def macro_aperture(blocks, params, scale, warnings, ap_id="m"):
                 el, r = f'<path d="{poly_path(pts)}"/>', max(math.hypot(*p) for p in pts)
         elif code == 5:  # polygon: exposure, vertices, cx, cy, diameter, rotation
             n, cx, cy, d = int(vals[1]), vals[2] * s, vals[3] * s, vals[4] * s
+            if not 3 <= n <= MAX_POLYGON_VERTICES:
+                raise GerberError(f"Polygon primitive with {n} vertices (3–{MAX_POLYGON_VERTICES} allowed)")
             rot = vals[5] if len(vals) > 5 else 0
             pts = [rotate(cx + d / 2 * math.cos(2 * math.pi * k / n), cy + d / 2 * math.sin(2 * math.pi * k / n), rot) for k in range(max(n, 3))]
             el, r = f'<path d="{poly_path(pts)}"/>', max(math.hypot(*p) for p in pts)
         elif code == 6:  # moiré: cx, cy, outer d, ring thickness, gap, rings, cross thickness, cross length, rotation
             cx, cy, d, t, gap = (v * s for v in vals[0:5])
             rings = int(vals[5])
+            if rings < 0 or rings > MAX_MOIRE_RINGS:
+                raise GerberError(f"Moiré primitive with {rings} rings")
+            if t + gap <= 0:
+                rings = min(rings, 1)  # zero pitch: every ring would be the same circle
             ct, cl = vals[6] * s, vals[7] * s
             rot = vals[8] if len(vals) > 8 else 0
             cx, cy = rotate(cx, cy, rot)
             parts_ = []
             for k in range(rings):
+                budget.add()
                 ro = d / 2 - k * (t + gap)
                 ri = ro - t
                 if ro <= 0:
@@ -430,8 +491,15 @@ def _tokens(text):
 _WORD = re.compile(r"([GDMXYIJ])([+-]?[\d.]+)")
 
 
-def parse_gerber(text, filename="layer.gbr", prefix="L"):
+def _checked(v):
+    if not math.isfinite(v) or abs(v) > MAX_COORD_MM:
+        raise GerberError("A coordinate is out of range")
+    return v
+
+
+def parse_gerber(text, filename="layer.gbr", prefix="L", budget=None):
     """Parse one Gerber file into a LayerData."""
+    budget = _budget(budget)
     L = LayerData(filename)
     scale = 25.4                    # inches until told otherwise (the old default)
     fmt = (2, 4)
@@ -461,26 +529,32 @@ def parse_gerber(text, filename="layer.gbr", prefix="L"):
 
     def coord(val):
         if "." in val:
-            return float(val) * scale
+            return _checked(float(val) * scale)
         neg = val.startswith("-")
         digits = val.lstrip("+-")
+        if len(digits) > 16:
+            raise GerberError("A coordinate is out of range")
         if omit_trailing:
             digits = digits.ljust(fmt[0] + fmt[1], "0")
         v = int(digits or "0") / (10 ** fmt[1])
-        return (-v if neg else v) * scale
+        return _checked((-v if neg else v) * scale)
 
     def flush_contour():
         nonlocal contour, contour_start
         if contour and len(contour) > 1:
             d = "".join(contour) + "Z"
             seg.regions.append(d)
+            budget.add()
             L.stats["regions"] += 1
             if L.outline_parts is not None:
                 L.outline_parts.append(("region", d))
         contour, contour_start = [], None
 
     for kind, tok in _tokens(text):
+        budget.tick()
         if kind == "ext":
+            if not tok:
+                continue
             head = tok[0]
             if head.startswith("AM"):
                 macros[head[2:]] = tok[1:]
@@ -508,7 +582,7 @@ def parse_gerber(text, filename="layer.gbr", prefix="L"):
                         if name in ("C", "R", "O", "P"):
                             ap = standard_aperture(name, params, scale)
                         elif name in macros:
-                            ap = macro_aperture(macros[name], params, scale, L.warnings, f"{prefix}a{num}")
+                            ap = macro_aperture(macros[name], params, scale, L.warnings, f"{prefix}a{num}", budget)
                         else:
                             L.warnings.add(f"Aperture macro {name} is missing")
                             ap = Aperture(['<circle r="0.1"/>'], 0.1, 0.2)
@@ -528,9 +602,12 @@ def parse_gerber(text, filename="layer.gbr", prefix="L"):
                 elif block.startswith("SR"):
                     m = re.match(r"SRX(\d+)Y(\d+)I([\d.]+)J([\d.]+)", block)
                     if sr:  # close the previous block
-                        _apply_step_repeat(L, sr, prefix)
+                        _apply_step_repeat(L, sr, prefix, budget)
                         sr = None
                     if m and (int(m.group(1)) > 1 or int(m.group(2)) > 1):
+                        if int(m.group(1)) * int(m.group(2)) > MAX_REPEAT:
+                            raise GerberLimitError(f"{filename}: step & repeat of {m.group(1)} × {m.group(2)} copies "
+                                                   f"is more than the {MAX_REPEAT:,} that can be drawn.")
                         new_segment(polarity_dark)
                         sr = (int(m.group(1)), int(m.group(2)), float(m.group(3)) * scale, float(m.group(4)) * scale,
                               len(L.segments_raw) - 1)
@@ -606,6 +683,7 @@ def parse_gerber(text, filename="layer.gbr", prefix="L"):
             if cur_ap in apertures and not region:
                 ap = apertures[cur_ap]
                 seg.flashes.append((cur_ap, tx, ty))
+                budget.add()
                 L.bbox.add(tx, ty, ap.radius)
                 L.stats["flashes"] += 1
             x, y = tx, ty
@@ -645,6 +723,7 @@ def parse_gerber(text, filename="layer.gbr", prefix="L"):
             w = ap.stroke_width if ap.stroke_width is not None else 2 * ap.radius
             key = (round(w, 5), ap.round)
             seg.strokes.setdefault(key, []).append(f"M{f(x)} {f(y)}{piece}")
+            budget.add()
             for px, py in bb_pts:
                 L.bbox.add(px, py, w / 2)
                 L.center_bbox.add(px, py)
@@ -657,17 +736,19 @@ def parse_gerber(text, filename="layer.gbr", prefix="L"):
     if region:
         flush_contour()
     if sr:
-        _apply_step_repeat(L, sr, prefix)
+        _apply_step_repeat(L, sr, prefix, budget)
     L.stats["min_trace"] = min_trace
     L.segments = [(s.dark, s.elements(prefix)) for s in L.segments_raw if not s.empty()]
     del L.segments_raw
     return L
 
 
-def _apply_step_repeat(L, sr, prefix):
+def _apply_step_repeat(L, sr, prefix, budget=None):
+    budget = _budget(budget)
     nx, ny, dx, dy, start = sr
     for s in L.segments_raw[start:]:
         els = s.elements(prefix)
+        budget.add(len(els) * (nx * ny - 1))
         copies = []
         for i in range(nx):
             for j in range(ny):
@@ -694,8 +775,9 @@ def _single_quadrant_centre(sx, sy, ex, ey, i, j, ccw):
 
 # -------------------------------------------------------------------------- drills --
 
-def parse_excellon(text, filename="drill.drl", plated=None):
+def parse_excellon(text, filename="drill.drl", plated=None, budget=None):
     """Parse an Excellon drill file into a LayerData with holes and slots."""
+    budget = _budget(budget)
     L = LayerData(filename)
     L.is_drill = True
     scale = 25.4
@@ -714,15 +796,18 @@ def parse_excellon(text, filename="drill.drl", plated=None):
 
     def num(val):
         if "." in val:
-            return float(val) * scale
+            return _checked(float(val) * scale)
         neg = val.startswith("-")
         digits = val.lstrip("+-")
+        if len(digits) > 16:
+            raise GerberError("A coordinate is out of range")
         if lead_kept:
             digits = digits.ljust(int_digits + dec_digits, "0")
         v = int(digits or "0") / (10 ** dec_digits)
-        return (-v if neg else v) * scale
+        return _checked((-v if neg else v) * scale)
 
     for raw in text.splitlines():
+        budget.tick()
         line = raw.strip()
         if not line:
             continue
@@ -765,7 +850,7 @@ def parse_excellon(text, filename="drill.drl", plated=None):
                 rest = m.group(2)
                 cm = re.search(r"C([\d.]+)", rest)
                 if cm:
-                    tools[t] = float(cm.group(1)) * scale
+                    tools[t] = _checked(float(cm.group(1)) * scale)
                 if not header or not cm:
                     cur = t
                     if t and t not in tools:
@@ -800,13 +885,16 @@ def parse_excellon(text, filename="drill.drl", plated=None):
                 else:
                     ey = num(val)
             slots.append((nx, ny, ex, ey, d))
+            budget.add()
             x, y = ex, ey
             continue
         if up.startswith(("G01", "G02", "G03")) and route_start is not None:
             slots.append((x, y, nx, ny, d))
+            budget.add()
         elif mode == "drill" or not up.startswith(("G00", "G01", "G02", "G03")):
             if mode == "drill":
                 holes.append((nx, ny, d))
+                budget.add()
         x, y = nx, ny
 
     seg = _Segment(True)
@@ -828,7 +916,7 @@ def parse_excellon(text, filename="drill.drl", plated=None):
 
 # ------------------------------------------------------------------ board outline --
 
-def board_shape(outline_layer, tol=0.02):
+def board_shape(outline_layer, tol=0.02, budget=None):
     """Join the outline's lines and arcs into closed loops; returns SVG path data or ''.
 
     Small gaps (common in hand-drawn outlines) are bridged with straight lines,
@@ -837,6 +925,7 @@ def board_shape(outline_layer, tol=0.02):
     """
     if outline_layer is None:
         return ""
+    budget = _budget(budget)
     regions = [p[1] for p in outline_layer.outline_parts if p[0] == "region"]
     pieces, seen_pieces = [], set()
     for p in outline_layer.outline_parts:   # drop exact duplicates (outlines drawn twice)
@@ -881,6 +970,7 @@ def board_shape(outline_layer, tol=0.02):
 
     closed, open_chains = [], []   # chains: (start, end, [path commands], [points])
     for i, p in enumerate(pieces):
+        budget.tick()
         if used[i]:
             continue
         used[i] = True
@@ -926,6 +1016,8 @@ def board_shape(outline_layer, tol=0.02):
     # Bridge gaps between open chains with straight lines.
     size = outline_layer.center_bbox
     max_gap = max(1.0, 0.08 * math.hypot(size.width, size.height)) if not size.empty else 5.0
+    if len(open_chains) > MAX_OPEN_CHAINS:
+        open_chains = []  # too many loose pieces to join: fall back to a rectangle around the outline
     remaining = list(open_chains)
     while remaining:
         start, cur, cmds, points = remaining.pop(0)
@@ -935,6 +1027,7 @@ def board_shape(outline_layer, tol=0.02):
                 if not remaining or dist(cur, start) <= min(min(dist(cur, c[0]), dist(cur, c[1])) for c in remaining):
                     break
             best = None
+            budget.check_time()
             for k, (s2, e2, c2, p2) in enumerate(remaining):
                 for rev, near, far in ((False, s2, e2), (True, e2, s2)):
                     dd = dist(cur, near)

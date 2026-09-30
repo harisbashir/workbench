@@ -20,6 +20,7 @@
   let doc = JSON.parse(document.getElementById("diagram-data").textContent);
   doc.nodes = doc.nodes || []; doc.edges = doc.edges || []; doc.page = doc.page || { legend: true };
   let savedVersion = META.version, dirty = false;
+  let changeSeq = 0, saving = false, saveAgain = false;  // edits made while a save is in flight stay unsaved
   let sel = new Set(), selEdge = null, hover = null, defaultKind = "signal";
   const undoStack = [], redoStack = [];
   let clipboard = null;
@@ -54,10 +55,14 @@
     if (undoStack.length > 150) undoStack.shift();
     redoStack.length = 0;
   }
+  function storeDraft() {
+    try { localStorage.setItem(draftKey, JSON.stringify({ base: savedVersion, t: Date.now(), data: doc })); } catch (e) { /* storage full or blocked */ }
+  }
   function changed() {
     dirty = true;
+    changeSeq++;
     setStatus();
-    try { localStorage.setItem(draftKey, JSON.stringify({ base: savedVersion, t: Date.now(), data: doc })); } catch (e) { /* storage full or blocked */ }
+    storeDraft();
     render();
   }
   function undo() { if (!undoStack.length) return; redoStack.push(JSON.stringify(doc)); doc = JSON.parse(undoStack.pop()); pruneSelection(); changed(); buildPanel(); }
@@ -545,20 +550,32 @@
     return fetch(url, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json", "X-CSRFToken": csrf() }, body: JSON.stringify(body) });
   }
   function save(force) {
+    if (saving) { saveAgain = true; return; }  // one save at a time; save again when this one is done
+    saving = true; saveAgain = false;
     const noteEl = root.querySelector("[data-save-note]");
+    const sentSeq = changeSeq, note = noteEl ? noteEl.value : "";
     setStatus("Saving…");
-    post(META.saveUrl, { data: doc, note: noteEl ? noteEl.value : "", base: savedVersion, force: !!force }).then(async (r) => {
+    const finish = () => { saving = false; if (saveAgain) save(); };
+    post(META.saveUrl, { data: doc, note, base: savedVersion, force: !!force }).then(async (r) => {
       const res = await r.json().catch(() => ({}));
       if (r.status === 409 && res.conflict) {
+        saving = false;
         if (window.confirm(res.error + " Save your drawing as a new version anyway? (Theirs stays in the version history.)")) return save(true);
         setStatus("Not saved"); return;
       }
-      if (!r.ok || !res.ok) { setStatus("Couldn't save: " + (res.error || r.status)); return; }
-      savedVersion = res.version; dirty = false;
-      if (noteEl) noteEl.value = "";
-      try { localStorage.removeItem(draftKey); } catch (e) { /* ignore */ }
-      setStatus(res.unchanged ? `v${savedVersion} · no changes to save` : `v${savedVersion} · saved` + (res.reopened ? " (new draft after approval)" : ""));
-    }).catch(() => setStatus("Couldn't save — check your connection"));
+      if (!r.ok || !res.ok) { setStatus("Couldn't save: " + (res.error || r.status)); return finish(); }
+      savedVersion = res.version;
+      if (noteEl && noteEl.value === note) noteEl.value = "";
+      if (changeSeq === sentSeq) {
+        dirty = false;
+        try { localStorage.removeItem(draftKey); } catch (e) { /* ignore */ }
+        setStatus(res.unchanged ? `v${savedVersion} · no changes to save` : `v${savedVersion} · saved` + (res.reopened ? " (new draft after approval)" : ""));
+      } else {
+        storeDraft();  // the edits made meanwhile are still unsaved; keep them as a draft of the new version
+        setStatus();
+      }
+      finish();
+    }).catch(() => { setStatus("Couldn't save — check your connection"); finish(); });
   }
   function download(blob, name) {
     const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name;
@@ -618,12 +635,19 @@
   fit();
   try {
     const draft = JSON.parse(localStorage.getItem(draftKey) || "null");
-    if (draft && draft.base === savedVersion && JSON.stringify(draft.data) !== JSON.stringify(doc)) {
+    if (draft && draft.data && JSON.stringify(draft.data) !== JSON.stringify(doc)) {
       const bar = root.querySelector("[data-draft]");
       bar.hidden = false;
-      bar.querySelector("[data-when]").textContent = new Date(draft.t).toLocaleString();
+      let when = new Date(draft.t).toLocaleString();
+      if (draft.base !== savedVersion) {
+        // Someone saved a newer version since: still offer the draft, but say what restoring means.
+        when += ` — it was based on v${draft.base}, and v${savedVersion} has been saved since. ` +
+          `Restoring it and saving replaces v${savedVersion} with your drawing (v${savedVersion} stays in the version history).`;
+        bar.classList.add("warn-text");
+      }
+      bar.querySelector("[data-when]").textContent = when;
       bar.querySelector("[data-restore]").addEventListener("click", () => { pushHistory(); doc = draft.data; changed(); buildPanel(); fit(); bar.hidden = true; });
       bar.querySelector("[data-discard]").addEventListener("click", () => { localStorage.removeItem(draftKey); bar.hidden = true; });
-    } else if (draft) localStorage.removeItem(draftKey);
+    } else if (draft) localStorage.removeItem(draftKey);  // nothing to restore: same as the saved drawing
   } catch (e) { /* storage unavailable */ }
 })();

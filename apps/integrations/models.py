@@ -40,6 +40,9 @@ class WebhookDelivery(models.Model):
     """Every GitHub delivery we receive, for troubleshooting and replay protection."""
 
     delivery_id = models.CharField(max_length=64, unique=True)
+    # SHA-256 of the signed body. GitHub doesn't sign the delivery-ID header, so replay
+    # protection keys on the body: a captured payload re-sent under a new ID is refused.
+    body_sha256 = models.CharField(max_length=64, null=True, blank=True, unique=True)
     event = models.CharField(max_length=40)
     repository = models.CharField(max_length=200, blank=True)
     status = models.CharField(max_length=20)  # processed / ignored / rejected / error

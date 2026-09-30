@@ -270,7 +270,11 @@ class Task(models.Model):
     def save(self, *args, **kwargs):
         if not self.number:
             with transaction.atomic():
-                last = Task.objects.select_for_update().filter(project=self.project).aggregate(m=Max("number"))["m"] or 0
+                # Lock the project row: select_for_update() is dropped by aggregate(), so it
+                # can't protect the MAX() itself. Concurrent creators queue here instead of
+                # both taking the same number.
+                list(Project.objects.select_for_update().filter(pk=self.project_id).values_list("pk", flat=True))
+                last = Task.objects.filter(project=self.project).aggregate(m=Max("number"))["m"] or 0
                 self.number = last + 1
                 super().save(*args, **kwargs)
                 return

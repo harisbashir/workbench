@@ -289,6 +289,26 @@ def storage_info():
     return info
 
 
+def file_totals():
+    """How many files Workbench stores and their size, in total and by kind (all versions)."""
+    from django.apps import apps
+    from django.db.models import Count, Sum
+    kinds = [("files.DocumentVersion", "Files & chat attachments"), ("firmware.FirmwareArtifact", "Firmware"),
+             ("design.DesignFile", "PCB design files"), ("mechanical.MechanicalFile", "Mechanical CAD")]
+    rows, count, size = [], 0, 0
+    for label, name in kinds:
+        try:
+            model = apps.get_model(label)
+        except LookupError:
+            continue
+        agg = model.objects.aggregate(n=Count("pk"), s=Sum("size"))
+        n, sz = agg["n"] or 0, agg["s"] or 0
+        rows.append({"label": name, "count": n, "size": sz})
+        count += n
+        size += sz
+    return {"count": count, "size": size, "by_kind": rows}
+
+
 def stored_files():
     """Every file Workbench knows about, as (storage name, size) pairs."""
     from apps.core.models import SiteSettings

@@ -243,7 +243,10 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 # permission-checked views, never directly.
 MEDIA_URL = "/media/"
 MEDIA_ROOT = FILES_DIR
-MAX_UPLOAD_MB = int(env("WORKBENCH_MAX_UPLOAD_MB", 200))
+# Ceiling for the "Largest upload" setting in System → Backups (the HTTPS proxy allows up to 2 GB).
+MAX_UPLOAD_MB = min(int(env("WORKBENCH_MAX_UPLOAD_MB", 2000)), 2000)
+# Currency for part costs, BOM costs and stock value (suppliers can use others; see Parts → Suppliers).
+WORKBENCH_CURRENCY = env("WORKBENCH_CURRENCY", "USD").upper()
 DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 FILE_UPLOAD_PERMISSIONS = 0o640

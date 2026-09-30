@@ -1,6 +1,7 @@
 import zoneinfo
 
 from django import forms
+from django.db import models
 from django.contrib.auth.password_validation import validate_password
 
 from .models import User
@@ -29,7 +30,33 @@ class ProfileForm(forms.ModelForm):
 
 
 class UserAdminForm(forms.ModelForm):
-    time_zone = forms.ChoiceField(choices=TIME_ZONE_CHOICES, initial="Asia/Karachi")
+    time_zone = forms.ChoiceField(choices=TIME_ZONE_CHOICES, initial="UTC")
+
+    def __init__(self, *args, editor=None, **kwargs):
+        self.editor = editor
+        super().__init__(*args, **kwargs)
+
+    def clean_username(self):
+        name = self.cleaned_data["username"].strip()
+        clash = User.objects.filter(username__iexact=name)
+        if self.instance.pk:
+            clash = clash.exclude(pk=self.instance.pk)
+        if clash.exists():
+            raise forms.ValidationError("That username is taken (usernames don't depend on upper/lower case).")
+        return name
+
+    def clean(self):
+        data = super().clean()
+        if self.instance.pk and self.instance.is_admin_role:
+            losing_admin = data.get("role") != User.Role.ADMIN and not self.instance.is_superuser or data.get("is_active") is False
+            if losing_admin:
+                others = User.objects.filter(is_active=True).exclude(pk=self.instance.pk).filter(
+                    models.Q(role=User.Role.ADMIN) | models.Q(is_superuser=True))
+                if not others.exists():
+                    raise forms.ValidationError("This is the last active administrator. Make someone else an administrator first.")
+                if self.editor and self.editor.pk == self.instance.pk:
+                    raise forms.ValidationError("You can't remove your own administrator access or deactivate yourself. Ask another administrator.")
+        return data
 
     class Meta:
         model = User

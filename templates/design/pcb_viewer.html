@@ -13,8 +13,9 @@
   </div></div>
 
 {% if not board.ok %}
-<div class="card"><div class="empty">{% icon 'alert' 36 %}<h3>These files couldn't be drawn</h3><p>{{ board.error }}</p>
-  <p class="small">Upload the Gerber zip exactly as you'd send it to the fab (Gerber files plus drill files).</p></div></div>
+{% if board.pending %}<div class="card"><div class="empty">{% icon 'clock' 36 %}<h3>Drawing the board…</h3><p>{{ board.error }}</p></div></div>
+{% else %}<div class="card"><div class="empty">{% icon 'alert' 36 %}<h3>These files couldn't be drawn</h3><p>{{ board.error }}</p>
+  <p class="small">Upload the Gerber zip exactly as you'd send it to the fab (Gerber files plus drill files).</p></div></div>{% endif %}
 {% else %}
 <div class="pcb-layout">
   <div class="card pcb-stage">

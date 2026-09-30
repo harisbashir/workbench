@@ -144,7 +144,7 @@ class RestoreTests(TransactionTestCase):
                     dst.writestr(item, src.read(item.filename))
         (files_dir / "shared" / "keep.txt").write_text("changed")
         (files_dir / "shared" / "new.txt").write_text("added after backup")
-        manifest, safety = system.restore_backup(files_only)
+        manifest, safety = system.restore_backup(files_only, files_only=True)
         self.assertEqual(manifest["reason"], "test")
         self.assertEqual((files_dir / "shared" / "keep.txt").read_text(), "original")
         self.assertFalse((files_dir / "shared" / "new.txt").exists())

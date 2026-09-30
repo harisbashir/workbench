@@ -8,10 +8,10 @@
   <div class="card stat"><div class="label">Status</div><div class="value {% if not health.ok %}bad{% endif %}">{% if health.ok %}Healthy{% else %}Check{% endif %}</div><div class="small muted">Version {{ version }}</div></div>
   <div class="card stat"><div class="label">Disk free</div><div class="value {% if disk.percent > 85 %}bad{% elif disk.percent > 70 %}warn{% endif %}">{{ disk.free|filesizeformat }}</div>
     <div class="progress"><span class="w-{{ disk.percent|percent_step }}"></span></div><div class="small muted">{{ disk.percent }}% of {{ disk.total|filesizeformat }} used</div></div>
-  <div class="card stat"><a href="{% url 'files:storage' %}"><div class="label">Files (all versions)</div><div class="value">{{ files_size|filesizeformat }}</div></a><div class="small muted">Database {% if db_size %}{{ db_size|filesizeformat }}{% else %}on PostgreSQL{% endif %}</div></div>
+  <div class="card stat"><a href="{% url 'core:storage' %}"><div class="label">Stored files (all versions)</div><div class="value">{{ files.size|filesizeformat }}</div></a><div class="small muted">{{ files.count }} file{{ files.count|pluralize }}{% if storage.kind == 's3' %} in {{ storage.label }}{% endif %} · database {% if db_size %}{{ db_size|filesizeformat }}{% else %}on PostgreSQL{% endif %}</div></div>
   <div class="card stat"><a href="{% url 'core:system_tab' 'backups' %}"><div class="label">Last backup</div>
     <div class="value {% if not site.last_backup_at %}bad{% endif %}">{% if site.last_backup_at %}{{ site.last_backup_at|naturaltime }}{% else %}Never{% endif %}</div></a>
-    <div class="small muted">{% if site.backup_enabled %}Nightly at {{ site.backup_hour }}:00 ({{ site.time_zone }}){% else %}Nightly backups are off{% endif %}</div></div>
+    <div class="small muted">{% if site.last_backup_error %}<span class="bad-text">Last nightly backup failed: {{ site.last_backup_error }}</span>{% elif site.backup_enabled %}Nightly at {{ site.backup_hour }}:00 ({{ site.time_zone }}){% else %}Nightly backups are off{% endif %}</div></div>
 </div><p></p>
 <div class="grid grid-2">
   <div class="card"><div class="card-head"><h2>Installation</h2></div><div class="card-body">
@@ -25,9 +25,9 @@
   </div></div>
   <div class="card"><div class="card-head"><h2>Good to know</h2></div><div class="card-body small">
     <ul class="bullets">
-      <li>Updating: <code>git pull</code> then <code>docker compose up -d --build</code>. Your data folder is kept.</li>
+      <li>Updating: run <code>./update.sh</code> in the Workbench folder on the server. It takes a backup first and rolls back by itself if the new version doesn't start.</li>
       <li>Backups are zip files in <code>data/backups</code>. Copy them somewhere else too — a backup on the same disk won't survive a disk failure.</li>
-      <li>Moving to a new server: copy the whole <code>data</code> folder across and start Workbench there.</li>
+      <li>Moving to a new server: install Workbench there, stop both, copy the whole <code>data</code> folder across and start it again.</li>
       <li>Health check for monitoring: <code>/healthz</code></li>
     </ul>
     <a class="btn btn-sm" href="{% url 'core:help_topic' 'install' %}">Installation guide</a>

@@ -11,3 +11,5 @@ staticfiles/
 .coverage
 htmlcov/
 data/
+docker-compose.override.yml
+.workbench-update.log

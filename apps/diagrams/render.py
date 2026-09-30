@@ -1,11 +1,16 @@
 """Standalone SVG and vector PDF of a diagram, with an optional legend and title block."""
 import zlib
 from datetime import datetime, timezone
-from xml.sax.saxutils import escape
+from xml.sax.saxutils import escape as _escape
 
 from . import geometry as G
 
 FONT_FAMILY = "Helvetica, Arial, 'Liberation Sans', sans-serif"
+
+
+def escape(value):
+    """Escape for SVG text and double-quoted attributes; drops characters XML doesn't allow (old, uncleaned data)."""
+    return _escape(G.clean_text(str(value), 100_000), {'"': "&quot;", "'": "&#39;"})
 
 
 def _d(cmds):
@@ -71,7 +76,8 @@ def to_svg(data, *, highlight=None, legend=True, interactive=False):
     if highlight:
         n = next((n for n in data.get("nodes", []) if n["id"] == highlight), None)
         if n:
-            parts.append(f'<rect x="{n["x"] - 5}" y="{n["y"] - 5}" width="{n["w"] + 10}" height="{n["h"] + 10}" rx="8" '
+            parts.append(f'<rect x="{float(n["x"]) - 5:.2f}" y="{float(n["y"]) - 5:.2f}" width="{float(n["w"]) + 10:.2f}" '
+                         f'height="{float(n["h"]) + 10:.2f}" rx="8" '
                          'fill="none" stroke="#f59e0b" stroke-width="3" stroke-dasharray="6 3"/>')
     parts.append("</svg>")
     return "\n".join(parts)

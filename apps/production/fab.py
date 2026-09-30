@@ -39,16 +39,25 @@ def _unit_scale(h):
     return 0.0254 if "mil" in h else (25.4 if "(in" in h else 1.0)
 
 
-def _num(v):
-    m = re.search(r"-?\d+(?:\.\d+)?", v or "")
+_NUMBER = re.compile(r"^\s*([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)\s*(mm|mils?|in(?:ch)?|\")?\s*$", re.I)
+
+
+def _num(v, decimal_comma=False):
+    """'12.5', '-.5', '1.2e-3', '12.5mm', '400mil', '0.5in' -> millimetres; '12,5' when the
+    file uses a decimal comma (European locale, ';'-separated). None if it isn't a number."""
+    v = (v or "").strip()
+    if decimal_comma and v.count(",") == 1 and "." not in v:
+        v = v.replace(",", ".")
+    m = _NUMBER.match(v)
     if not m:
         return None
-    val = float(m.group())
-    if "mil" in (v or "").lower():
+    val = float(m.group(1))
+    unit = (m.group(2) or "").lower()
+    if unit.startswith("mil"):
         val *= 0.0254
-    elif (v or "").strip().lower().endswith("in"):
+    elif unit.startswith("in") or unit == '"':
         val *= 25.4
-    return val
+    return val if abs(val) < 1e7 else None
 
 
 def parse_placements(data):
@@ -68,8 +77,12 @@ def parse_placements(data):
                 continue
             parts = l.split()
             if len(parts) >= 7:
-                rows.append({"ref": parts[0], "val": parts[1], "package": parts[2], "x": _num(parts[3]),
-                             "y": _num(parts[4]), "rot": _num(parts[5]) or 0.0, "side": parts[6].lower()})
+                x, y = _num(parts[-4]), _num(parts[-3])
+                if x is None or y is None:
+                    warnings.append(f"{parts[0]}: position “{parts[-4]} {parts[-3]}” couldn't be read, so it was left out.")
+                    continue
+                rows.append({"ref": parts[0], "val": " ".join(parts[1:-5]), "package": parts[-5], "x": x,
+                             "y": y, "rot": _num(parts[-2]) or 0.0, "side": parts[-1].lower()})
         return rows, warnings
     # Find the header row (Altium files have a preamble)
     start = 0
@@ -94,21 +107,35 @@ def parse_placements(data):
         return [], ["This doesn't look like a pick-and-place file (no Designator / X / Y columns)."]
     xscale = _unit_scale(header[idx["x"]])
     yscale = _unit_scale(header[idx["y"]])
+    comma = dialect.delimiter != ","
     rows = []
     for r in reader:
-        if not r or len(r) <= max(idx.values()):
+        if not r or not any(c.strip() for c in r):
             continue
 
         def col(k):
             return r[idx[k]].strip() if k in idx and idx[k] < len(r) else ""
+        ref = col("ref")
+        if not ref:
+            continue
         side = col("side").lower()
         side = "bottom" if side.startswith(("b", "bot")) else "top"
         x, y = col("x"), col("y")
-        rows.append({"ref": col("ref"), "val": col("val"), "package": col("package"),
-                     "x": _num(x) * (1 if "mil" in x.lower() else xscale) if _num(x) is not None else None,
-                     "y": _num(y) * (1 if "mil" in y.lower() else yscale) if _num(y) is not None else None,
-                     "rot": _num(col("rot")) or 0.0, "side": side})
-    return [r for r in rows if r["ref"] and r["x"] is not None and r["y"] is not None], warnings
+        nx, ny = _num(x, comma), _num(y, comma)
+        if nx is None or ny is None:
+            warnings.append(f"{ref}: position “{x} {y}” couldn't be read, so it was left out.")
+            continue
+        has_unit = re.search(r"[a-z\"]\s*$", x.lower()), re.search(r"[a-z\"]\s*$", y.lower())
+        rot_raw = col("rot")
+        rot = _num(rot_raw, comma)
+        if rot is None:
+            if rot_raw:
+                warnings.append(f"{ref}: rotation “{rot_raw}” couldn't be read; 0° was used.")
+            rot = 0.0
+        rows.append({"ref": ref, "val": col("val"), "package": col("package"),
+                     "x": nx * (1 if has_unit[0] else xscale), "y": ny * (1 if has_unit[1] else yscale),
+                     "rot": rot, "side": side})
+    return rows, warnings
 
 
 def lcsc_number(part):

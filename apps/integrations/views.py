@@ -1,3 +1,4 @@
+import hashlib
 import json
 import logging
 import os
@@ -5,6 +6,7 @@ from datetime import timedelta
 
 from django.contrib.auth.decorators import login_required
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
 from django.shortcuts import render
 from django.urls import reverse
@@ -45,21 +47,46 @@ def github_webhook(request):
         return HttpResponseForbidden("Invalid signature")
     if not delivery or not event:
         return HttpResponseBadRequest("Missing GitHub headers")
-    try:
-        with transaction.atomic():
-            record = WebhookDelivery.objects.create(delivery_id=delivery, event=event[:40], status="received")
-    except IntegrityError:
+    body_hash = hashlib.sha256(body).hexdigest()
+    record = _claim_delivery(delivery, event, body_hash)
+    if record is None:
         return HttpResponse("Duplicate delivery ignored")  # replay protection
     try:
         payload = json.loads(body)
+        if not isinstance(payload, dict):
+            raise ValueError("payload isn't a JSON object")
         record.repository = ((payload.get("repository") or {}).get("full_name") or "")[:200]
         with transaction.atomic():
             record.status, record.message = github.handle(event, payload)
-    except Exception as exc:  # never leak internals to the caller
+    except Exception as exc:
         log.exception("GitHub webhook failed")
-        record.status, record.message = "error", str(exc)[:300]
+        # The details go to the server log; GitHub (and the deliveries list) only get the type.
+        record.status, record.message = "error", f"Processing failed ({type(exc).__name__}). See the server log."
     record.save()
     return JsonResponse({"status": record.status, "message": record.message})
+
+
+def _claim_delivery(delivery, event, body_hash):
+    """Records a delivery before processing it. Returns None for a replay: the same
+    delivery ID or the same signed body seen before — except that a delivery which
+    failed with an error may be sent again (GitHub's "Redeliver" keeps the ID)."""
+    earlier = WebhookDelivery.objects.filter(Q(delivery_id=delivery) | Q(body_sha256=body_hash)).first()
+    if earlier is not None:
+        if earlier.status != "error":
+            return None
+        with transaction.atomic():
+            # Claim the retry atomically so two redeliveries can't both run.
+            claimed = WebhookDelivery.objects.filter(pk=earlier.pk, status="error").update(status="received", message="Retrying")
+        if not claimed:
+            return None
+        earlier.refresh_from_db()
+        return earlier
+    try:
+        with transaction.atomic():
+            return WebhookDelivery.objects.create(delivery_id=delivery, event=event[:40], status="received",
+                                                  body_sha256=body_hash)
+    except IntegrityError:
+        return None
 
 
 @login_required

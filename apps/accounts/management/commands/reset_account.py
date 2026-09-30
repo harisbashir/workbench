@@ -24,6 +24,8 @@ class Command(BaseCommand):
         parser.add_argument("--password", action="store_true", help="Print a one-time link to set a new password.")
         parser.add_argument("--2fa", dest="mfa", action="store_true", help="Turn off two-factor authentication.")
         parser.add_argument("--list", action="store_true", help="List accounts.")
+        parser.add_argument("--reactivate", action="store_true", help="Reactivate a deactivated account.")
+        parser.add_argument("--make-admin", action="store_true", help="Give the account the Administrator role.")
 
     def handle(self, *args, **o):
         if o["list"] or not o["username"]:
@@ -42,11 +44,20 @@ class Command(BaseCommand):
         except User.DoesNotExist:
             raise CommandError(f"No account called {o['username']}. Use --list to see them.")
 
+        done = []
         if not user.is_active:
-            raise CommandError(f"{user.username} is deactivated. Reactivate them under People first.")
-        user.failed_logins, user.locked_until = 0, None
-        user.save(update_fields=["failed_logins", "locked_until"])
-        done = ["unlocked"]
+            if not o["reactivate"]:
+                raise CommandError(f"{user.username} is deactivated. Add --reactivate to turn the account back on.")
+            user.is_active = True
+            user.save(update_fields=["is_active"])
+            done.append("reactivated")
+        if o["make_admin"]:
+            user.role = User.Role.ADMIN
+            user.save(update_fields=["role"])
+            done.append("made administrator")
+        user.failed_logins, user.locked_until, user.mfa_failures = 0, None, 0
+        user.save(update_fields=["failed_logins", "locked_until", "mfa_failures"])
+        done.append("unlocked")
         if o["mfa"]:
             user.mfa_enabled, user.mfa_secret = False, ""
             user.save(update_fields=["mfa_enabled", "_mfa_secret"])

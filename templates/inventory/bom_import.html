@@ -21,6 +21,9 @@
 {% else %}
 <div class="tip"><strong>Check before saving.</strong> {{ preview.rows|length }} lines found. {{ preview.new }} will create new parts in the library; the rest match existing parts.
   {% if preview.replace %}The current BOM for {{ rev.title }} will be replaced.{% else %}Lines will be added to the current BOM.{% endif %}</div>
+{% if preview.mixed_dnp %}<div class="tip"><strong>Same part both fitted and DNP:</strong> {{ preview.mixed_dnp|join:"; " }}.
+  A BOM line is either fitted or not, so the fitted references are kept on the line and the DNP ones are listed in the line's notes —
+  they won't be placed by the assembler or taken from stock.</div>{% endif %}
 <div class="card"><div class="table-wrap"><table class="table">
   <thead><tr><th>References</th><th>Value</th><th>Footprint</th><th class="num">Qty</th><th>MPN</th><th>Matches</th></tr></thead>
   <tbody>{% for r in preview.rows %}

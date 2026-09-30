@@ -5,6 +5,10 @@ from django.urls import reverse
 from django.utils.text import slugify
 
 
+# Slugs that clash with fixed URLs under /chat/ (see apps/chat/urls.py).
+RESERVED_SLUGS = {"new", "direct", "unread", "message"}
+
+
 class ChannelQuerySet(models.QuerySet):
     def visible_to(self, user):
         from apps.projects.models import Project
@@ -63,7 +67,7 @@ class Channel(models.Model):
     def unique_slug(cls, name):
         base = slugify(name)[:80] or "channel"
         slug, i = base, 2
-        while cls.objects.filter(slug=slug).exists():
+        while slug in RESERVED_SLUGS or cls.objects.filter(slug=slug).exists():
             slug = f"{base}-{i}"
             i += 1
         return slug

@@ -1,4 +1,5 @@
-{% extends "base.html" %}{% load workbench humanize %}
+{% extends "base.html" %}{% load workbench humanize static %}
+{% block extra_head %}<script src="{% static 'production/once.js' %}" defer></script>{% endblock %}
 {% block title %}{{ b.number }}{% endblock %}
 {% block content %}
 <div class="page-head"><div class="titles"><div class="crumbs"><a href="{% url 'production:build_list' %}">Production</a> /</div>
@@ -28,7 +29,7 @@
           <li>Place the order on their website for {{ b.quantity }} boards.</li>
           <li>Record it here. The parts you fit in house are then taken from stock for this build.</li>
         </ol>
-        <form method="post" action="{% url 'production:build_stage' b.pk %}" novalidate>{% csrf_token %}
+        <form method="post" action="{% url 'production:build_stage' b.pk %}" novalidate data-once>{% csrf_token %}
           <div class="form-grid">{% include "partials/form.html" with form=fab_form %}</div>
           {% if short %}<label class="check-label small"><input type="checkbox" name="force" value="1"> Continue anyway, even though in-house parts are short</label><p></p>{% endif %}
           <button class="btn btn-primary" name="action" value="fab_ordered">{% icon 'truck' 16 %} Order placed</button></form>
@@ -36,20 +37,21 @@
       {% else %}
       <div class="card next-card"><div class="card-head"><h2>Start the build</h2></div><div class="card-body">
         <p class="small">Starting takes the parts for {{ b.quantity }} boards out of stock and creates the assembly checklist.</p>
-        <form method="post" action="{% url 'production:build_stage' b.pk %}">{% csrf_token %}
+        <form method="post" action="{% url 'production:build_stage' b.pk %}" data-once>{% csrf_token %}
           {% if short %}<label class="check-label small"><input type="checkbox" name="force" value="1"> Start anyway, even though parts are short</label><p></p>{% endif %}
           <button class="btn btn-primary" name="action" value="start_house">{% icon 'factory' 16 %} Start build</button></form>
       </div></div>
       {% endif %}{% endif %}
 
-    {% elif b.stage == 'at_fab' %}
+    {% elif b.stage == 'at_fab' and b.status == 'in_progress' %}
       <div class="card next-card"><div class="card-head"><h2>At {{ b.manufacturer|default:"the assembly house" }}</h2>
         {% if b.fab_ordered_at %}<span class="small muted">ordered {{ b.fab_ordered_at|naturalday }}</span>{% endif %}</div><div class="card-body">
         {% if b.fab_order_ref %}<div class="kv"><span>Order number</span><strong class="mono">{{ b.fab_order_ref }}</strong></div>{% endif %}
         {% if b.fab_tracking %}<div class="kv"><span>Tracking</span><span class="mono">{{ b.fab_tracking }}</span></div>{% endif %}
         {% if can_edit %}<p class="small">When the assembled boards arrive, count them and record it. {% if steps %}The in-house finishing checklist ({{ steps|length }} step{{ steps|length|pluralize }}) is ready.{% endif %}</p>
-        <form method="post" action="{% url 'production:build_stage' b.pk %}" novalidate>{% csrf_token %}
+        <form method="post" action="{% url 'production:build_stage' b.pk %}" novalidate data-once>{% csrf_token %}
           <div class="form-grid">{% include "partials/form.html" with form=receive_form %}</div>
+          {% if b.stock_consumed %}<p class="small muted">If fewer boards arrive than the {{ b.quantity }} ordered, the in-house parts for the missing ones go back into stock.</p>{% endif %}
           <button class="btn btn-primary" name="action" value="received">{% icon 'box' 16 %} Boards received</button></form>{% endif %}
       </div></div>
     {% endif %}
@@ -70,14 +72,14 @@
             <div class="progress"><span class="w-{{ s.percent|percent_step }}" data-step-bar></span></div>
           </div>
           <div class="step-count"><strong data-step-done>{{ s.done_qty }}</strong><span class="muted">/{{ b.board_qty }}</span><div class="small faint">boards</div></div>
-          {% if can_finish and b.stage != 'done' %}<form method="post" action="{% url 'production:build_step' b.pk s.pk %}" class="step-buttons" data-step-form>{% csrf_token %}
+          {% if can_finish and b.stage != 'done' and b.status == 'in_progress' %}<form method="post" action="{% url 'production:build_step' b.pk s.pk %}" class="step-buttons" data-step-form>{% csrf_token %}
             <button class="btn btn-sm" name="how" value="-1" aria-label="One less">−1</button>
             <button class="btn btn-sm" name="how" value="1" aria-label="One more board done">+1</button>
             <button class="btn btn-sm" name="how" value="5" aria-label="Five more boards done">+5</button>
             <button class="btn btn-sm btn-ghost" name="how" value="all">All</button></form>{% endif %}
         </div>{% endfor %}
       </div>{% else %}<div class="card-body muted small">No finishing steps. {% if b.by_fab %}Every part is placed by the assembly house.{% endif %}</div>{% endif %}
-      {% if can_finish and b.stage == 'finishing' %}<div class="card-foot">
+      {% if can_finish and b.stage == 'finishing' and b.status == 'in_progress' %}<div class="card-foot">
         <form method="post" action="{% url 'production:build_stage' b.pk %}" class="btn-row">{% csrf_token %}
           <input type="text" name="title" maxlength="160" class="grow" placeholder="Add a step, e.g. Wash flux, Conformal coat, Glue inductor" aria-label="New step">
           <button class="btn btn-sm" name="action" value="add_step">{% icon 'plus' 14 %} Add step</button></form>
@@ -88,13 +90,15 @@
     </div>
     {% endif %}
 
-    {% if b.stage == 'testing' and can_edit %}
+    {% if b.stage == 'testing' and b.status == 'in_progress' and can_edit %}
     <div class="card next-card"><div class="card-head"><h2>Flash &amp; test</h2>
       {% if steps %}<form method="post" action="{% url 'production:build_stage' b.pk %}">{% csrf_token %}<button class="btn btn-sm btn-ghost" name="action" value="reopen">Back to finishing</button></form>{% endif %}</div>
       <div class="card-body">
         <p class="small">Flash the firmware below, test each board, then record the results.</p>
-        <form method="post" action="{% url 'production:build_action' b.pk %}" novalidate>{% csrf_token %}
+        <form method="post" action="{% url 'production:build_action' b.pk %}" novalidate data-once>{% csrf_token %}
           <div class="form-grid">{% include "partials/form.html" with form=complete_form %}</div>
+          {% if recalled %}<div class="alert alert-warning small">{% icon 'alert' 16 %} Firmware on this build is recalled: {{ recalled|join:", " }}. Re-flash with a good version and change the firmware below.</div>
+          <label class="check-label small"><input type="checkbox" name="force" value="1"> Complete anyway — the boards don't carry the recalled firmware</label><p></p>{% endif %}
           <button class="btn btn-primary" name="action" value="complete">{% icon 'check' 16 %} Build complete</button></form>
       </div></div>
     {% endif %}
@@ -116,7 +120,7 @@
     </div>
 
     <div class="card"><div class="card-head"><h2>{% if b.by_fab %}In-house parts from your stock{% else %}Parts needed{% endif %}</h2>
-      {% if can_edit and short and b.status == 'planned' %}<form method="post" action="{% url 'production:build_action' b.pk %}">{% csrf_token %}<button class="btn btn-sm btn-primary" name="action" value="order_shortages">{% icon 'truck' 14 %} Order missing parts</button></form>{% endif %}</div>
+      {% if can_edit and short and b.status == 'planned' %}<form method="post" action="{% url 'production:build_action' b.pk %}" data-once>{% csrf_token %}<button class="btn btn-sm btn-primary" name="action" value="order_shortages">{% icon 'truck' 14 %} Order missing parts</button></form>{% endif %}</div>
       {% if reqs %}<div class="table-wrap"><table class="table">
         <thead><tr><th>Part</th><th>Description</th><th>References</th><th class="num">Per board</th><th class="num">Needed</th><th class="num">In stock</th><th class="num">Short</th></tr></thead>
         <tbody>{% for r in reqs %}<tr class="{% if r.short %}row-bad{% endif %}"><td class="key"><a href="{{ r.part.get_absolute_url }}">{{ r.part.ipn }}</a></td><td>{{ r.part.description|truncatechars:38 }}</td>
@@ -127,6 +131,16 @@
       {% if b.by_fab %}<div class="card-foot small muted">The assembly house supplies and places every other part.{% if b.stock_consumed %} Parts for this build have been taken out of stock.{% endif %}</div>
       {% elif b.stock_consumed %}<div class="card-foot small muted">Parts for this build have been taken out of stock.</div>{% endif %}
     </div>
+    {% if can_edit and consumed %}
+    <div class="card" id="return"><div class="card-head"><h2>{% icon 'box' 16 %} Return unused parts</h2></div>
+      <form method="post" action="{% url 'production:build_action' b.pk %}" data-once>{% csrf_token %}
+      <div class="card-body small muted">Parts taken from stock for this build and not yet returned. Count what's left over (spare reels, parts not fitted) and put it back.</div>
+      <div class="table-wrap"><table class="table"><thead><tr><th>Part</th><th>Description</th><th class="num">Taken</th><th class="num">Return</th></tr></thead><tbody>
+      {% for c in consumed %}<tr><td class="key"><a href="{{ c.part.get_absolute_url }}">{{ c.part.ipn }}</a></td><td>{{ c.part.description|truncatechars:38 }}</td><td class="num">{{ c.qty }}</td>
+        <td class="num"><input type="number" min="0" max="{{ c.qty }}" name="return_{{ c.part.pk }}" class="qty-input" placeholder="0" aria-label="Return {{ c.part.ipn }}"></td></tr>{% endfor %}
+      </tbody></table></div>
+      <div class="card-foot"><button class="btn btn-sm" name="action" value="return_parts">Put back into stock</button></div></form>
+    </div>{% endif %}
     {% if b.notes %}<div class="card"><div class="card-head"><h3>Notes</h3></div><div class="card-body">{{ b.notes|linebreaksbr }}</div></div>{% endif %}
   </div>
 
@@ -147,8 +161,12 @@
       <div class="kv"><span>Created</span><span>{{ b.created_at|naturalday }} by {{ b.created_by|default:"—" }}</span></div>
       {% if b.started_at %}<div class="kv"><span>Started</span><span>{{ b.started_at|naturalday }}</span></div>{% endif %}
     </div></div>
-    {% if can_edit and b.status == 'planned' %}<div class="card"><div class="card-body">
-      <form method="post" action="{% url 'production:build_action' b.pk %}" data-confirm="Cancel {{ b.number }}?">{% csrf_token %}<button class="btn btn-sm btn-ghost" name="action" value="cancel">Cancel this build</button></form>
+    {% if can_edit and b.status == 'planned' or can_edit and b.status == 'in_progress' %}<div class="card"><div class="card-head"><h3>Cancel</h3></div><div class="card-body small">
+      <form method="post" action="{% url 'production:build_action' b.pk %}" data-confirm="Cancel {{ b.number }}?" data-once>{% csrf_token %}
+        {% if b.stock_consumed %}<div class="cancel-return"><input type="checkbox" id="cancel-return" name="return_parts" value="1" checked>
+          <label for="cancel-return">Put the parts taken for it back into stock</label></div>
+          <p class="faint">Untick if they're already soldered on boards, and return what's left over with <a href="#return">Return unused parts</a> instead.</p>{% endif %}
+        <button class="btn btn-sm btn-ghost" name="action" value="cancel">Cancel this build</button></form>
     </div></div>{% endif %}
     {% if b.by_fab %}<div class="card"><div class="card-head"><h3>How this works</h3></div><div class="card-body small">
       <ul class="bullets">

@@ -1,6 +1,6 @@
 from django import forms
 
-from .models import BomLine, Part, Supplier
+from .models import BASE_CURRENCY, BomLine, Part, Supplier
 
 
 class PartForm(forms.ModelForm):
@@ -9,7 +9,7 @@ class PartForm(forms.ModelForm):
         fields = ["ipn", "description", "category", "value", "footprint", "manufacturer", "mpn", "datasheet_url",
                   "supplier", "supplier_sku", "unit_cost", "min_stock", "location", "lifecycle", "notes"]
         widgets = {"notes": forms.Textarea(attrs={"rows": 3})}
-        labels = {"unit_cost": "Unit cost (USD)"}
+        labels = {"unit_cost": f"Unit cost ({BASE_CURRENCY})"}
 
 
 class SupplierForm(forms.ModelForm):
@@ -18,6 +18,9 @@ class SupplierForm(forms.ModelForm):
         fields = ["name", "kind", "website", "contact_name", "email", "phone", "country", "currency", "lead_time_days", "notes"]
         widgets = {"notes": forms.Textarea(attrs={"rows": 3})}
         labels = {"kind": "Type"}
+
+    def clean_currency(self):
+        return (self.cleaned_data.get("currency") or "").strip().upper()
 
 
 class StockAdjustForm(forms.Form):

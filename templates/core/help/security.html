@@ -1,4 +1,5 @@
 {% extends "core/help/_layout.html" %}
+{% load workbench %}
 {% block help_title %}Accounts &amp; security{% endblock %}
 {% block help %}
 <h1>Accounts &amp; security</h1>
@@ -20,16 +21,16 @@
 <h2>For administrators</h2>
 <h3>Adding someone</h3>
 <ol>
-  <li><a href="{% url 'accounts:user_list' %}">People</a> → <em>Add person</em>. Choose their role.</li>
+  <li>{% admin_link 'accounts:user_list' 'People' %} → <em>Add person</em>. Choose their role.</li>
   <li>Copy the one-time sign-in link and send it to them privately. It expires after 3 days.</li>
   <li>Add them to the right projects from each project's <em>Settings &amp; members</em>.</li>
 </ol>
 <h3>When someone leaves</h3>
 <p>Open their account and untick <strong>Active</strong>. They can't sign in any more, but their history stays. Do this on their last day.</p>
 <h3>Lost phone</h3>
-<p>On <a href="{% url 'accounts:user_list' %}">People</a>, choose <em>Reset 2FA</em> for that person. They set it up again at their next sign-in.</p>
+<p>On {% admin_link 'accounts:user_list' 'People' %}, choose <em>Reset 2FA</em> for that person. They set it up again at their next sign-in.</p>
 <h3>Audit log</h3>
-<p>The <a href="{% url 'core:audit_log' %}">audit log</a> records sign-ins (including failures), permission changes, file uploads, BOM imports, stock changes and orders, with the time and IP address. Entries can't be edited or deleted from the app.</p>
+<p>The {% admin_link 'core:audit_log' 'audit log' %} records sign-ins (including failures), permission changes, file uploads, BOM imports, stock changes and orders, with the time and IP address. Entries can't be edited or deleted from the app.</p>
 
 <h2>How your data is protected</h2>
 <ul>

@@ -1,14 +1,19 @@
 """Assembly-house package for a revision, and the in-house finishing of builds."""
-import io
+import shutil
+import tempfile
 import zipfile
 
 from django import forms
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
-from django.http import Http404, HttpResponse, JsonResponse
+from django.db import transaction
+from django.db.models import F, Value
+from django.db.models.functions import Greatest, Least
+from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
+from django.utils.http import content_disposition_header, url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
 from apps.chat.models import post_system_message
@@ -63,11 +68,12 @@ def fab_package(request, pk):
         elif get == "house":
             data, name = fab.house_csv(p), f"{base}-in-house-parts.csv"
         elif get == "zip":
-            buf = io.BytesIO()
+            # Spooled to a temporary file: the Gerber zip can be large.
+            buf = tempfile.SpooledTemporaryFile(max_size=16 * 1024 * 1024)
             with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
                 if gerber:
-                    with gerber.file.open("rb") as fh:
-                        z.writestr(f"{base}-gerbers.zip", fh.read())
+                    with gerber.file.open("rb") as fh, z.open(f"{base}-gerbers.zip", "w", force_zip64=(gerber.size or 0) > 2 ** 30) as out:
+                        shutil.copyfileobj(fh, out, 1024 * 1024)
                 z.writestr(f"{base}-BOM-{who}.csv", fab.bom_csv(p, assembler))
                 if placements is not None:
                     z.writestr(f"{base}-CPL-{who}.csv", fab.cpl_csv(p, placements))
@@ -78,12 +84,15 @@ def fab_package(request, pk):
                     f"The assembler places {sum(len(l.refs) or l.quantity for l in p['fab'])} parts per board. "
                     f"{sum(l.quantity for l in p['house'])} parts are fitted in house afterwards "
                     f"(see the in-house parts list; don't upload it).\n").encode())
-            data, name = buf.getvalue(), f"{base}-{who}-order-files.zip"
+            name = f"{base}-{who}-order-files.zip"
+            audit(request, "fab.package_downloaded", rev, file=name)
+            buf.seek(0)
+            return FileResponse(buf, as_attachment=True, filename=name, content_type="application/zip")
         else:
             raise Http404
         audit(request, "fab.package_downloaded", rev, file=name)
-        resp = HttpResponse(data, content_type="application/zip" if name.endswith(".zip") else "text/csv")
-        resp["Content-Disposition"] = f'attachment; filename="{name}"'
+        resp = HttpResponse(data, content_type="text/csv")
+        resp["Content-Disposition"] = content_disposition_header(True, name)
         return resp
     return render(request, "production/fab_package.html", {
         "rev": rev, "project": rev.project, "assembler": assembler, "assemblers": fab.ASSEMBLERS, "info": fab.ASSEMBLERS[assembler],
@@ -115,12 +124,18 @@ def bom_fitted(request, pk):
         messages.success(request, f"Marked {changed} through-hole part{'s' if changed != 1 else ''} as fitted in house." if changed
                          else "No through-hole parts found to mark. Switch lines one by one with the buttons.")
     else:
-        line = get_object_or_404(BomLine, pk=request.POST.get("line"), revision=rev)
+        line_id = request.POST.get("line", "")
+        if not line_id.isdigit():
+            raise Http404
+        line = get_object_or_404(BomLine, pk=int(line_id), revision=rev)
         line.fitted_by = "house" if request.POST.get("to") == "house" else "fab"
         line.save(update_fields=["fitted_by"])
         if request.headers.get("x-requested-with") == "fetch":
             return JsonResponse({"ok": True, "fitted_by": line.fitted_by})
-    return redirect(request.POST.get("next") or f"/parts/boms/{rev.pk}/")
+    nxt = request.POST.get("next") or ""
+    if not url_has_allowed_host_and_scheme(nxt, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
+        nxt = f"/parts/boms/{rev.pk}/"
+    return redirect(nxt)
 
 
 # --- Build workflow -----------------------------------------------------------------------
@@ -154,69 +169,92 @@ def build_stage(request, pk):
     b = _build(request, pk)
     action = request.POST.get("action")
     project = b.revision.project
+    S = BuildOrder.Status
     if action in ("fab_ordered", "received", "start_house") and not request.user.can_manage_procurement:
         raise PermissionDenied
-    if action in ("finished", "add_step", "delete_step") and not can_finish(request.user, b):
+    if action in ("finished", "reopen", "add_step", "delete_step") and not can_finish(request.user, b):
         raise PermissionDenied
-    if b.status == BuildOrder.Status.PLANNED and b.firmware_releases.filter(status="recalled").exists() \
-            and action in ("fab_ordered", "start_house"):
-        messages.error(request, "This build uses recalled firmware. Choose a different firmware version first.")
+    if action in ("fab_ordered", "start_house"):
+        if b.status != S.PLANNED:
+            messages.info(request, f"{b.number} is {b.get_status_display().lower()}, so it can't be started.")
+            return redirect(b)
+        if b.firmware_releases.filter(status="recalled").exists():
+            messages.error(request, "This build uses recalled firmware. Choose a different firmware version first.")
+            return redirect(b)
+    elif b.status != S.IN_PROGRESS:
+        messages.info(request, f"{b.number} is {b.get_status_display().lower()}; nothing was changed.")
         return redirect(b)
-    if action == "fab_ordered" and b.stage == BuildOrder.Stage.PLANNED:
+
+    if action == "fab_ordered":
         form = FabOrderForm(request.POST)
-        if form.is_valid():
-            if b.shortage_count and "force" not in request.POST:
-                messages.error(request, "Some in-house parts are short. Order them first, or tick “continue anyway”.")
-                return redirect(b)
-            b.fab_order_ref = form.cleaned_data["fab_order_ref"]
-            b.fab_ordered_at = form.cleaned_data["fab_ordered_at"] or timezone.localdate()
-            b.stage = BuildOrder.Stage.AT_FAB
-            b.save(update_fields=["fab_order_ref", "fab_ordered_at", "stage"])
-            b.start()
-            b.consume_stock(request.user)
-            b.create_steps()
-            who = b.manufacturer or "the assembly house"
-            log_activity(project, f"ordered assembly of {b.number} from {who}" + (f" ({b.fab_order_ref})" if b.fab_order_ref else ""),
-                         actor=request.user, url=b.get_absolute_url())
-            post_system_message(project, f"Build {b.number}: {b.quantity} × {b.revision.title} ordered from {who}. "
-                                         "In-house parts were taken from stock for finishing.", b.get_absolute_url())
-            messages.success(request, f"{b.number} is now at {who}. In-house parts for {b.quantity} boards were reserved from stock.")
-    elif action == "start_house" and b.stage == BuildOrder.Stage.PLANNED:
+        if not form.is_valid():
+            messages.error(request, "Check the order number and date.")
+            return redirect(b)
+        if b.shortage_count and "force" not in request.POST:
+            messages.error(request, "Some in-house parts are short. Order them first, or tick “continue anyway”.")
+            return redirect(b)
+        with transaction.atomic():
+            started = b.begin(BuildOrder.Stage.AT_FAB, fab_order_ref=form.cleaned_data["fab_order_ref"],
+                              fab_ordered_at=form.cleaned_data["fab_ordered_at"] or timezone.localdate())
+            if started:
+                b.consume_stock(request.user)
+                b.create_steps()
+        if not started:
+            messages.info(request, f"{b.number} had already been ordered.")
+            return redirect(b)
+        who = b.manufacturer or "the assembly house"
+        log_activity(project, f"ordered assembly of {b.number} from {who}" + (f" ({b.fab_order_ref})" if b.fab_order_ref else ""),
+                     actor=request.user, url=b.get_absolute_url())
+        post_system_message(project, f"Build {b.number}: {b.quantity} × {b.revision.title} ordered from {who}. "
+                                     "In-house parts were taken from stock for finishing.", b.get_absolute_url())
+        messages.success(request, f"{b.number} is now at {who}. In-house parts for {b.quantity} boards were reserved from stock.")
+    elif action == "start_house":
         if b.shortage_count and "force" not in request.POST:
             messages.error(request, "Some parts are short. Order them first, or tick “start anyway”.")
             return redirect(b)
-        b.start()
-        b.consume_stock(request.user)
-        b.create_steps()
-        b.stage = BuildOrder.Stage.FINISHING
-        b.save(update_fields=["stage"])
+        with transaction.atomic():
+            started = b.begin(BuildOrder.Stage.FINISHING)
+            if started:
+                b.consume_stock(request.user)
+                b.create_steps()
+        if not started:
+            messages.info(request, f"{b.number} had already been started.")
+            return redirect(b)
         log_activity(project, f"started build {b.number}", actor=request.user, url=b.get_absolute_url())
         post_system_message(project, f"Build {b.number} ({b.quantity} × {b.revision.title}) has started. Parts have been taken from stock.", b.get_absolute_url())
         messages.success(request, f"{b.number} started. Parts for {b.quantity} boards were taken out of stock.")
-    elif action == "received" and b.stage == BuildOrder.Stage.AT_FAB:
+    elif action == "received":
         form = ReceiveForm(request.POST)
-        if form.is_valid():
-            b.received_qty = form.cleaned_data["received_qty"]
-            b.fab_tracking = form.cleaned_data["fab_tracking"] or b.fab_tracking
-            b.received_at = timezone.now()
-            b.stage = BuildOrder.Stage.FINISHING if b.steps.exists() else BuildOrder.Stage.TESTING
-            b.save(update_fields=["received_qty", "fab_tracking", "received_at", "stage"])
-            short = b.quantity - b.received_qty
-            text = f"Build {b.number}: {b.received_qty} assembled boards received" + (f" ({short} fewer than ordered)" if short > 0 else "")
-            log_activity(project, text[0].lower() + text[1:], actor=request.user, url=b.get_absolute_url())
-            post_system_message(project, text + (". Ready for in-house finishing." if b.steps.exists() else ". Ready for test."), b.get_absolute_url())
-            messages.success(request, text + ".")
-    elif action == "finished" and b.stage == BuildOrder.Stage.FINISHING:
-        b.stage = BuildOrder.Stage.TESTING
-        b.save(update_fields=["stage"])
+        if not form.is_valid():
+            messages.error(request, "Enter how many boards arrived.")
+            return redirect(b)
+        qty = form.cleaned_data["received_qty"]  # may be more than ordered: assemblers sometimes send spares
+        next_stage = BuildOrder.Stage.FINISHING if b.steps.exists() else BuildOrder.Stage.TESTING
+        with transaction.atomic():
+            got = b._claim({"stage": BuildOrder.Stage.AT_FAB, "status": S.IN_PROGRESS}, stage=next_stage, received_qty=qty,
+                           received_at=timezone.now(), fab_tracking=form.cleaned_data["fab_tracking"] or b.fab_tracking)
+            returned = b.return_for_missing_boards(request.user, b.quantity - qty) if got else {}
+        if not got:
+            messages.info(request, f"The boards for {b.number} had already been recorded.")
+            return redirect(b)
+        short = b.quantity - qty
+        text = f"Build {b.number}: {qty} assembled boards received" + (f" ({short} fewer than ordered)" if short > 0 else "")
+        log_activity(project, text[0].lower() + text[1:], actor=request.user, url=b.get_absolute_url())
+        post_system_message(project, text + (". Ready for in-house finishing." if b.steps.exists() else ". Ready for test."), b.get_absolute_url())
+        messages.success(request, text + ".")
+        if returned:
+            messages.info(request, "In-house parts for the missing boards were put back into stock: "
+                          + ", ".join(f"{n} × {p.ipn}" for p, n in returned.items()) + ".")
+    elif action == "finished":
+        if not b._claim({"stage": BuildOrder.Stage.FINISHING, "status": S.IN_PROGRESS}, stage=BuildOrder.Stage.TESTING):
+            return redirect(b)
         log_activity(project, f"finished in-house assembly of {b.number}", actor=request.user, url=b.get_absolute_url())
         if not b.steps_done:
             messages.warning(request, "Moved to testing, although not every finishing step is ticked off for every board.")
         else:
             messages.success(request, "Finishing done. Next: flash and test.")
-    elif action == "reopen" and b.stage == BuildOrder.Stage.TESTING and b.steps.exists():
-        b.stage = BuildOrder.Stage.FINISHING
-        b.save(update_fields=["stage"])
+    elif action == "reopen" and b.steps.exists():
+        b._claim({"stage": BuildOrder.Stage.TESTING, "status": S.IN_PROGRESS}, stage=BuildOrder.Stage.FINISHING)
     elif action == "add_step":
         title = (request.POST.get("title") or "").strip()[:160]
         if title:
@@ -225,8 +263,12 @@ def build_stage(request, pk):
                                      per_board=0, order=(last.order + 1) if last else 0)
         return redirect(f"{b.get_absolute_url()}#finishing")
     elif action == "delete_step":
-        get_object_or_404(BuildStep, pk=request.POST.get("step"), build=b).delete()
+        step = request.POST.get("step", "")
+        if step.isdigit():
+            get_object_or_404(BuildStep, pk=int(step), build=b).delete()
         return redirect(f"{b.get_absolute_url()}#finishing")
+    else:
+        return redirect(b)
     audit(request, f"build.{action}", b)
     return redirect(b)
 
@@ -239,21 +281,27 @@ def build_step(request, pk, step_pk):
     if not can_finish(request.user, b):
         raise PermissionDenied
     step = get_object_or_404(BuildStep, pk=step_pk, build=b)
+    if b.status != BuildOrder.Status.IN_PROGRESS:
+        if request.headers.get("x-requested-with") == "fetch":
+            return JsonResponse({"error": f"{b.number} is {b.get_status_display().lower()}."}, status=409)
+        messages.info(request, f"{b.number} is {b.get_status_display().lower()}; nothing was changed.")
+        return redirect(b)
     total = b.board_qty
     was_done = b.steps_done
     how = request.POST.get("how", "1")
+    # Done in the database (not read-modify-write), so two technicians tapping +1 at once both count.
     if how == "all":
-        step.done_qty = total
+        new = Value(total)
     elif how == "none":
-        step.done_qty = 0
+        new = Value(0)
     else:
         try:
-            delta = int(how)
+            delta = max(-10_000, min(10_000, int(how)))
         except ValueError:
             delta = 0
-        step.done_qty = max(0, min(total, step.done_qty + delta))
-    step.updated_by, step.updated_at = request.user, timezone.now()
-    step.save(update_fields=["done_qty", "updated_by", "updated_at"])
+        new = Greatest(Value(0), Least(Value(total), F("done_qty") + delta))
+    BuildStep.objects.filter(pk=step.pk).update(done_qty=new, updated_by=request.user, updated_at=timezone.now())
+    step.refresh_from_db()
     all_done = b.steps_done
     if all_done and not was_done and project_lead_should_hear(b):
         notify(b.revision.project.lead, f"{b.number}: in-house finishing is done on all {total} boards", b.get_absolute_url())

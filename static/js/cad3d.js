@@ -133,15 +133,27 @@
         this.message("Preparing the 3D view… large STEP files can take a minute.");
         return this.poll();
       }
-      this.message(this.root.dataset.message || "This file can't be shown in 3D.", true);
+      this.message((st === "failed" ? "Couldn't convert this file for the 3D view: " : "") +
+        (this.root.dataset.message || "This file can't be shown in 3D."), true);
     }
 
     poll() {
-      fetch(this.root.dataset.statusUrl, { credentials: "same-origin" }).then((r) => r.json()).then((s) => {
+      // Poll for up to ~15 minutes, slowing down over time; the server gives up on a conversion well before that.
+      this._polls = (this._polls || 0) + 1;
+      if (this._polls > 150) {
+        this.message("The 3D view still isn't ready. The server may be busy — reload the page later to try again.", true);
+        return;
+      }
+      const again = (ms) => setTimeout(() => this.poll(), ms);
+      const delay = this._polls < 20 ? 2500 : this._polls < 60 ? 5000 : 10000;
+      fetch(this.root.dataset.statusUrl, { credentials: "same-origin" }).then((r) => {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      }).then((s) => {
         if (s.status === "ready") return this.load();
-        if (s.status === "pending" || s.status === "converting") return setTimeout(() => this.poll(), 2500);
-        this.message(s.message || "This file can't be shown in 3D.", true);
-      }).catch(() => setTimeout(() => this.poll(), 5000));
+        if (s.status === "pending" || s.status === "converting") return again(delay);
+        this.message("Couldn't convert this file for the 3D view: " + (s.message || "the file can't be shown in 3D."), true);
+      }).catch(() => again(Math.max(delay, 5000)));
     }
 
     load() {

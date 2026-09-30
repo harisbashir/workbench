@@ -38,18 +38,18 @@
     </div></div>
   {% if model_file %}<div class="card" id="model3d"><div class="card-head"><h2>{% icon 'cube' 18 %} 3D model</h2><a class="btn btn-sm" href="{{ model_file.get_absolute_url }}">{{ model_file.name }}</a></div>
     {% include "cad/_viewer.html" with obj=model_file height="small" %}</div>{% endif %}
-  <div class="card" id="checklist"><div class="card-head"><h2>Release checklist</h2><span class="small muted">All items must be signed off before the revision can be released for production.</span></div>
+  <div class="card" id="checklist"><div class="card-head"><h2>Release checklist</h2><span class="small muted">All items must be signed off before a lead can release the revision for production.{% if rev.status == 'released' %} The revision is released, so only leads can change this list.{% endif %}</span></div>
     <div class="card-body">
     {% if checks %}<ul class="checklist">
       {% for c in checks %}<li class="{% if c.done_at %}done{% endif %}">
-        {% if can_edit %}<form method="post" action="{% url 'projects:revision_check' project.key rev.pk %}">{% csrf_token %}<input type="hidden" name="item" value="{{ c.pk }}">
+        {% if can_change_checks %}<form method="post" action="{% url 'projects:revision_check' project.key rev.pk %}">{% csrf_token %}<input type="hidden" name="item" value="{{ c.pk }}">
           <button class="tick tick-btn" name="action" value="toggle" aria-label="{% if c.done_at %}Un-tick{% else %}Sign off{% endif %}: {{ c.text }}">{% if c.done_at %}{% icon 'check' 14 %}{% endif %}</button></form>
         {% else %}<span class="tick">{% if c.done_at %}{% icon 'check' 14 %}{% endif %}</span>{% endif %}
         <div><div class="what">{{ c.text }}</div>{% if c.done_at %}<div class="small muted">Signed off by {{ c.done_by|default:"—" }}, {{ c.done_at|naturaltime }}{% if c.note %} — {{ c.note }}{% endif %}</div>{% endif %}</div>
-        {% if can_edit %}<form method="post" action="{% url 'projects:revision_check' project.key rev.pk %}" class="right" data-confirm="Remove this checklist item?">{% csrf_token %}<input type="hidden" name="item" value="{{ c.pk }}"><button class="btn btn-sm btn-ghost" name="action" value="delete" aria-label="Remove item">{% icon 'x' 14 %}</button></form>{% endif %}
+        {% if can_delete_checks %}<form method="post" action="{% url 'projects:revision_check' project.key rev.pk %}" class="right" data-confirm="Remove this checklist item?">{% csrf_token %}<input type="hidden" name="item" value="{{ c.pk }}"><button class="btn btn-sm btn-ghost" name="action" value="delete" aria-label="Remove item">{% icon 'x' 14 %}</button></form>{% endif %}
       </li>{% endfor %}
     </ul>{% else %}<p class="muted">No checklist items yet.</p>{% endif %}
-    {% if can_edit %}<form method="post" action="{% url 'projects:revision_check' project.key rev.pk %}" class="btn-row">{% csrf_token %}
+    {% if can_change_checks %}<form method="post" action="{% url 'projects:revision_check' project.key rev.pk %}" class="btn-row">{% csrf_token %}
       <input type="text" name="text" maxlength="200" placeholder="Add a checklist item, e.g. Thermal test at 2 A passed" aria-label="New checklist item" class="grow"><button class="btn btn-sm" name="action" value="add">{% icon 'plus' 14 %} Add</button></form>{% endif %}
     </div></div>
   </div>

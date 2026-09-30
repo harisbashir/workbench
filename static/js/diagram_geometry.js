@@ -19,29 +19,39 @@
     return (total * size) / 1000;
   }
 
-  function wrap(text, width, size, bold) {
+  const units = (ch, table) => { const o = ch.codePointAt(0); return o >= 32 && o <= 126 ? table[o - 32] : 556; };
+
+  // Greedy word wrap, linear in the text length; stops after maxLines. Same as geometry.wrap().
+  function wrap(text, width, size, bold, maxLines) {
+    const table = bold ? S.widths_bold : S.widths, fits = (u) => (u * size) / 1000 <= width, space = units(" ", table);
     const lines = [];
+    const full = () => maxLines != null && lines.length >= maxLines;
+    const done = () => { while (lines.length > 1 && lines[lines.length - 1] === "") lines.pop(); return lines; };
     for (const para of (text || "").split("\n")) {
-      const words = para.split(" ");
-      let line = "";
-      for (let w of words) {
-        const cand = line ? line + " " + w : w;
-        if (textWidth(cand, size, bold) <= width) { line = cand; continue; }
-        if (line) lines.push(line);
-        line = "";
-        while (textWidth(w, size, bold) > width && [...w].length > 1) {
-          const chars = [...w];
-          let k = chars.length;
-          while (k > 1 && textWidth(chars.slice(0, k).join(""), size, bold) > width) k--;
-          lines.push(chars.slice(0, k).join(""));
-          w = chars.slice(k).join("");
+      let line = "", lu = 0;
+      for (const word of para.split(" ")) {
+        const w = [...word];
+        let wu = 0;
+        for (const ch of w) wu += units(ch, table);
+        const cu = !line ? wu : lu + space + wu;
+        if (fits(cu)) { line = !line ? word : line + " " + word; lu = cu; continue; }
+        if (line) { lines.push(line); if (full()) return done(); }
+        line = ""; lu = 0;
+        let start = 0;
+        while (!fits(wu) && w.length - start > 1) {
+          let acc = 0, k = start;
+          while (k < w.length) { const u = units(w[k], table); if (!fits(acc + u)) break; acc += u; k++; }
+          if (k === start) { acc = units(w[k], table); k++; }
+          lines.push(w.slice(start, k).join(""));
+          if (full()) return done();
+          start = k; wu -= acc;
         }
-        line = w;
+        line = w.slice(start).join(""); lu = wu;
       }
       lines.push(line);
+      if (full()) return done();
     }
-    while (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
-    return lines;
+    return done();
   }
 
   function rectPath(x, y, w, h, r) {
@@ -132,7 +142,9 @@
       return out;
     }
     const width = Math.max(w - 2 * textInset(n), 20), ls = F.label, ss = F.sub, lh = F.line;
-    const ll = label ? wrap(label, width, ls, true) : [], sl = sub ? wrap(sub, width, ss, false) : [];
+    const ll = label ? wrap(label, width, ls, true, Math.max(1, Math.floor(h / (ls * lh)))) : [];
+    const room = h - ll.length * ls * lh - (ll.length ? 3 : 0);
+    const sl = sub ? wrap(sub, width, ss, false, Math.max(1, Math.floor(room / (ss * lh)))) : [];
     const total = ll.length * ls * lh + (sl.length ? sl.length * ss * lh + (ll.length ? 3 : 0) : 0);
     const cy = y + h / 2 + (t === "power" && !sl.length ? 4 : 0);
     const color = t !== "text" ? c.text : "#111827", subc = n.color === "dark" ? "#d1d5db" : "#4b5563";

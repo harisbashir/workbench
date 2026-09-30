@@ -45,6 +45,8 @@ class User(AbstractUser):
 
     # Brute-force protection.
     failed_logins = models.PositiveIntegerField(default=0)
+    last_failed_login = models.DateTimeField(null=True, blank=True, editable=False)
+    mfa_failures = models.PositiveIntegerField(default=0, editable=False)
     locked_until = models.DateTimeField(null=True, blank=True)
 
     class Meta:
@@ -77,12 +79,19 @@ class User(AbstractUser):
 
         import pyotp
         code = (code or "").replace(" ", "")
-        totp = pyotp.TOTP(secret or self.mfa_secret)
+        secret = secret or self.mfa_secret
+        if not secret or not code.isdigit() or len(code) != 6:
+            # An empty secret (e.g. the encryption key changed) must never accept codes.
+            return False
+        totp = pyotp.TOTP(secret)
         now_step = int(time.time()) // 30
         for step in (now_step - 1, now_step, now_step + 1):
             if step > self.mfa_last_step and pyotp.utils.strings_equal(totp.at(step * 30), code):
+                # Claim the step atomically so two simultaneous requests can't both use one code.
+                claimed = type(self).objects.filter(pk=self.pk, mfa_last_step__lt=step).update(mfa_last_step=step) if self.pk else 1
+                if not claimed:
+                    return False
                 self.mfa_last_step = step
-                self.save(update_fields=["mfa_last_step"])
                 return True
         return False
 
@@ -139,7 +148,6 @@ class RecoveryCode(models.Model):
         raw = raw.strip().lower()
         for rc in cls.objects.filter(user=user, used_at__isnull=True):
             if check_password(raw, rc.code_hash):
-                rc.used_at = timezone.now()
-                rc.save(update_fields=["used_at"])
-                return True
+                # Conditional update: a code can only be used once, even by simultaneous requests.
+                return bool(cls.objects.filter(pk=rc.pk, used_at__isnull=True).update(used_at=timezone.now()))
         return False

@@ -10,7 +10,7 @@
   <form method="post" novalidate>{% csrf_token %}
     {% include "partials/form.html" with grid=True %}
     <div class="form-actions"><button class="btn btn-primary">Save board</button><a class="btn btn-ghost" href="{% if board_obj %}{{ board_obj.get_absolute_url }}{% else %}{% url 'projects:hardware' project.key %}{% endif %}">Cancel</a>
-    {% if board_obj and not board_obj.revisions.exists %}<button class="btn btn-danger right" name="action" value="delete" formnovalidate data-confirm="Delete {{ board_obj.name }}?">Delete board</button>{% endif %}</div>
+    {% if can_delete %}<button class="btn btn-danger right" name="action" value="delete" formnovalidate data-confirm="Delete {{ board_obj.name }}?">Delete board</button>{% endif %}</div>
   </form>
 </div></div>
 {% endblock %}

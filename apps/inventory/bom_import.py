@@ -23,6 +23,9 @@ COLUMN_ALIASES = {
 }
 
 
+MAX_QTY = 100_000
+
+
 def _norm(h):
     return re.sub(r"[\s_]+", " ", (h or "").strip().lower().replace("#", ""))
 
@@ -56,7 +59,14 @@ def _category_for(refs, value):
 
 def parse(file_bytes):
     """Returns (rows, warnings). Each row is a dict with normalised keys."""
-    text = file_bytes.decode("utf-8-sig", errors="replace")
+    warnings = []
+    try:
+        text = file_bytes.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        # Excel on Windows saves CSV as Windows-1252 ("µ", "Ω", "±" would otherwise be garbled).
+        text = file_bytes.decode("cp1252", errors="replace")
+        warnings.append("The file isn't UTF-8, so it was read as Windows-1252 (Excel's default). "
+                        "Check that symbols such as µ and Ω look right below.")
     sample = text[:4096]
     try:
         dialect = csv.Sniffer().sniff(sample, delimiters=",;\t")
@@ -75,7 +85,6 @@ def parse(file_bytes):
         return [], ["The file is empty."]
     headers = all_rows[header_idx]
     cols = map_columns(headers)
-    warnings = []
     if "references" not in cols and "quantity" not in cols:
         return [], ["Couldn't find a Reference or Quantity column. Export the BOM as CSV from KiCad or KiBot."]
     idx = {k: headers.index(v) for k, v in cols.items()}
@@ -91,14 +100,22 @@ def parse(file_bytes):
         refs = get(r, "references")
         refs = ", ".join(x for x in re.split(r"[\s,;]+", refs) if x)
         qty_raw = get(r, "quantity")
+        value, footprint = get(r, "value"), get(r, "footprint")
+        label = refs or value or footprint or "?"
         try:
-            qty = int(float(qty_raw)) if qty_raw else len([x for x in refs.split(",") if x.strip()])
-        except ValueError:
-            warnings.append(f"Row with references {refs or '?'}: quantity “{qty_raw}” isn't a number, counted references instead.")
+            qty = int(float(qty_raw.replace(",", "."))) if qty_raw else len([x for x in refs.split(",") if x.strip()])
+        except (ValueError, OverflowError):
+            warnings.append(f"Row {label}: quantity “{qty_raw}” isn't a number, counted references instead.")
             qty = len([x for x in refs.split(",") if x.strip()]) or 1
         if qty <= 0:
+            if not qty_raw and not refs:
+                warnings.append(f"Row {label} has no references and no quantity, so it was skipped.")
+            else:
+                warnings.append(f"Row {label} has quantity {qty_raw or 0}, so it was skipped.")
             continue
-        value, footprint = get(r, "value"), get(r, "footprint")
+        if qty > MAX_QTY:
+            warnings.append(f"Row {label}: quantity {qty} is more than {MAX_QTY:,} per board, so it was skipped.")
+            continue
         rows.append({
             "references": refs,
             "value": value,

@@ -18,7 +18,9 @@
         <div class="kv"><span>Unused recovery codes</span><strong>{{ remaining }} of 8</strong></div>
         {% if remaining < 3 %}<div class="alert alert-warning">You're running low on recovery codes. Generate a new set.</div>{% endif %}
         <p></p>
-        <form method="post" action="{% url 'accounts:regenerate_recovery_codes' %}" data-confirm="This replaces your old recovery codes. Continue?">{% csrf_token %}
+        <form method="post" action="{% url 'accounts:regenerate_recovery_codes' %}" class="inline-form" data-confirm="This replaces your old recovery codes. Continue?">{% csrf_token %}
+          <label class="sr-only" for="rc-password">Current password</label>
+          <input id="rc-password" type="password" name="password" required autocomplete="current-password" placeholder="Current password">
           <button class="btn">{% icon 'shield' 16 %} Generate new recovery codes</button></form>
         <p class="small muted">Got a new phone? Ask an administrator to reset two-factor sign-in; you'll set it up again next time you sign in.</p>
       {% else %}

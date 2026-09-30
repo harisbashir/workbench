@@ -20,7 +20,6 @@ that open anywhere, without Workbench.
       Chat/<public channel>.txt
       People.csv, Audit log.csv
 """
-import csv
 import io
 import logging
 import re
@@ -71,7 +70,8 @@ class Writer:
     def csv(self, parts, header, rows):
         buf = io.StringIO()
         buf.write("﻿")  # so Excel opens UTF-8 correctly
-        w = csv.writer(buf)
+        from .csvsafe import writer
+        w = writer(buf)
         w.writerow(header)
         w.writerows(rows)
         self.text(parts, buf.getvalue())
@@ -299,6 +299,15 @@ def run_job(job):
         from .utils import notify
         notify(job.requested_by, "Your full export is ready to download", "/system/backups/#exports")
     return job
+
+
+def recover(stale_hours=3):
+    """Exports left 'running' by a restart go back in the queue; very old ones are failed."""
+    from .models import ExportJob
+    old = timezone.now() - timezone.timedelta(hours=stale_hours)
+    ExportJob.objects.filter(status=ExportJob.Status.RUNNING, created_at__lt=old).update(
+        status=ExportJob.Status.FAILED, message="Stopped (the server restarted or it took too long). Try again.")
+    return ExportJob.objects.filter(status=ExportJob.Status.RUNNING).update(status=ExportJob.Status.PENDING)
 
 
 def run_pending():

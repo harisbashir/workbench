@@ -1,6 +1,8 @@
 import csv
 import io
 import os
+import shutil
+import tempfile
 import zipfile
 
 from django.contrib import messages
@@ -38,6 +40,8 @@ def _revision(request, key, pk, edit=False):
 
 
 def _file(rev, pk):
+    if not str(pk).isdigit():
+        raise Http404
     return get_object_or_404(DesignFile.objects.select_related("uploaded_by"), pk=pk, revision=rev)
 
 
@@ -128,10 +132,14 @@ def file_detail(request, key, pk, file_id):
     zip_list = None
     if f.ext == "zip":
         try:
-            with f.file.open("rb") as fh:
-                z = zipfile.ZipFile(io.BytesIO(fh.read()))
-                zip_list = [(i.filename, i.file_size) for i in z.infolist() if not i.is_dir()][:300]
-        except (zipfile.BadZipFile, OSError):
+            with f.file.open("rb") as fh, zipfile.ZipFile(fh) as z:  # reads only the directory, not the whole file
+                zip_list = []
+                for i in z.infolist():
+                    if not i.is_dir():
+                        zip_list.append((i.filename, i.file_size))
+                        if len(zip_list) >= 300:
+                            break
+        except (zipfile.BadZipFile, OSError, ValueError):
             zip_list = []
     return render(request, "design/file_detail.html", {
         "project": project, "rev": rev, "f": f, "versions": versions, "preview": preview, "zip_list": zip_list,
@@ -193,12 +201,14 @@ def download_all(request, key, pk):
     files = list(DesignFile.objects.filter(revision=rev, is_current=True))
     if not files:
         raise Http404
-    buf = io.BytesIO()
+    # Spooled to a temporary file, so a revision with large files doesn't need its whole size in memory.
+    buf = tempfile.SpooledTemporaryFile(max_size=16 * 1024 * 1024)
     base = f"{project.key}-{rev.title}".replace(" ", "-")
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         for f in files:
-            with f.file.open("rb") as fh:
-                z.writestr(f"{base}/{Category(f.category).label}/{f.name}", fh.read())
+            with f.file.open("rb") as fh, z.open(f"{base}/{Category(f.category).label}/{f.name}", "w",
+                                                   force_zip64=(f.size or 0) > 2 ** 30) as out:
+                shutil.copyfileobj(fh, out, 1024 * 1024)
     audit(request, "design.downloaded_all", rev, files=len(files))
     buf.seek(0)
     return FileResponse(buf, as_attachment=True, filename=f"{base}-design-files.zip")

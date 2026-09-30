@@ -4,7 +4,8 @@ from django import forms
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
-from django.db.models import Max, Q
+from django.db.models import Count, F, Max, OuterRef, Q, Subquery, Value
+from django.db.models.functions import Coalesce
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.defaultfilters import date as date_filter
@@ -14,7 +15,9 @@ from django.views.decorators.http import require_POST
 from apps.accounts.models import User
 from apps.core.utils import notify
 
-from .formatting import MENTION_RE, render as render_text
+from .formatting import MENTION_RE, clean_text, render as render_text
+
+MAX_BODY = 8000
 from .models import Channel, ChannelRead, Message
 
 PAGE = 60
@@ -25,16 +28,23 @@ def unread_total(user):
 
 
 def unread_counts(user):
-    channels = Channel.objects.visible_to(user).filter(Q(members=user) | Q(kind=Channel.Kind.PROJECT) | Q(kind=Channel.Kind.DIRECT))
-    reads = dict(ChannelRead.objects.filter(user=user).values_list("channel_id", "last_read_id"))
-    counts = {}
-    for ch in channels.distinct():
-        if ch.kind == Channel.Kind.PROJECT and not ch.project.can_view(user):
-            continue
-        n = ch.messages.filter(id__gt=reads.get(ch.id, 0), is_deleted=False).exclude(author=user).count()
-        if n:
-            counts[ch.id] = n
-    return counts
+    """{channel id: unread messages} for the conversations a person follows — one query."""
+    followed = Channel.objects.visible_to(user).filter(
+        Q(members=user) | Q(kind=Channel.Kind.PROJECT) | Q(kind=Channel.Kind.DIRECT))
+    last_read = ChannelRead.objects.filter(user=user, channel_id=OuterRef("channel_id")).values("last_read_id")[:1]
+    rows = (Message.objects.filter(channel_id__in=followed.values("pk"), is_deleted=False)
+            .exclude(author=user)
+            .annotate(last_read=Coalesce(Subquery(last_read), Value(0)))
+            .filter(id__gt=F("last_read"))
+            .order_by().values("channel_id").annotate(n=Count("id")))
+    return {r["channel_id"]: r["n"] for r in rows if r["n"]}
+
+
+def _int_param(request, name, default=0):
+    try:
+        return max(0, int(request.GET.get(name) or default))
+    except (TypeError, ValueError):
+        return default
 
 
 def _serialize(msg, user):
@@ -44,6 +54,8 @@ def _serialize(msg, user):
         "initials": msg.author.initials if msg.author else ("GH" if msg.kind == "github" else "WB"),
         "kind": msg.kind,
         "mine": msg.author_id == user.id,
+        # Raw text of your own messages, so the edit box shows **bold**/`code` markers, not rendered text.
+        "body": msg.body if msg.author_id == user.id and not msg.is_deleted else "",
         "html": str(render_text(msg.body)) if not msg.is_deleted else "<em>message deleted</em>",
         "url": msg.url,
         "time": date_filter(timezone.localtime(msg.created_at), "H:i"),
@@ -69,8 +81,7 @@ def _sidebar(user):
             if user in ch.members.all():
                 directs.append(ch)
         elif ch.kind == Channel.Kind.PROJECT:
-            if ch.project and ch.project.can_view(user):
-                projects.append(ch)
+            projects.append(ch)  # visible_to() already limits these to projects the person can see
         elif user in ch.members.all() or ch.kind == Channel.Kind.PRIVATE:
             joined.append(ch)
     others = Channel.objects.filter(kind=Channel.Kind.PUBLIC, is_archived=False).exclude(members=user)
@@ -113,11 +124,11 @@ def poll(request, slug):
     channel = get_object_or_404(Channel, slug=slug)
     if not channel.can_view(request.user):
         raise PermissionDenied
-    after = int(request.GET.get("after", 0) or 0)
-    before = request.GET.get("before")
+    after = _int_param(request, "after")
+    before = _int_param(request, "before")
     qs = channel.messages.select_related("author")
     if before:
-        msgs = list(qs.filter(id__lt=int(before)).order_by("-id")[:PAGE])[::-1]
+        msgs = list(qs.filter(id__lt=before).order_by("-id")[:PAGE])[::-1]
     else:
         msgs = list(qs.filter(id__gt=after).order_by("id")[:200])
         if msgs:
@@ -128,8 +139,10 @@ def poll(request, slug):
     if since and not before:
         try:
             since_dt = datetime.fromisoformat(since)
+            if timezone.is_naive(since_dt):
+                since_dt = timezone.make_aware(since_dt)
             changed = [_serialize(m, request.user) for m in qs.filter(id__lte=after, edited_at__gt=since_dt)]
-        except ValueError:
+        except (ValueError, OverflowError):
             pass
     return JsonResponse({
         "messages": [_serialize(m, request.user) for m in msgs],
@@ -145,8 +158,8 @@ def post_message(request, slug):
     channel = get_object_or_404(Channel, slug=slug)
     if not channel.can_post(request.user):
         raise PermissionDenied("You can't post in this conversation.")
-    body = (request.POST.get("body") or "").strip()
-    if not body or len(body) > 8000:
+    body = clean_text(request.POST.get("body")).strip()
+    if not body or len(body) > MAX_BODY:
         return JsonResponse({"ok": False, "error": "Message is empty or too long."}, status=400)
     msg = Message.objects.create(channel=channel, author=request.user, body=body)
     if channel.kind in (Channel.Kind.PUBLIC, Channel.Kind.PRIVATE):
@@ -164,15 +177,18 @@ def post_message(request, slug):
 @login_required
 @require_POST
 def edit_message(request, pk):
-    msg = get_object_or_404(Message, pk=pk, author=request.user, is_deleted=False)
+    msg = get_object_or_404(Message.objects.select_related("channel__project"), pk=pk, author=request.user,
+                            kind=Message.Kind.USER, is_deleted=False)
+    if not msg.channel.can_post(request.user):
+        raise PermissionDenied("You can't change messages in this conversation.")
     action = request.POST.get("action")
     if action == "delete":
         msg.is_deleted = True
         msg.body = ""
     else:
-        body = (request.POST.get("body") or "").strip()
-        if not body:
-            return JsonResponse({"ok": False}, status=400)
+        body = clean_text(request.POST.get("body")).strip()
+        if not body or len(body) > MAX_BODY:
+            return JsonResponse({"ok": False, "error": "Message is empty or too long."}, status=400)
         msg.body = body
     msg.edited_at = timezone.now()
     msg.save()
@@ -258,7 +274,8 @@ def upload(request, slug):
         if err:
             messages.error(request, err)
             continue
-        doc, v, _ = store_upload(f, project=project, folder=folder, user=request.user, request=request)
+        # Each share is its own document, so a same-named file never replaces someone else's.
+        doc, v, _ = store_upload(f, project=project, folder=folder, user=request.user, request=request, as_new=True)
         size = f"{doc.size / 1024 / 1024:.1f} MB" if doc.size > 1024 * 1024 else f"{max(doc.size // 1024, 1)} KB"
         Message.objects.create(channel=channel, author=request.user, body=f"shared a file: **{doc.name}** ({size})",
                                url=doc.get_absolute_url())

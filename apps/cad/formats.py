@@ -13,10 +13,36 @@ import re
 import struct
 import xml.etree.ElementTree as ET
 import zipfile
+import zlib
+from array import array
+from xml.parsers import expat
 
 import numpy as np
 
-from .mesh import Mesh, MeshError, Part, weld
+from .mesh import MAX_TRIANGLES, Mesh, MeshError, Part, weld
+
+MAX_INSTANCES = 50_000  # parts placed by assemblies (3MF components, glTF nodes, VRML USE)
+MAX_ELEMENTS = 3 * MAX_TRIANGLES  # vertices or indices in one array
+
+
+class Budget:
+    """Counts what an assembly expands to, so a small file can't place a part billions of times."""
+
+    def __init__(self, max_triangles=MAX_TRIANGLES, max_instances=MAX_INSTANCES):
+        self.max_triangles, self.max_instances = max_triangles, max_instances
+        self.triangles = self.instances = 0
+        self.defined = self.bytes = 0  # triangles defined / bytes read (3MF)
+
+    def instance(self):
+        self.instances += 1
+        if self.instances > self.max_instances:
+            raise MeshError(f"The file places parts more than {self.max_instances:,} times; it can't be shown.")
+
+    def add(self, triangles):
+        self.triangles += int(triangles)
+        if self.triangles > self.max_triangles:
+            raise MeshError(f"The model has more than {self.max_triangles:,} triangles, more than the viewer can show. "
+                            "Export it with a coarser resolution.")
 
 # --- STL --------------------------------------------------------------------------------
 
@@ -27,10 +53,17 @@ def read_stl(data, name="Model"):
     n = struct.unpack("<I", data[80:84])[0]
     is_binary = len(data) == 84 + n * 50
     if not is_binary and data[:5].lower() == b"solid":
-        return _read_stl_ascii(data, name)
-    if not is_binary:
-        if len(data) < 84 + n * 50:
-            raise MeshError("The STL file is shorter than it says; it may be cut off.")
+        try:
+            return _read_stl_ascii(data, name)
+        except MeshError:
+            # Some exporters write binary files whose header starts with "solid" (and pad the end).
+            if not (n and len(data) >= 84 + n * 50):
+                raise
+    elif not is_binary and len(data) < 84 + n * 50:
+        raise MeshError("The STL file is shorter than it says; it may be cut off.")
+    if n > MAX_TRIANGLES:
+        raise MeshError(f"The model has {n:,} triangles, more than the {MAX_TRIANGLES:,} the viewer can show. "
+                        "Export it with a coarser resolution.")
     rec = np.dtype([("n", "<f4", 3), ("v", "<f4", (3, 3)), ("attr", "<u2")])
     arr = np.frombuffer(data, dtype=rec, count=n, offset=84)
     v, t = weld(arr["v"].reshape(-1, 3))
@@ -42,6 +75,7 @@ def _read_stl_ascii(data, name):
     nums = re.findall(r"vertex\s+([-+0-9.eE]+)\s+([-+0-9.eE]+)\s+([-+0-9.eE]+)", text)
     if not nums or len(nums) % 3:
         raise MeshError("The STL file doesn't contain any triangles.")
+    Budget().add(len(nums) // 3)
     v, t = weld(np.array(nums, dtype=np.float64))
     solid = re.match(r"solid\s+([^\r\n]*)", text)
     return Mesh([Part((solid.group(1).strip() if solid else "") or name, v, t)])
@@ -53,6 +87,7 @@ def _read_stl_ascii(data, name):
 def read_obj(data, name="Model"):
     text = data.decode("utf-8", "replace")
     verts = []
+    budget = Budget()
     groups = {}  # name -> list of index triples (0-based)
     current = name
     for line in text.splitlines():
@@ -63,6 +98,8 @@ def read_obj(data, name="Model"):
             continue
         tag = parts[0]
         if tag == "v" and len(parts) >= 4:
+            if len(verts) >= MAX_ELEMENTS:
+                raise MeshError("The OBJ file has too many vertices to show.")
             verts.append((float(parts[1]), float(parts[2]), float(parts[3])))
         elif tag in ("o", "g") and len(parts) > 1:
             current = " ".join(parts[1:])
@@ -72,6 +109,7 @@ def read_obj(data, name="Model"):
                 i = int(p.split("/")[0])
                 idx.append(i - 1 if i > 0 else len(verts) + i)
             tri = groups.setdefault(current, [])
+            budget.add(max(len(idx) - 2, 0))
             for k in range(1, len(idx) - 1):  # fan-triangulate polygons
                 tri.append((idx[0], idx[k], idx[k + 1]))
     if not verts or not groups:
@@ -117,7 +155,103 @@ def _3mf_matrix(s):
     return m
 
 
-def read_3mf(data, name="Model"):
+MAX_XML_BYTES = 512 * 1024 * 1024  # one model file inside a 3MF, uncompressed
+MAX_3MF_BYTES = 1024 * 1024 * 1024  # all model files of one 3MF together
+MAX_ZIP_RATIO = 100  # real 3MF XML compresses 5-20x; a zip bomb compresses 1000x
+_CHUNK = 1 << 20
+
+
+def _zip_member(z, name, limit):
+    """Size checks before reading a member of an uploaded zip."""
+    info = z.getinfo(name)
+    if info.file_size > limit:
+        raise MeshError(f"{name} inside the 3MF file is too large ({info.file_size // (1024 * 1024):,} MB).")
+    if info.file_size > 16 * 1024 * 1024 and info.file_size > MAX_ZIP_RATIO * max(info.compress_size, 1):
+        raise MeshError(f"{name} inside the 3MF file unpacks to an unusually large size; it can't be shown.")
+    return info
+
+
+def _reject_dtd(*_args):
+    raise MeshError("The 3MF file contains a DTD, which isn't allowed.")
+
+
+def _parse_3mf_model(stream, budget, limit):
+    """Stream-parse one .model XML file with expat (no element tree, so memory stays proportional to the mesh)."""
+    C, P, MT = NS_CORE + " ", NS_PROD + " ", NS_MAT + " "
+    st = {"unit": None, "obj": None, "group": None, "read": 0}
+    objects, colors, items = {}, {}, []
+
+    def start(tag, a):
+        if st["unit"] is None:
+            st["unit"] = UNIT_MM.get(a.get("unit", "millimeter"), 1.0)
+        obj = st["obj"]
+        if tag == C + "vertex" and obj is not None:
+            obj["v"].extend((float(a["x"]), float(a["y"]), float(a["z"])))
+            if len(obj["v"]) > MAX_ELEMENTS:
+                raise MeshError("A part in the 3MF file has too many vertices to show.")
+        elif tag == C + "triangle" and obj is not None:
+            obj["t"].extend((int(a["v1"]), int(a["v2"]), int(a["v3"])))
+            if obj["first"] is None:
+                obj["first"] = (a.get("pid"), a.get("p1"))
+            budget.defined += 1
+            if budget.defined > budget.max_triangles:
+                raise MeshError(f"The model has more than {budget.max_triangles:,} triangles, more than the viewer can show. "
+                                "Export it with a coarser resolution.")
+        elif tag == C + "object":
+            st["obj"] = {"id": a.get("id"), "pid": a.get("pid"), "pindex": a.get("pindex"), "name": a.get("name"),
+                         "v": array("d"), "t": array("q"), "first": None, "mesh": False, "comps": []}
+        elif tag == C + "mesh" and obj is not None:
+            obj["mesh"] = True
+        elif tag == C + "component" and obj is not None:
+            obj["comps"].append((a.get("objectid"), a.get(P + "path"), a.get("transform")))
+            if len(obj["comps"]) > MAX_INSTANCES:
+                raise MeshError("A part in the 3MF file has too many components.")
+        elif tag in (C + "basematerials", MT + "colorgroup"):
+            st["group"] = (a.get("id"), [])
+        elif tag == C + "base" and st["group"] is not None:
+            st["group"][1].append(_hex_color(a.get("displaycolor")))
+        elif tag == MT + "color" and st["group"] is not None:
+            st["group"][1].append(_hex_color(a.get("color")))
+        elif tag == C + "item":
+            items.append((a.get("objectid"), a.get(P + "path"), a.get("transform")))
+            if len(items) > MAX_INSTANCES:
+                raise MeshError("The 3MF file has too many build items.")
+
+    def end(tag):
+        if tag == C + "object" and st["obj"] is not None:
+            o = st["obj"]
+            o["v"] = np.frombuffer(o["v"], dtype=np.float64).reshape(-1, 3) * (st["unit"] or 1.0)
+            o["t"] = np.frombuffer(o["t"], dtype=np.int64).reshape(-1, 3)
+            objects[o["id"]] = o
+            st["obj"] = None
+        elif tag in (C + "basematerials", MT + "colorgroup") and st["group"] is not None:
+            colors[st["group"][0]] = st["group"][1]
+            st["group"] = None
+
+    p = expat.ParserCreate(namespace_separator=" ")
+    p.StartElementHandler, p.EndElementHandler = start, end
+    p.StartDoctypeDeclHandler = _reject_dtd
+    p.EntityDeclHandler = _reject_dtd
+    try:
+        while True:
+            chunk = stream.read(_CHUNK)
+            st["read"] += len(chunk)
+            budget.bytes += len(chunk)
+            if st["read"] > limit or budget.bytes > MAX_3MF_BYTES:
+                raise MeshError("The 3MF file unpacks to more data than it declares or than can be shown.")
+            p.Parse(chunk, not chunk)
+            if not chunk:
+                break
+    except expat.ExpatError as exc:
+        raise MeshError(f"The 3MF model isn't valid XML ({exc}).")
+    except KeyError as exc:
+        raise MeshError(f"A vertex or triangle in the 3MF file is missing its {exc} attribute.")
+    return objects, colors, st["unit"] or 1.0, items
+
+
+def read_3mf(data, name="Model", budget=None):
+    budget = budget or Budget()
+    budget.defined = budget.bytes = 0
     try:
         z = zipfile.ZipFile(io.BytesIO(data))
     except zipfile.BadZipFile:
@@ -125,6 +259,7 @@ def read_3mf(data, name="Model"):
     names = z.namelist()
     main = None
     if "_rels/.rels" in names:
+        _zip_member(z, "_rels/.rels", 1024 * 1024)
         rels = ET.fromstring(z.read("_rels/.rels"))
         for r in rels:
             if r.get("Type", "").endswith("/3dmodel"):
@@ -134,26 +269,17 @@ def read_3mf(data, name="Model"):
     if not main:
         raise MeshError("No 3D model was found inside the 3MF file.")
 
-    models = {}  # path -> (objects, colors, unit)
+    models = {}  # path -> (objects, colors, unit, build items)
 
     def load(path):
-        path = path.lstrip("/")
+        path = (path or "").lstrip("/")
         if path in models:
             return models[path]
         if path not in names:
             raise MeshError(f"The 3MF file refers to {path}, which is missing.")
-        root = ET.fromstring(z.read(path))
-        unit = UNIT_MM.get(root.get("unit", "millimeter"), 1.0)
-        res = root.find(f"{{{NS_CORE}}}resources")
-        objects, colors = {}, {}
-        if res is not None:
-            for bm in res.findall(f"{{{NS_CORE}}}basematerials"):
-                colors[bm.get("id")] = [_hex_color(b.get("displaycolor")) for b in bm.findall(f"{{{NS_CORE}}}base")]
-            for cg in res.findall(f"{{{NS_MAT}}}colorgroup"):
-                colors[cg.get("id")] = [_hex_color(c.get("color")) for c in cg.findall(f"{{{NS_MAT}}}color")]
-            for obj in res.findall(f"{{{NS_CORE}}}object"):
-                objects[obj.get("id")] = obj
-        models[path] = (objects, colors, unit, root)
+        _zip_member(z, path, MAX_XML_BYTES)
+        with z.open(path) as fh:
+            models[path] = _parse_3mf_model(fh, budget, MAX_XML_BYTES)
         return models[path]
 
     parts = []
@@ -168,43 +294,32 @@ def read_3mf(data, name="Model"):
         return None
 
     def add_object(path, oid, matrix, depth=0):
+        budget.instance()
         if depth > 16:
             return
-        objects, colors, unit, _ = load(path)
+        objects, colors, _unit, _items = load(path)
         obj = objects.get(oid)
         if obj is None:
             return
-        mesh = obj.find(f"{{{NS_CORE}}}mesh")
-        if mesh is not None:
-            vs = mesh.find(f"{{{NS_CORE}}}vertices")
-            ts = mesh.find(f"{{{NS_CORE}}}triangles")
-            if vs is None or ts is None:
-                return
-            v = np.array([(float(e.get("x")), float(e.get("y")), float(e.get("z"))) for e in vs], dtype=np.float64) * unit
-            tri_el = list(ts)
-            t = np.array([(int(e.get("v1")), int(e.get("v2")), int(e.get("v3"))) for e in tri_el], dtype=np.int64)
-            color = color_of(colors, obj.get("pid"), obj.get("pindex"))
-            if color is None and tri_el:
-                first = tri_el[0]
-                color = color_of(colors, first.get("pid") or obj.get("pid"), first.get("p1"))
-            label = obj.get("name") or name
+        if obj["mesh"]:
+            v, t = obj["v"], obj["t"]
+            color = color_of(colors, obj["pid"], obj["pindex"])
+            if color is None and obj["first"] is not None:
+                pid, p1 = obj["first"]
+                color = color_of(colors, pid or obj["pid"], p1)
             if len(t):
-                parts.append(Part(label, v, t, color).transformed(matrix))
+                budget.add(len(t))
+                parts.append(Part(obj["name"] or name, v, t, color).transformed(matrix))
             return
-        comps = obj.find(f"{{{NS_CORE}}}components")
-        if comps is not None:
-            for c in comps.findall(f"{{{NS_CORE}}}component"):
-                sub_path = c.get(f"{{{NS_PROD}}}path") or path
-                add_object(sub_path, c.get("objectid"), matrix @ _3mf_matrix(c.get("transform")), depth + 1)
+        for sub_oid, sub_path, transform in obj["comps"]:
+            add_object(sub_path or path, sub_oid, matrix @ _3mf_matrix(transform), depth + 1)
 
-    objects, colors, unit, root = load(main)
-    build = root.find(f"{{{NS_CORE}}}build")
-    items = build.findall(f"{{{NS_CORE}}}item") if build is not None else []
+    objects, _colors, _unit, items = load(main)
     if not items:  # no build section: show every object
-        for oid in objects:
+        for oid in list(objects):
             add_object(main, oid, np.eye(4))
-    for item in items:
-        add_object(item.get(f"{{{NS_PROD}}}path") or main, item.get("objectid"), _3mf_matrix(item.get("transform")))
+    for oid, path, transform in items:
+        add_object(path or main, oid, _3mf_matrix(transform))
     return Mesh(parts)
 
 
@@ -232,11 +347,12 @@ def _node_matrix(node):
     return m
 
 
-def read_gltf(data, name="Model", z_up=None):
+def read_gltf(data, name="Model", z_up=None, budget=None):
     """GLB (binary) or .gltf (JSON with embedded buffers).
 
     glTF is Y-up in metres. Files written by OpenCASCADE (the STEP converter, KiCad) are Z-up.
     """
+    budget = budget or Budget()
     bin_chunk = b""
     if data[:4] == b"glTF":
         _, version, length = struct.unpack("<III", data[:12])
@@ -274,13 +390,17 @@ def read_gltf(data, name="Model", z_up=None):
     def accessor(i):
         a = doc["accessors"][i]
         dtype = np.dtype(_COMPONENT[a["componentType"]]).newbyteorder("<")
-        n, comps = a["count"], _COUNT[a["type"]]
+        n, comps = int(a["count"]), _COUNT[a["type"]]
+        if not 0 < n <= MAX_ELEMENTS:
+            raise MeshError(f"The glTF has an accessor with {n:,} elements, which can't be shown.")
         if "bufferView" not in a:
             return np.zeros((n, comps), dtype=dtype)
         bv = doc["bufferViews"][a["bufferView"]]
         buf = buffers[bv["buffer"]]
-        start = bv.get("byteOffset", 0) + a.get("byteOffset", 0)
-        stride = bv.get("byteStride") or dtype.itemsize * comps
+        start = int(bv.get("byteOffset", 0)) + int(a.get("byteOffset", 0))
+        stride = int(bv.get("byteStride") or dtype.itemsize * comps)
+        if start < 0 or stride < dtype.itemsize * comps or start + stride * (n - 1) + dtype.itemsize * comps > len(buf):
+            raise MeshError("The glTF refers to data outside its buffers; it may be damaged.")
         if stride == dtype.itemsize * comps:
             arr = np.frombuffer(buf, dtype=dtype, count=n * comps, offset=start).reshape(n, comps)
         else:
@@ -305,11 +425,13 @@ def read_gltf(data, name="Model", z_up=None):
             idx = accessor(prim["indices"]).reshape(-1).astype(np.int64) if "indices" in prim else np.arange(len(v))
             if mode == 4:
                 t = idx[: len(idx) // 3 * 3].reshape(-1, 3)
-            elif mode == 5:  # strip
-                t = np.array([(idx[i], idx[i + 1], idx[i + 2]) if i % 2 == 0 else (idx[i + 1], idx[i], idx[i + 2])
-                              for i in range(len(idx) - 2)], dtype=np.int64).reshape(-1, 3)
+            elif len(idx) < 3:
+                t = np.zeros((0, 3), dtype=np.int64)
+            elif mode == 5:  # strip: every other triangle is flipped to keep the winding
+                t = np.stack([idx[:-2], idx[1:-1], idx[2:]], axis=1)
+                t[1::2, [0, 1]] = t[1::2, [1, 0]]
             else:  # fan
-                t = np.array([(idx[0], idx[i], idx[i + 1]) for i in range(1, len(idx) - 1)], dtype=np.int64).reshape(-1, 3)
+                t = np.stack([np.full(len(idx) - 2, idx[0]), idx[1:-1], idx[2:]], axis=1)
             color = None
             if "material" in prim and prim["material"] < len(materials):
                 f = materials[prim["material"]].get("pbrMetallicRoughness", {}).get("baseColorFactor")
@@ -322,19 +444,24 @@ def read_gltf(data, name="Model", z_up=None):
     parts = []
     nodes = doc.get("nodes", [])
 
-    def visit(ni, parent, depth=0):
-        if depth > 64:
+    def visit(ni, parent, path=frozenset()):
+        if ni in path:
+            raise MeshError("The glTF node hierarchy contains a loop; it may be damaged.")
+        if len(path) > 64:
             return
+        budget.instance()
         node = nodes[ni]
         mat = parent @ _node_matrix(node)
+        path = path | {ni}
         if "mesh" in node:
             for p in mesh_parts(node["mesh"]):
+                budget.add(len(p.triangles))
                 q = p.transformed(mat)
                 if node.get("name") and not node["name"].startswith("=>"):
                     q.name = node["name"][:120]
                 parts.append(q)
         for c in node.get("children", []):
-            visit(c, mat, depth + 1)
+            visit(c, mat, path)
 
     scenes = doc.get("scenes") or [{"nodes": list(range(len(nodes)))}]
     scene = scenes[doc.get("scene", 0)] if scenes else {"nodes": []}
@@ -342,7 +469,9 @@ def read_gltf(data, name="Model", z_up=None):
         visit(ni, np.eye(4))
     if not parts and doc.get("meshes"):
         for i in range(len(doc["meshes"])):
-            parts.extend(mesh_parts(i))
+            for p in mesh_parts(i):
+                budget.add(len(p.triangles))
+                parts.append(p)
     mesh = Mesh(parts)
     mesh.scale(1000.0)  # glTF is in metres
     if z_up is None:
@@ -464,8 +593,12 @@ def read_vrml(data, name="Model"):
     text = data.decode("utf-8", "replace")
     if not text.lstrip().startswith("#VRML V2.0"):
         raise MeshError("Only VRML 2.0 (VRML97) files are supported — the kind KiCad exports.")
-    roots = _vrml_parse(text)
+    try:
+        roots = _vrml_parse(text)
+    except RecursionError:
+        raise MeshError("The VRML file is nested too deeply to read.")
     parts = []
+    budget = Budget()
 
     def as_nodes(v):
         if isinstance(v, _Node):
@@ -477,6 +610,7 @@ def read_vrml(data, name="Model"):
     def walk(n, mat, depth=0):
         if n is None or depth > 64:
             return
+        budget.instance()
         f = n.fields
         if n.type == "Transform":
             t = _floats(f.get("translation")) or [0, 0, 0]
@@ -530,6 +664,7 @@ def read_vrml(data, name="Model"):
                     if ccw and ccw[0] == "FALSE":
                         t = t[:, [0, 2, 1]]
                     if len(t):
+                        budget.add(len(t))
                         parts.append(Part(name, v, t, color).transformed(mat))
             return
         for key in ("children", "choice"):
@@ -632,6 +767,7 @@ def convert(data, filename):
             raise MeshError(f".{e} files can't be shown in 3D.")
     except MeshError:
         raise
-    except (ValueError, KeyError, IndexError, TypeError, struct.error, ET.ParseError, zipfile.BadZipFile) as exc:
+    except (ValueError, KeyError, IndexError, TypeError, AttributeError, OverflowError, EOFError, NotImplementedError,
+            RecursionError, struct.error, zlib.error, ET.ParseError, zipfile.BadZipFile) as exc:
         raise MeshError(f"The file couldn't be read ({exc.__class__.__name__}). It may be damaged or in an unusual variant.")
     return mesh.finish()

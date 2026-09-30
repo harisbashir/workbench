@@ -6,7 +6,7 @@
 {% include "inventory/_tabs.html" with tab="boms" %}
 {% for p in projects %}
 <div class="card"><div class="card-head"><h2>{{ p.name }} <span class="key">{{ p.key }}</span></h2>
-  {% if not user.is_read_only %}<a class="btn btn-sm btn-ghost" href="{% url 'projects:revision_create' p.key %}">{% icon 'plus' 14 %} Add revision</a>{% endif %}</div>
+  {% if p.user_can_edit %}<a class="btn btn-sm btn-ghost" href="{% url 'projects:revision_create' p.key %}">{% icon 'plus' 14 %} Add revision</a>{% endif %}</div>
   <div class="card-body">{% if p.revisions.all %}<ul class="list-plain">
     {% for r in p.revisions.all %}<li><strong>{{ r.title }}</strong>{% status_badge r.status r.get_status_display %}<span class="right"><a class="btn btn-sm" href="{% url 'inventory:bom' r.pk %}">Open BOM</a></span></li>{% endfor %}
   </ul>{% else %}<p class="muted small">No revisions yet.</p>{% endif %}</div></div><p></p>

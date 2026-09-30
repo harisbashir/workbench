@@ -12,7 +12,9 @@ def client_ip(request):
     if getattr(settings, "SECURE_PROXY_SSL_HEADER", None):
         fwd = request.META.get("HTTP_X_FORWARDED_FOR")
         if fwd:
-            return fwd.split(",")[0].strip()
+            # The right-most address is the one added by our own proxy (Caddy); anything
+            # to its left was sent by the client and can be forged.
+            return fwd.split(",")[-1].strip()
     return request.META.get("REMOTE_ADDR")
 
 

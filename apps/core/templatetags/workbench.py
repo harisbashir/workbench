@@ -101,12 +101,20 @@ def get_item(d, key):
         return None
 
 
+SYMBOLS = {"USD": "$", "CAD": "CA$", "EUR": "€", "GBP": "£", "CNY": "¥", "JPY": "¥", "PKR": "Rs ", "INR": "₹", "AUD": "A$"}
+
+
 @register.filter
-def money(v):
+def money(v, currency=None):
+    """Amount in the given currency (default: the base currency, WORKBENCH_CURRENCY)."""
+    from django.conf import settings
+    code = (currency or getattr(settings, "WORKBENCH_CURRENCY", "") or "USD").upper()
     try:
-        return f"${float(v):,.2f}"
+        amount = f"{float(v):,.2f}"
     except (TypeError, ValueError):
         return "—"
+    sym = SYMBOLS.get(code)
+    return f"{sym}{amount}" if sym else f"{amount} {code}"
 
 
 @register.filter
@@ -134,3 +142,13 @@ def recommended(firmware, revision):
 def storage_where(cfg):
     from apps.core.storage import describe
     return describe(cfg)["where"] if cfg else ""
+
+
+@register.simple_tag(takes_context=True)
+def admin_link(context, url_name, label, *args):
+    """A link for administrators; plain bold text for everyone else (who'd get "not allowed")."""
+    from django.urls import reverse
+    user = context.get("user")
+    if user is not None and getattr(user, "is_admin_role", False):
+        return format_html('<a href="{}">{}</a>', reverse(url_name, args=args), label)
+    return format_html("<strong>{}</strong>", label)

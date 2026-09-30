@@ -687,3 +687,8 @@ details.menu > summary::-webkit-details-marker { display: none; }
 @media (max-width: 800px) { .dg-body { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; } .dg-palette { border-right: 0; border-bottom: 1px solid var(--border); max-height: 150px; } .dg-shapes { grid-template-columns: repeat(6, 1fr); } .dg-props { border-left: 0; border-top: 1px solid var(--border); max-height: 220px; } }
 .diagram-slot { border-style: dashed; display: flex; align-items: center; }
 .diagram-slot p { margin: 6px 0 10px; color: var(--text-2); }
+.inline-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.inline-form input[type=password] { max-width: 220px; }
+.bad-text { color: var(--danger, #b42318); }
+.cancel-return { display: flex; gap: 8px; align-items: flex-start; }
+.cancel-return input { margin-top: 3px; flex: none; }

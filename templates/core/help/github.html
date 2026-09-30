@@ -1,4 +1,5 @@
 {% extends "core/help/_layout.html" %}
+{% load workbench %}
 {% block help_title %}Connecting GitHub{% endblock %}
 {% block help %}
 <h1>Connecting GitHub</h1>
@@ -6,7 +7,7 @@
 
 <h2>One-time setup (administrator)</h2>
 <ol>
-  <li>Open <a href="{% url 'core:system_tab' 'github' %}">System → GitHub</a>. Workbench has already generated a secret; copy the Payload URL and the secret from there.</li>
+  <li>Open {% admin_link 'core:system_tab' 'System → GitHub' 'github' %}. Workbench has already generated a secret; copy the Payload URL and the secret from there.</li>
   <li>In Workbench, open each project's <em>Settings &amp; members</em> and fill in its GitHub repository (<code>owner/name</code>).</li>
   <li>In GitHub, open the repository → <strong>Settings → Webhooks → Add webhook</strong>:
     <ul>

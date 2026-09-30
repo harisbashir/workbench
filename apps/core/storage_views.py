@@ -1,6 +1,5 @@
 """System → Storage: choose where uploaded files are kept and move them there."""
 from django.contrib import messages
-from django.db.models import Sum
 from django.http import JsonResponse
 from django.shortcuts import redirect, render
 from django.utils import timezone
@@ -18,22 +17,8 @@ def _worker_alive():
 
 
 def _file_totals():
-    from apps.files.models import DocumentVersion
-    from apps.firmware.models import FirmwareArtifact
-    n, size = 0, 0
-    for model in (DocumentVersion, FirmwareArtifact):
-        agg = model.objects.aggregate(s=Sum("size"))
-        n += model.objects.count()
-        size += agg["s"] or 0
-    from django.apps import apps
-    for label in ("design.DesignFile", "mechanical.MechanicalFile"):
-        try:
-            m = apps.get_model(label)
-        except LookupError:
-            continue
-        n += m.objects.count()
-        size += m.objects.aggregate(s=Sum("size"))["s"] or 0
-    return n, size
+    t = st.file_totals()
+    return t["count"], t["size"]
 
 
 @admin_required

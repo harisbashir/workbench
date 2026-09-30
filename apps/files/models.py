@@ -36,6 +36,23 @@ def safe_name(name):
     return name or "file"
 
 
+def unique_name(project, folder, name, exclude_pk=None, suffix=""):
+    """`name`, or "stem (2).ext", "stem (3).ext"… so no live document in the folder has it.
+    With `suffix` (e.g. "restored") the first alternative is "stem (restored).ext"."""
+    stem, ext = os.path.splitext(name)
+    taken = Document.objects.alive().filter(project=project, folder=folder)
+    if exclude_pk:
+        taken = taken.exclude(pk=exclude_pk)
+    candidates = [name] + ([f"{stem} ({suffix}){ext}"] if suffix else [])
+    i = 2
+    while True:
+        for c in candidates:
+            if not taken.filter(name=c).exists():
+                return c
+        candidates = [f"{stem} ({suffix} {i}){ext}" if suffix else f"{stem} ({i}){ext}"]
+        i += 1
+
+
 def space_label(space):
     return "Shared" if space == SHARED else space
 
@@ -148,7 +165,14 @@ class Document(models.Model):
         return self.versions.order_by("-number").first()
 
     def add_version(self, uploaded, user, note=""):
-        number = self.version_count + 1
+        from django.db import transaction
+        with transaction.atomic():
+            # Lock the document row so two uploads at once can't both take the same number.
+            locked = Document.objects.select_for_update().get(pk=self.pk)
+            return self._add_version(locked, uploaded, user, note)
+
+    def _add_version(self, locked, uploaded, user, note):
+        number = max(locked.version_count, self.versions.aggregate(m=models.Max("number"))["m"] or 0) + 1
         v = DocumentVersion(document=self, number=number, uploaded_by=user, note=note[:200],
                             original_name=safe_name(uploaded.name), size=uploaded.size)
         h = hashlib.sha256()
@@ -182,10 +206,13 @@ class Document(models.Model):
         self.save(update_fields=["deleted_at", "deleted_by"])
 
     def restore(self):
+        """Brings the document back; renames it to "name (restored).ext" if its folder
+        already has a live file with the same name."""
         self.deleted_at = None
         self.deleted_by = None
         if self.folder_id and not Folder.objects.filter(pk=self.folder_id).exists():
             self.folder = None
+        self.name = unique_name(self.project, self.folder, self.name, exclude_pk=self.pk, suffix="restored")
         self.save()
 
     def purge(self):

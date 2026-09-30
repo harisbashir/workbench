@@ -1,4 +1,5 @@
 {% extends "core/help/_layout.html" %}
+{% load workbench %}
 {% block help_title %}Installing, backups &amp; updates{% endblock %}
 {% block help %}
 <h1>Installing, backups &amp; updates</h1>
@@ -23,7 +24,7 @@ docker compose --profile https up -d</code></pre>
 <p>Without a domain, Workbench still works, for example inside a company VPN or over Tailscale. Administrators see a reminder banner about HTTPS.</p>
 
 <h2 id="storage">Where uploaded files are stored</h2>
-<p>Administrators choose this in <a href="{% url 'core:storage' %}">System → Storage</a>. The options:</p>
+<p>Administrators choose this in {% admin_link 'core:storage' 'System → Storage' %}. The options:</p>
 <ul>
   <li><strong>A folder on this server</strong> — the default, <code>data/files</code>. Can be pointed at a bigger disk or a NAS share mounted into the container.</li>
   <li><strong>Cloud storage</strong> with the S3 protocol: Amazon S3, Cloudflare R2, Backblaze B2, Wasabi, DigitalOcean Spaces, Google Cloud Storage (HMAC keys), or your own MinIO / Synology / QNAP S3 server. Choose the service and the address is filled in for you.</li>
@@ -44,7 +45,7 @@ docker compose --profile https up -d</code></pre>
 
 <h2>Backups</h2>
 <ul>
-  <li>A backup is taken <strong>every night</strong> automatically (the time is set in <a href="{% url 'core:system_tab' 'backups' %}">System → Backups</a>). The newest 14 are kept.</li>
+  <li>A backup is taken <strong>every night</strong> automatically (the time is set in {% admin_link 'core:system_tab' 'System → Backups' 'backups' %}). The newest 14 are kept.</li>
   <li><em>Back up now</em> takes one immediately, for example before an update.</li>
   <li>Each backup is a single <code>.zip</code> containing the database, all files and the keys. <strong>Copy backups off the server regularly</strong>, e.g. by downloading them from the Backups page or syncing <code>data/backups</code> to cloud storage.</li>
 </ul>

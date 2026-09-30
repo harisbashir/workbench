@@ -1,11 +1,12 @@
-# Runtime
-Django>=5.2,<5.3
-pyotp>=2.9                 # time-based one-time passwords (two-factor sign-in)
-qrcode[pil]>=7.4           # QR code shown during two-factor setup (Pillow also checks logo images)
-cryptography>=42           # encrypts secrets at rest
-gunicorn>=22               # web server
-whitenoise>=6.7            # serves CSS/JS
-django-storages[s3]>=1.14  # optional Amazon S3 / S3-compatible file storage
-psycopg[binary]>=3.2       # optional PostgreSQL database
-numpy>=1.26               # 3D model conversion and thumbnails
-cascadio>=0.1.1            # converts STEP/IGES CAD files (KiCad board models, enclosures) for the 3D viewer
+# Runtime. Minimum versions include the latest security fixes; the upper bounds keep
+# updates on the same major versions so a rebuild can't pull in breaking changes.
+Django>=5.2.17,<5.3
+pyotp>=2.9,<3              # time-based one-time passwords (two-factor sign-in)
+qrcode[pil]>=7.4,<9        # QR code shown during two-factor setup (Pillow also checks logo images)
+cryptography>=44.0.1       # encrypts secrets at rest
+gunicorn>=23,<27           # web server
+whitenoise>=6.7,<7         # serves CSS/JS
+django-storages[s3]>=1.14,<2  # optional Amazon S3 / S3-compatible file storage
+psycopg[binary]>=3.2,<4    # optional PostgreSQL database
+numpy>=1.26,<3             # 3D model conversion and thumbnails
+cascadio>=0.1.1,<0.2       # converts STEP/IGES CAD files (KiCad board models, enclosures) for the 3D viewer

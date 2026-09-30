@@ -108,7 +108,7 @@ class FabFlowTests(TestCase):
         self.assertNotIn("R7", refs)
         seeed = c.get(url + "?for=seeed&get=bom").content.decode("utf-8-sig")
         self.assertIn("Manufacturer Part Number or Seeed SKU", seeed)
-        z = zipfile.ZipFile(io.BytesIO(c.get(url + "?for=jlc&get=zip").content))
+        z = zipfile.ZipFile(io.BytesIO(b"".join(c.get(url + "?for=jlc&get=zip").streaming_content)))
         names = z.namelist()
         self.assertIn("PWR-RevB-gerbers.zip", names)
         self.assertIn("PWR-RevB-CPL-JLCPCB.csv", names)

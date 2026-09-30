@@ -8,6 +8,7 @@ from django.db.models import Count, Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
 from apps.accounts.models import User
@@ -27,6 +28,17 @@ def _project_for(request, key, edit=False):
     if edit and not project.can_edit(request.user):
         raise PermissionDenied("You can view this project but not change it.")
     return project
+
+
+def _share_project(project, tasks):
+    """Points every task's revision at the already-loaded project (and caches the board
+    count once), so labels like "Rev B" don't cost queries per task."""
+    if not hasattr(project, "_board_count"):
+        project._board_count = project.boards.count()
+    for t in tasks:
+        if t.revision_id:
+            t.revision.project = project
+    return tasks
 
 
 def _task_for(request, key, number, edit=False):
@@ -101,7 +113,7 @@ def project_detail(request, key):
 @login_required
 def board(request, key):
     project = _project_for(request, key)
-    tasks = project.tasks.select_related("assignee", "reviewer", "revision").prefetch_related("pull_requests")
+    tasks = project.tasks.select_related("assignee", "reviewer", "revision__board").prefetch_related("pull_requests")
     f = {k: request.GET.get(k, "") for k in ("assignee", "kind", "revision", "q", "blocked")}
     if f["assignee"] == "me":
         tasks = tasks.filter(assignee=request.user)
@@ -120,6 +132,7 @@ def board(request, key):
     # Hide tasks finished more than 14 days ago to keep the board readable.
     cutoff = timezone.now() - timezone.timedelta(days=14)
     tasks = tasks.exclude(status=Task.Status.DONE, completed_at__lt=cutoff)
+    tasks = _share_project(project, list(tasks))
     columns = [{"status": s, "label": label, "tasks": [t for t in tasks if t.status == s]} for s, label in Task.Status.choices]
     people = User.objects.filter(Q(projects=project) | Q(led_projects=project)).distinct()
     return render(request, "projects/board.html", {
@@ -132,12 +145,13 @@ def board(request, key):
 @login_required
 def task_list(request, key):
     project = _project_for(request, key)
-    tasks = project.tasks.select_related("assignee", "reviewer", "revision")
+    tasks = project.tasks.select_related("assignee", "reviewer", "revision__board")
     status = request.GET.get("status", "open")
     if status == "open":
         tasks = tasks.exclude(status=Task.Status.DONE)
     elif status in dict(Task.Status.choices):
         tasks = tasks.filter(status=status)
+    tasks = _share_project(project, list(tasks))
     return render(request, "projects/task_list.html", {"project": project, "tasks": tasks, "status": status,
                                                        "statuses": Task.Status.choices,
                                                        "can_edit": project.can_edit(request.user)})
@@ -150,16 +164,19 @@ def revision_edit(request, key, pk=None):
     project = _project_for(request, key, edit=True)
     revision = get_object_or_404(Revision, pk=pk, project=project) if pk else None
     old_status = revision.status if revision else None  # read before the form updates the instance
-    default_board(project)
+    can_release = request.user.can_manage_projects
     initial = {}
     if not revision and request.GET.get("board"):
         initial["board"] = project.boards.filter(pk=request.GET["board"]).first()
-    form = RevisionForm(request.POST or None, instance=revision, project=project, initial=initial)
+    form = RevisionForm(request.POST or None, instance=revision, project=project, initial=initial, can_release=can_release)
     if request.method == "POST" and form.is_valid():
         creating = revision is None
         rev = form.save(commit=False)
         rev.project = project
         releasing = rev.status == Revision.Status.RELEASED and old_status != Revision.Status.RELEASED
+        if releasing and not can_release:
+            form.add_error("status", "Only a lead or an administrator can release a revision for production.")
+            return render(request, "projects/revision_form.html", {"form": form, "project": project, "revision": revision})
         if releasing and (creating or not revision.checklist_done):
             form.add_error("status", "Finish the release checklist on the revision page before releasing it for production.")
             return render(request, "projects/revision_form.html", {"form": form, "project": project, "revision": revision})
@@ -197,8 +214,6 @@ def _board_cards(project):
 def hardware(request, key):
     """Everything physical about the product: its boards, mechanical parts and system diagrams."""
     project = _project_for(request, key)
-    if not project.boards.exists() and project.can_edit(request.user):
-        default_board(project)
     ctx = {"project": project, "cards": _board_cards(project), "can_edit": project.can_edit(request.user)}
     from django.apps import apps
     if apps.is_installed("apps.mechanical"):
@@ -209,6 +224,16 @@ def hardware(request, key):
     return render(request, "projects/hardware.html", ctx)
 
 
+def _board_delete_problem(board_obj):
+    """Why a board can't be deleted yet, or "" when it can."""
+    if board_obj.revisions.exists():
+        return "Only a board without revisions can be deleted."
+    diagrams = getattr(board_obj, "diagrams", None)
+    if diagrams is not None and diagrams.exists():
+        return "This board still has block diagrams. Delete or move them first."
+    return ""
+
+
 @login_required
 def board_edit(request, key, pk=None):
     project = _project_for(request, key, edit=True)
@@ -216,8 +241,11 @@ def board_edit(request, key, pk=None):
     form = BoardForm(request.POST or None, instance=board_obj, project=project)
     if request.method == "POST":
         if request.POST.get("action") == "delete" and board_obj:
-            if board_obj.revisions.exists():
-                messages.error(request, "Only a board without revisions can be deleted.")
+            if not request.user.can_manage_projects:
+                raise PermissionDenied("Only leads and administrators can delete a board.")
+            problem = _board_delete_problem(board_obj)
+            if problem:
+                messages.error(request, problem)
                 return redirect(board_obj)
             board_obj.delete()
             log_activity(project, f"removed board {board_obj.name}", actor=request.user)
@@ -237,7 +265,9 @@ def board_edit(request, key, pk=None):
             else:
                 messages.success(request, "Board saved.")
             return redirect(b)
-    return render(request, "projects/board_form.html", {"form": form, "project": project, "board_obj": board_obj})
+    return render(request, "projects/board_form.html", {
+        "form": form, "project": project, "board_obj": board_obj,
+        "can_delete": bool(board_obj) and request.user.can_manage_projects and not _board_delete_problem(board_obj)})
 
 
 @login_required
@@ -360,7 +390,10 @@ def task_move(request, key, number):
     if request.content_type == "application/json":
         return JsonResponse({"ok": True, "status": status, "label": task.get_status_display()})
     messages.success(request, f"{task.key} moved to {task.get_status_display()}.")
-    return redirect(request.POST.get("next") or task.get_absolute_url())
+    nxt = request.POST.get("next") or ""
+    if not url_has_allowed_host_and_scheme(nxt, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
+        nxt = task.get_absolute_url()
+    return redirect(nxt)
 
 
 @login_required
@@ -461,6 +494,8 @@ def revision_detail(request, key, pk):
         "buildable": min((l.part.stock // l.quantity for l in fitted if l.quantity), default=0),
         "builds": BuildOrder.objects.filter(revision=rev),
         "can_edit": project.can_edit(request.user),
+        "can_change_checks": _can_change_checks(request.user, project, rev),
+        "can_delete_checks": project.can_edit(request.user) and request.user.can_manage_projects,
         "revisions": project.revisions.all(),
         "firmware": [(fw, fw.recommended_for(rev), fw.releases.filter(revisions=rev, status="testing").order_by("-sort_key").first())
                      for fw in project.firmwares.all()],
@@ -470,23 +505,35 @@ def revision_detail(request, key, pk):
     })
 
 
+def _can_change_checks(user, project, rev):
+    """Ticking and adding checklist items: project editors, but only leads once released."""
+    if not project.can_edit(user):
+        return False
+    return rev.status != Revision.Status.RELEASED or user.can_manage_projects
+
+
 @login_required
 @require_POST
 def revision_check(request, key, pk):
     project = _project_for(request, key, edit=True)
     rev = get_object_or_404(Revision, pk=pk, project=project)
     action = request.POST.get("action")
+    if action == "delete" and not request.user.can_manage_projects:
+        raise PermissionDenied("Only leads can remove items from a release checklist.")
+    if action in ("add", "toggle") and not _can_change_checks(request.user, project, rev):
+        raise PermissionDenied("This revision is released. Only leads can change its checklist.")
     if action == "add":
         text = (request.POST.get("text") or "").strip()[:200]
         if text:
             last = rev.checks.order_by("-order").first()
             RevisionCheck.objects.create(revision=rev, text=text, order=(last.order + 1) if last else 0)
+            log_activity(project, f"added “{text}” to the {rev.title} checklist", actor=request.user, url=rev.get_absolute_url())
     elif action in ("toggle", "delete"):
-        item = get_object_or_404(RevisionCheck, pk=request.POST.get("item"), revision=rev)
+        item_id = request.POST.get("item") or ""
+        item = get_object_or_404(RevisionCheck, pk=int(item_id) if item_id.isdigit() else 0, revision=rev)
         if action == "delete":
-            if rev.status == Revision.Status.RELEASED and not request.user.can_manage_projects:
-                raise PermissionDenied("Only leads can change the checklist of a released revision.")
             item.delete()
+            log_activity(project, f"removed “{item.text}” from the {rev.title} checklist", actor=request.user, url=rev.get_absolute_url())
         elif item.done_at:
             item.done_at, item.done_by = None, None
             item.save()

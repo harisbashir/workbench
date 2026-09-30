@@ -27,6 +27,7 @@
           <div class="fab-head"><strong>{{ info.cpl }}</strong>
             {% if placements %}<a class="btn btn-sm" href="?for={{ assembler }}&amp;get=cpl">{% icon 'download' 14 %} CSV</a>{% endif %}</div>
           {% if placements %}<p class="small muted">Made from <code>{{ pnp.name }}</code> (v{{ pnp.version }}): {{ placements|length }} positions read, in-house and do-not-fit parts removed.</p>
+          {% if pnp_warnings %}<ul class="small warn-text">{% for w in pnp_warnings|slice:":12" %}<li>{{ w }}</li>{% endfor %}{% if pnp_warnings|length > 12 %}<li>… and {{ pnp_warnings|length|add:"-12" }} more</li>{% endif %}</ul>{% endif %}
           {% elif pnp %}<p class="small warn-text">{{ pnp_warnings|join:" " }}</p>
           {% else %}<p class="small">Upload the placement file to the <a href="{% url 'design:files' project.key rev.pk %}">design files</a> — in KiCad: <em>File → Fabrication outputs → Component placement</em>, format CSV, units mm.</p>{% endif %}</li>
       </ol>

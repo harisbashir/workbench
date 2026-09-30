@@ -136,7 +136,8 @@ The commands below can be copied as they are.
   ```bash
   getent hosts workbench.yourcompany.com
   ```
-- No domain? Workbench can run over plain HTTP on port 8000. Only do that inside an office network, a VPN or Tailscale.
+- No domain? Workbench can run over plain HTTP on port 8000. Only do that inside an office network, a VPN or Tailscale — and note that **Docker opens published ports past `ufw`**, so port 8000 is reachable from every network the server is on. On a server with a public IP, set `WORKBENCH_BIND` to the private/VPN address (see [Configuration](#configuration)) or use a domain.
+- **Disk:** backups are full copies, so plan for roughly *(your files) × (backups kept + 2)*. With 14 nightly backups and 5 GB of files that's about 80 GB; lower *Backups to keep* or use cloud storage for files on small disks.
 
 ### Step 1 — Log in and open the firewall
 
@@ -149,7 +150,7 @@ sudo ufw allow 443
 sudo ufw --force enable
 ```
 
-Without a domain, also run `sudo ufw allow 8000`. If your cloud provider has its own firewall (AWS security groups, DigitalOcean/Hetzner firewalls…), open the same ports there too.
+Without a domain, also run `sudo ufw allow 8000` (and read the note about `WORKBENCH_BIND` above). If your cloud provider has its own firewall (AWS security groups, DigitalOcean/Hetzner firewalls…), open the same ports there too.
 
 ### Step 2 — Install
 
@@ -164,6 +165,8 @@ The installer:
 3. asks for your **domain** — type it for automatic HTTPS with a free Let's Encrypt certificate, or leave it empty to use `http://SERVER-IP:8000`
 4. builds and starts Workbench (the first build takes a few minutes)
 5. prints the address and a one-time **setup code**
+
+The installer adds your user to the `docker` group so the `docker compose …` commands in this README work without `sudo` — log out and back in once for that to take effect (until then, put `sudo` in front of them). Membership of the `docker` group is equivalent to administrator access on the server.
 
 Installer options (add them at the end of the command):
 
@@ -244,7 +247,7 @@ Stop it with `docker compose down`. Your data stays in the `data` folder.
 cd /opt/workbench
 ./update.sh --check       # is there a new version? (lists the changes)
 ./update.sh               # update
-./update.sh --to v1.3.3   # go to a specific newer version
+./update.sh --to v1.4.1   # go to a specific newer version
 ```
 
 `update.sh`:
@@ -256,6 +259,20 @@ cd /opt/workbench
 5. **if the new version doesn't come up healthy, puts the previous version back and restores the backup**
 
 Workbench is unavailable for about a minute during step 4. Everything is logged in `data/update.log`. Database changes are applied automatically when the new version starts.
+
+Run `update.sh` as the user who installed Workbench (with `sudo` it switches to that user by itself). It refuses to go to an *older* version, because an older version may not understand a newer database — see [Go back to the previous version](#go-back-to-the-previous-version). It needs 2 GB of free disk space to build the new version. Each update also refreshes the base images for security fixes; on a server without internet access to Docker Hub, add `--no-pull`.
+
+To change anything in `docker-compose.yml` (an extra disk, a different port mapping…), put the change in a `docker-compose.override.yml` next to it instead — Docker Compose reads it automatically and updates leave it alone. For example, to keep files on a second disk:
+
+```yaml
+# docker-compose.override.yml
+services:
+  workbench:
+    volumes:
+      - /mnt/storage/workbench:/files
+```
+
+Then choose the folder `/files` in **System & backups → Storage**.
 
 ### Older installations (set up with `git clone` before version 1.3)
 
@@ -290,8 +307,11 @@ Most settings are made in the app (**System & backups**). A few server settings 
 | Variable | Default | What it does |
 |---|---|---|
 | `WORKBENCH_DOMAIN` | *(empty)* | Your domain. Turns on HTTPS mode (secure cookies, HSTS); the `https` profile gets a certificate for it |
-| `WORKBENCH_BIND` | `0.0.0.0` | Address the app port listens on. The installer sets `127.0.0.1` with a domain, so only the HTTPS proxy is reachable |
+| `WORKBENCH_BIND` | `0.0.0.0` | Address the app port listens on. The installer sets `127.0.0.1` with a domain, so only the HTTPS proxy is reachable. Without a domain, set it to the server's private or VPN (e.g. Tailscale `100.x.y.z`) address so port 8000 isn't open to the internet |
 | `WORKBENCH_PORT` | `8000` | Port on the server for the app |
+| `WORKBENCH_CURRENCY` | `USD` | Currency for part costs, BOM costs and stock value (suppliers can be in other currencies) |
+| `WORKBENCH_MAX_UPLOAD_MB` | `2000` | Ceiling for *Largest upload* in System & backups (the HTTPS proxy accepts up to 2 GB) |
+| `WORKBENCH_CAD_TIMEOUT` / `WORKBENCH_CAD_MEMORY_MB` / `WORKBENCH_CAD_WORKERS` | `300` / `2048` / `2` | Limits for converting 3D files: seconds and memory per file, conversions at once |
 | `WORKBENCH_WORKERS` | `3` | Web server processes (each runs 4 threads) |
 | `WORKBENCH_TIME_ZONE` | `UTC` | Server default time zone (the company time zone is set in the app) |
 | `WORKBENCH_SESSION_HOURS` | `12` | How long people stay signed in |
@@ -358,7 +378,8 @@ Everything lives in the `data` folder next to `docker-compose.yml`:
 - **In the browser:** HTTPS with HSTS (with a domain), secure cookies, CSRF protection and a strict Content-Security-Policy. No third-party scripts, fonts or trackers.
 - **GitHub webhooks:** HMAC-SHA256 signatures, replay protection, and capped logging of rejected requests.
 - **Audit log:** sign-ins (including failures), permission changes, uploads, downloads, backups, imports, stock changes and orders, each with its IP address.
-- **Server:** the container runs as an unprivileged user; the installer verifies GitHub's host key when it uses a deploy key; updates take a backup first and roll back automatically.
+- **Two-factor codes** work once each, wrong codes lock the account like wrong passwords do, and repeated failures from one network are throttled. Resetting someone's 2FA or deactivating them signs them out everywhere. Workbench refuses to start if its encryption key doesn't match the database, instead of silently losing 2FA secrets.
+- **Server:** Workbench's processes run as an unprivileged user inside the container (it starts as root only to fix the data folder's ownership); the installer verifies GitHub's host key when it uses a deploy key; updates take a backup first and roll back automatically.
 
 Found a security problem? Please report it privately through this repository's **Security → Report a vulnerability** page on GitHub, not in a public issue.
 
@@ -375,12 +396,12 @@ cd /opt/workbench
 docker compose ps                                    # is it running and (healthy)?
 docker compose logs --tail 100 workbench             # recent log of the app
 docker compose logs -f workbench                     # follow the log live (Ctrl+C to stop)
-curl -s http://localhost:8000/healthz                # {"ok": true, "database": true, "disk_free_mb": ..., "scheduler_seen": ..., "version": ...}
+curl -s http://localhost:8000/healthz                # {"ok": true, "database": true, "disk_free_mb": ..., "scheduler": "running", ...}
 tail -n 50 data/update.log                           # what the last updates did
 docker compose exec workbench manage check --deploy  # configuration check
 ```
 
-- `/healthz` says `"ok": false` when the database can't be reached or less than 200 MB of disk is free.
+- `/healthz` says `"ok": false` when the database can't be reached, less than 200 MB of disk is free, or the background worker has stopped (`"scheduler": "stopped"`). The worker restarts itself if it crashes; if it stays stopped, `docker compose restart workbench`.
 - `scheduler_seen` is the last time the background worker (nightly backups, emails, exports, storage moves) checked in. It should be within the last minute or two.
 - Without a domain, `check --deploy` warns about secure cookies and HSTS; that's expected on plain HTTP.
 
@@ -395,7 +416,9 @@ docker compose exec workbench manage check --deploy  # configuration check
 | Invite or email links point to the wrong address | *Site url* not set | *System & backups → General → Site url* |
 | Port 8000 is already in use | Another program uses it | Set `WORKBENCH_PORT=8080` in `.env`, then `docker compose up -d` |
 | Container restarts over and over | A startup error | `docker compose logs --tail 200 workbench` — the error is at the end |
-| Nightly backups or "Download everything" don't happen | The background worker stopped | `docker compose restart workbench`; check `scheduler_seen` in `/healthz`; run one pass by hand with `docker compose exec workbench manage run_scheduler --once` |
+| Nightly backups or "Download everything" don't happen | The background worker stopped, or the backup failed (the reason is on *System & backups → Overview*, and administrators get a notification) | Check `"scheduler"` in `/healthz` and `docker compose restart workbench`; run one pass by hand with `docker compose exec workbench manage run_scheduler --once`. A failed nightly backup is tried again the next night — press *Back up now* after fixing the cause (often disk space) |
+| `docker compose …` says *permission denied* | Your user isn't in the `docker` group yet | Log out and back in after installing, or put `sudo` in front |
+| `update.sh` says *older than the running version* | `--to` points at an earlier release | Follow [Go back to the previous version](#go-back-to-the-previous-version) |
 | Uploads fail, or "disk full" | Disk or cloud storage problem | `df -h` and `du -sh data/*`; *Files → Storage* to delete old versions and empty the trash; `docker system prune` removes old Docker images; `docker compose exec workbench manage storage --test` checks cloud storage |
 | Emails don't arrive | SMTP settings | *System & backups → Email → Send me a test email* — the reason is shown on the page |
 | GitHub events don't show up | Webhook address or secret | In GitHub, *Repository → Settings → Webhooks → Recent deliveries* shows each attempt and the response. The address and secret must match *System & backups → GitHub* |
@@ -410,6 +433,7 @@ docker compose exec workbench manage reset_account --list               # all ac
 docker compose exec workbench manage reset_account haris                # unlock after too many wrong passwords
 docker compose exec workbench manage reset_account haris --password     # also print a one-time link to set a new password
 docker compose exec workbench manage reset_account haris --2fa          # also turn off 2FA (set up again at next sign-in)
+docker compose exec workbench manage reset_account haris --reactivate --make-admin   # a deactivated/demoted last administrator
 docker compose exec workbench manage create_admin --username newadmin   # a new administrator, with a set-password link
 ```
 
@@ -432,10 +456,11 @@ Or by hand: set `WORKBENCH_DOMAIN=` and `WORKBENCH_BIND=127.0.0.1` in `.env`, th
 cd /opt/workbench
 ls -t data/backups | head -3          # the newest is the backup update.sh took before updating
 git tag --sort=-v:refname | head -5   # versions
-git checkout v1.3.2                   # the version you were on before
+git checkout v1.4.0                   # the version you were on before
+docker compose build                  # build the old version first (it's the one that restores)
 docker compose stop workbench
 docker compose run --rm workbench restore workbench-YYYYMMDD-HHMMSS.zip
-docker compose up -d --build
+docker compose up -d                  # with a domain: docker compose --profile https up -d
 ```
 
 Always restore the backup together with the old version: a newer version may have changed the database, and an older version can't read it. Anything added since that backup is lost.
@@ -496,7 +521,7 @@ pip install -r requirements-dev.txt
 export WORKBENCH_DEBUG=1
 python manage.py migrate && python manage.py seed_demo
 python manage.py runserver                     # http://localhost:8000 — haris / Workbench-demo-2026!
-python manage.py test apps                     # 172 tests (S3 is tested against a local mock)
+python manage.py test apps                     # 355 tests (S3 is tested against a local mock)
 ruff check apps config --select F,E9           # lint
 ```
 

@@ -13,6 +13,6 @@
   <thead><tr><th>Order</th><th>Supplier</th><th>Status</th><th class="num">Lines</th><th class="num">Total</th><th>Expected</th><th>Created</th></tr></thead>
   <tbody>{% for po in orders %}<tr><td><a href="{{ po.get_absolute_url }}"><strong>{{ po.number }}</strong></a>{% if po.reference %} <span class="small faint">{{ po.reference }}</span>{% endif %}</td>
     <td>{{ po.supplier }}</td><td>{% status_badge po.status po.get_status_display %}</td><td class="num">{{ po.lines.all|length }}</td>
-    <td class="num">{{ po.total|money }}</td><td>{{ po.expected_date|default:"—" }}</td><td class="small">{{ po.created_at|naturalday }}</td></tr>{% endfor %}</tbody></table></div>
+    <td class="num">{{ po.total|floatformat:2 }} <span class="small faint">{{ po.currency }}</span></td><td>{{ po.expected_date|default:"—" }}</td><td class="small">{{ po.created_at|naturalday }}</td></tr>{% endfor %}</tbody></table></div>
 {% else %}<div class="empty">{% icon 'truck' 40 %}<h3>No purchase orders</h3><p>Create one by hand, or use <em>Order missing parts</em> on a build to create them automatically.</p></div>{% endif %}</div>
 {% endblock %}

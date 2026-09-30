@@ -85,7 +85,7 @@
     </div></div>
 
     {% if can_edit %}{% if user.can_manage_projects or task.created_by == user %}
-    <form method="post" action="{% url 'projects:task_delete' project.key task.number %}" data-confirm="Delete {{ task.key }} permanently? Comments and files are deleted too.">{% csrf_token %}
+    <form method="post" action="{% url 'projects:task_delete' project.key task.number %}" data-confirm="Delete {{ task.key }} permanently? Its comments and history are deleted; attached files stay in the project's Files.">{% csrf_token %}
       <button class="btn btn-danger btn-sm">Delete task</button></form>{% endif %}{% endif %}
   </div>
 </div>

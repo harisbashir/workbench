@@ -2,7 +2,7 @@
 {$WORKBENCH_DOMAIN} {
 	encode gzip
 	request_body {
-		max_size 250MB
+		max_size 2GB
 	}
 	reverse_proxy workbench:8000 {
 		header_up X-Forwarded-Proto {scheme}

@@ -3,6 +3,9 @@
 #   docker compose up -d                      # http://<server>:8000
 #   docker compose --profile https up -d      # https://$WORKBENCH_DOMAIN (set it in .env)
 #
+# Local changes (extra volumes, a different port…) go in docker-compose.override.yml, which
+# Docker Compose reads automatically and updates never touch. Don't edit this file.
+#
 # Everything Workbench stores is in ./data next to this file:
 #   data/db        the database          data/files    uploaded files
 #   data/backups   nightly backups       data/secrets.json  generated keys
@@ -12,11 +15,18 @@ services:
     image: workbench:latest
     restart: unless-stopped
     init: true
+    # Give a running backup or upload time to finish when stopping, and stop the background
+    # worker together with the web server.
+    stop_grace_period: 45s
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "5"}
     env_file:
       - path: .env
         required: false
     environment:
       WORKBENCH_DOMAIN: ${WORKBENCH_DOMAIN:-}
+      TINI_KILL_PROCESS_GROUP: "1"
     ports:
       - "${WORKBENCH_BIND:-0.0.0.0}:${WORKBENCH_PORT:-8000}:8000"
     volumes:
@@ -28,6 +38,9 @@ services:
     image: caddy:2
     profiles: ["https"]
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "5"}
     ports:
       - "80:80"
       - "443:443"

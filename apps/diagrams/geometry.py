@@ -9,6 +9,7 @@ STYLE dictionary below (passed to the page as JSON), so an export looks like the
     ("label_bg", x, y, w, h)                                 white box behind edge labels
 """
 import math
+import re
 
 GRID = 10
 KAPPA = 0.5522847498
@@ -72,40 +73,68 @@ STYLE = {"colors": COLORS, "shapes": SHAPES, "edges": EDGE_KINDS, "font": FONT, 
          "widths": _HELV, "widths_bold": _HELV_B}
 
 
+def _units(ch, table):
+    o = ord(ch)
+    return table[o - 32] if 32 <= o <= 126 else 556
+
+
 def text_width(s, size, bold=False):
     table = _HELV_B if bold else _HELV
-    total = 0
-    for ch in s:
-        o = ord(ch)
-        total += table[o - 32] if 32 <= o <= 126 else 556
-    return total * size / 1000.0
+    return sum(_units(ch, table) for ch in s) * size / 1000.0
 
 
-def wrap(text, width, size, bold=False):
-    """Greedy word wrap; very long words are broken."""
+def wrap(text, width, size, bold=False, max_lines=None):
+    """Greedy word wrap; very long words are broken. Linear in the length of the text.
+
+    Stops after max_lines lines (the rest wouldn't fit in the box anyway).
+    static/js/diagram_geometry.js has the same function; both must give the same lines.
+    """
+    table = _HELV_B if bold else _HELV
+    fits = lambda u: u * size / 1000.0 <= width  # noqa: E731
+    space = _units(" ", table)
     lines = []
+
+    def full():
+        return max_lines is not None and len(lines) >= max_lines
+
+    def done():
+        while lines and lines[-1] == "" and len(lines) > 1:
+            lines.pop()
+        return lines
+
     for para in (text or "").split("\n"):
-        words = para.split(" ")
-        line = ""
-        for w in words:
-            cand = w if not line else line + " " + w
-            if text_width(cand, size, bold) <= width:
-                line = cand
+        line, lu = "", 0
+        for w in para.split(" "):
+            wu = sum(_units(ch, table) for ch in w)
+            cu = wu if not line else lu + space + wu
+            if fits(cu):
+                line, lu = (w if not line else line + " " + w), cu
                 continue
             if line:
                 lines.append(line)
-            line = ""
-            while text_width(w, size, bold) > width and len(w) > 1:  # break a long word
-                k = len(w)
-                while k > 1 and text_width(w[:k], size, bold) > width:
-                    k -= 1
-                lines.append(w[:k])
-                w = w[k:]
-            line = w
+                if full():
+                    return done()
+            line, lu = "", 0
+            start = 0
+            while not fits(wu) and len(w) - start > 1:  # break a long word
+                acc, k = 0, start
+                while k < len(w):
+                    u = _units(w[k], table)
+                    if not fits(acc + u):
+                        break
+                    acc += u
+                    k += 1
+                if k == start:  # not even one character fits: take one anyway
+                    acc, k = _units(w[k], table), k + 1
+                lines.append(w[start:k])
+                if full():
+                    return done()
+                start, wu = k, wu - acc
+            line, lu = w[start:], wu
         lines.append(line)
-    while lines and lines[-1] == "" and len(lines) > 1:
-        lines.pop()
-    return lines
+        if full():
+            return done()
+    return done()
 
 
 # --- shapes ------------------------------------------------------------------------------------
@@ -218,8 +247,10 @@ def node_text(n, c=None):
     inset = text_inset(n)
     width = max(w - 2 * inset, 20)
     lsize, ssize, lh = FONT["label"], FONT["sub"], FONT["line"]
-    llines = wrap(label, width, lsize, True) if label else []
-    slines = wrap(sub, width, ssize, False) if sub else []
+    # Only as many lines as fit in the box (at least one each), so huge texts cost nothing to lay out.
+    llines = wrap(label, width, lsize, True, max(1, math.floor(h / (lsize * lh)))) if label else []
+    room = h - len(llines) * lsize * lh - (3 if llines else 0)
+    slines = wrap(sub, width, ssize, False, max(1, math.floor(room / (ssize * lh)))) if sub else []
     total = len(llines) * lsize * lh + (len(slines) * ssize * lh + (3 if llines else 0) if slines else 0)
     cy = y + h / 2 + (4 if t == "power" and not slines else 0)
     top = cy - total / 2
@@ -411,42 +442,84 @@ def _shorten(tip, prev, by):
 
 # --- whole drawing ---------------------------------------------------------------------------------
 
+MAX_NODES = 500
+MAX_EDGES = 1000
+MAX_JSON_BYTES = 512 * 1024
+ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
+# Characters that aren't allowed in XML (and so would break the SVG export), and lone surrogates.
+_BAD_CHARS = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\ud800-\udfff\ufffe\uffff]")
+
+
+def clean_text(value, limit):
+    s = value if isinstance(value, str) else ("" if value is None or isinstance(value, (dict, list)) else str(value))
+    return _BAD_CHARS.sub("", s.replace("\r\n", "\n").replace("\r", "\n"))[:limit]
+
+
+def _num(v, what):
+    if isinstance(v, bool) or not isinstance(v, (int, float, str)):
+        raise ValueError(f"A block has an invalid {what}.")
+    try:
+        f = float(v)
+    except ValueError:
+        raise ValueError(f"A block has an invalid {what}.")
+    if not math.isfinite(f) or abs(f) >= 1e6:
+        raise ValueError("A block is too far away or too large.")
+    return f
+
+
 def clean(data):
-    """Validate and normalise diagram JSON from the browser. Raises ValueError."""
+    """Validate and normalise diagram JSON from the browser. Raises ValueError with a message for the user."""
     if not isinstance(data, dict):
         raise ValueError("Diagram data must be an object.")
-    nodes, edges, seen = [], [], set()
-    for n in data.get("nodes", [])[:2000]:
+    raw_nodes, raw_edges = data.get("nodes", []), data.get("edges", [])
+    if not isinstance(raw_nodes, list) or not isinstance(raw_edges, list):
+        raise ValueError("Diagram nodes and edges must be lists.")
+    if len(raw_nodes) > MAX_NODES:
+        raise ValueError(f"A diagram can have at most {MAX_NODES} blocks; split it into several diagrams.")
+    if len(raw_edges) > MAX_EDGES:
+        raise ValueError(f"A diagram can have at most {MAX_EDGES} connections; split it into several diagrams.")
+    nodes, edges, seen, edge_ids = [], [], set(), set()
+    for n in raw_nodes:
         if not isinstance(n, dict):
-            continue
-        nid = str(n.get("id", ""))[:40]
-        if not nid or nid in seen:
-            continue
+            raise ValueError("A block is not an object.")
+        nid = n.get("id")
+        if not isinstance(nid, str) or not ID_RE.match(nid):
+            raise ValueError("A block has an invalid id (use letters, digits, - and _ only).")
+        if nid in seen:
+            raise ValueError(f"Two blocks have the same id ({nid}).")
         seen.add(nid)
-        t = n.get("type") if n.get("type") in SHAPES else "block"
-        try:
-            x, y = float(n.get("x", 0)), float(n.get("y", 0))
-            w, h = max(float(n.get("w", 120)), 20), max(float(n.get("h", 50)), 16)
-        except (TypeError, ValueError):
-            raise ValueError("A block has an invalid position or size.")
-        if not all(math.isfinite(v) and abs(v) < 1e6 for v in (x, y, w, h)):
-            raise ValueError("A block is too far away or too large.")
+        t = n.get("type") if isinstance(n.get("type"), str) and n["type"] in SHAPES else "block"
+        x, y = _num(n.get("x", 0), "position"), _num(n.get("y", 0), "position")
+        w, h = max(_num(n.get("w", 120), "size"), 20), max(_num(n.get("h", 50), "size"), 16)
         item = {"id": nid, "type": t, "x": round(x, 2), "y": round(y, 2), "w": round(min(w, 5000), 2), "h": round(min(h, 5000), 2),
-                "label": str(n.get("label", ""))[:200], "sub": str(n.get("sub", ""))[:300]}
-        if n.get("color") in COLORS:
+                "label": clean_text(n.get("label", ""), 200), "sub": clean_text(n.get("sub", ""), 300)}
+        if isinstance(n.get("color"), str) and n["color"] in COLORS:
             item["color"] = n["color"]
         if n.get("notes"):
-            item["notes"] = str(n["notes"])[:2000]
+            item["notes"] = clean_text(n["notes"], 2000)
         if n.get("ref"):
-            item["ref"] = str(n["ref"])[:20]
+            ref = clean_text(n["ref"], 20)
+            if ref:
+                item["ref"] = ref
         nodes.append(item)
-    for e in data.get("edges", [])[:4000]:
-        if not isinstance(e, dict) or e.get("from") not in seen or e.get("to") not in seen or e.get("from") == e.get("to"):
-            continue
-        item = {"id": str(e.get("id", ""))[:40] or f"e{len(edges) + 1}", "from": e["from"], "to": e["to"],
-                "kind": e.get("kind") if e.get("kind") in EDGE_KINDS else "signal",
-                "label": str(e.get("label", ""))[:120],
-                "arrow": e.get("arrow") if e.get("arrow") in ("none", "end", "start", "both") else "end",
+    for e in raw_edges:
+        if not isinstance(e, dict):
+            raise ValueError("A connection is not an object.")
+        a, b = e.get("from"), e.get("to")
+        if not isinstance(a, str) or not isinstance(b, str) or a not in seen or b not in seen or a == b:
+            continue  # connections to deleted blocks are dropped
+        eid = e.get("id")
+        if not isinstance(eid, str) or not ID_RE.match(eid) or eid in edge_ids:
+            k = len(edges) + 1
+            while f"e{k}" in edge_ids:
+                k += 1
+            eid = f"e{k}"
+        edge_ids.add(eid)
+        kind, arrow = e.get("kind"), e.get("arrow")
+        item = {"id": eid, "from": a, "to": b,
+                "kind": kind if isinstance(kind, str) and kind in EDGE_KINDS else "signal",
+                "label": clean_text(e.get("label", ""), 120),
+                "arrow": arrow if arrow in ("none", "end", "start", "both") else "end",
                 "route": "straight" if e.get("route") == "straight" else "ortho"}
         for key in ("fromSide", "toSide"):
             if e.get(key) in SIDES:

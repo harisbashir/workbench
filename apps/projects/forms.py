@@ -1,4 +1,5 @@
 from django import forms
+from django.db.models import Q
 
 from apps.accounts.models import User
 
@@ -59,9 +60,18 @@ class RevisionForm(forms.ModelForm):
         fields = ["board", "name", "status", "target_date", "git_ref", "notes"]
         widgets = {"target_date": DateInput(), "notes": forms.Textarea(attrs={"rows": 3})}
 
-    def __init__(self, *args, project=None, **kwargs):
+    def __init__(self, *args, project=None, can_release=True, **kwargs):
         super().__init__(*args, **kwargs)
         self.project = project
+        if not can_release:
+            released = Revision.Status.RELEASED
+            if self.instance.pk and self.instance.status == released:
+                # Only leads can take a revision out of (or put it into) production.
+                self.fields["status"].disabled = True
+                self.fields["status"].help_text = "Only a lead or an administrator can change the status of a released revision."
+            else:
+                self.fields["status"].choices = [c for c in self.fields["status"].choices if c[0] != released]
+                self.fields["status"].help_text = "A lead or an administrator releases the revision for production once its checklist is complete."
         self.fields["board"].queryset = Board.objects.filter(project=project)
         self.fields["board"].empty_label = None
         self.fields["board"].required = False  # defaults to the product's first board
@@ -95,16 +105,22 @@ class TaskForm(forms.ModelForm):
 
     def __init__(self, project, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        people = User.objects.filter(is_active=True)
         # Only offer people who are on this project (falls back to everyone for a new, empty project).
         member_ids = set(project.members.values_list("pk", flat=True))
         if project.lead_id:
             member_ids.add(project.lead_id)
+        # Keep the task's current assignee/reviewer/revision selectable even if that person has
+        # left the project or the revision is obsolete, so saving doesn't silently clear them.
+        inst = self.instance
+        keep_people = {pk for pk in (inst.assignee_id, inst.reviewer_id) if pk}
         if member_ids:
-            people = people.filter(pk__in=member_ids)
+            people = User.objects.filter(Q(is_active=True, pk__in=member_ids) | Q(pk__in=keep_people))
+        else:
+            people = User.objects.filter(Q(is_active=True) | Q(pk__in=keep_people))
         self.fields["assignee"].queryset = people
         self.fields["reviewer"].queryset = people
-        self.fields["revision"].queryset = project.revisions.exclude(status=Revision.Status.OBSOLETE)
+        revisions = project.revisions.filter(~Q(status=Revision.Status.OBSOLETE) | Q(pk=inst.revision_id or 0))
+        self.fields["revision"].queryset = revisions
         self.fields["assignee"].empty_label = "Unassigned"
         self.fields["reviewer"].empty_label = "No reviewer"
         self.fields["revision"].empty_label = "Not tied to a revision"

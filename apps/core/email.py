@@ -21,6 +21,7 @@ def send(to, subject, body, site=None):
     site = site or SiteSettings.load()
     if not site.email_ready:
         return False
+    subject = " ".join(str(subject).split())[:150]  # a header can't contain line breaks
     msg = EmailMessage(subject=f"[{site.company_name}] {subject}", body=body, from_email=site.email_from,
                        to=[to] if isinstance(to, str) else to, connection=connection_for(site))
     msg.send(fail_silently=False)

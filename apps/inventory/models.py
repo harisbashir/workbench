@@ -5,6 +5,10 @@ from django.db import models, transaction
 from django.db.models import F
 from django.urls import reverse
 
+# Part costs, stock value and BOM costs are kept in one currency. Set WORKBENCH_CURRENCY
+# in the settings to change it; purchase orders in another currency don't overwrite part costs.
+BASE_CURRENCY = (getattr(settings, "WORKBENCH_CURRENCY", "") or "USD").upper()
+
 
 class Supplier(models.Model):
     name = models.CharField(max_length=120, unique=True)
@@ -19,7 +23,8 @@ class Supplier(models.Model):
     email = models.EmailField(blank=True)
     phone = models.CharField(max_length=40, blank=True)
     country = models.CharField(max_length=60, blank=True)
-    currency = models.CharField(max_length=3, default="USD")
+    currency = models.CharField(max_length=3, default="USD",
+                                help_text="The currency this supplier quotes in. Orders are priced in it.")
     lead_time_days = models.PositiveIntegerField(default=14, help_text="Typical days from order to delivery.")
     notes = models.TextField(blank=True)
 
@@ -31,6 +36,10 @@ class Supplier(models.Model):
 
     def get_absolute_url(self):
         return reverse("inventory:supplier_edit", args=[self.pk])
+
+    @property
+    def in_base_currency(self):
+        return (self.currency or BASE_CURRENCY).upper() == BASE_CURRENCY
 
 
 class Part(models.Model):

@@ -86,9 +86,13 @@ def part_adjust(request, pk):
     form = StockAdjustForm(request.POST)
     if form.is_valid():
         qty, mode = form.cleaned_data["quantity"], form.cleaned_data["mode"]
-        delta = qty if mode == "add" else -qty if mode == "remove" else qty - part.stock
+        with transaction.atomic():
+            # "Set exact count" is computed from the stock as it is now, not as the page showed it.
+            part = Part.objects.select_for_update().get(pk=part.pk)
+            delta = qty if mode == "add" else -qty if mode == "remove" else qty - part.stock
+            if delta:
+                part.adjust_stock(delta, StockMovement.Reason.ADJUST, user=request.user, reference=form.cleaned_data["note"])
         if delta:
-            part.adjust_stock(delta, StockMovement.Reason.ADJUST, user=request.user, reference=form.cleaned_data["note"])
             audit(request, "stock.adjusted", part, delta=delta, note=form.cleaned_data["note"])
         messages.success(request, f"Stock for {part.ipn} is now {part.stock}.")
     else:
@@ -141,9 +145,18 @@ def _revision_for(request, pk, edit=False):
     return rev
 
 
+def _can_edit_bom(user, rev):
+    """Mirrors _revision_for(edit=True), so the page only offers what the user may do."""
+    if not rev.project.can_edit(user):
+        return False
+    return rev.status != Revision.Status.RELEASED or user.can_manage_projects
+
+
 @login_required
 def bom_index(request):
-    projects = Project.objects.visible_to(request.user).exclude(status=Project.Status.ARCHIVED).prefetch_related("revisions")
+    projects = list(Project.objects.visible_to(request.user).exclude(status=Project.Status.ARCHIVED).prefetch_related("revisions"))
+    for p in projects:
+        p.user_can_edit = p.can_edit(request.user)
     return render(request, "inventory/bom_index.html", {"projects": projects})
 
 
@@ -151,6 +164,7 @@ def bom_index(request):
 def bom(request, pk):
     rev = _revision_for(request, pk)
     lines = list(rev.bom_lines.select_related("part", "part__supplier"))
+    can_edit = _can_edit_bom(request.user, rev)
     fitted = [l for l in lines if not l.dnp]
     cost = sum((l.line_cost for l in fitted), Decimal(0))
     buildable = min((l.part.stock // l.quantity for l in fitted if l.quantity), default=0) if fitted else 0
@@ -160,12 +174,12 @@ def bom(request, pk):
     return render(request, "inventory/bom.html", {
         "rev": rev, "project": rev.project, "lines": lines, "cost": cost, "buildable": max(buildable, 0),
         "placements": sum(l.quantity for l in fitted), "unique_parts": len(fitted),
-        "can_edit": rev.project.can_edit(request.user), "others": others,
+        "can_edit": can_edit, "others": others,
         "limiting": sorted(fitted, key=lambda l: l.can_build)[:3] if fitted else [],
         "house_lines": [l for l in fitted if l.fitted_by == "house"],
         "house_parts": sum(l.quantity for l in fitted if l.fitted_by == "house"),
         "fab_parts": sum(l.quantity for l in fitted if l.fitted_by != "house"),
-        "can_set_fitted": rev.project.can_edit(request.user) and (rev.status != "released" or request.user.can_manage_projects),
+        "can_set_fitted": can_edit,
     })
 
 
@@ -200,7 +214,9 @@ def bom_import_view(request, pk):
         if not data:
             messages.error(request, "The upload expired. Please upload the file again.")
             return redirect("inventory:bom_import", pk=rev.pk)
-        created, linked = _apply_import(rev, data["rows"], data["replace"], request.user)
+        created, linked, notes = _apply_import(rev, data["rows"], data["replace"], request.user)
+        for n in notes:
+            messages.warning(request, n)
         log_activity(rev.project, f"imported a BOM for {rev.title} ({len(data['rows'])} lines, {created} new parts)", actor=request.user,
                      url=rev.get_absolute_url())
         post_system_message(rev.project, f"{request.user.display_name} imported a new BOM for {rev.title}: {len(data['rows'])} lines, {created} new parts added to the library.", rev.get_absolute_url())
@@ -221,12 +237,43 @@ def bom_import_view(request, pk):
                 r["match_label"] = str(part) if part else ""
                 r["match_how"] = how
             request.session[session_key] = {"rows": rows, "replace": form.cleaned_data["replace"]}
-            preview = {"rows": rows, "new": sum(1 for r in rows if not r["match_id"]), "replace": form.cleaned_data["replace"]}
+            preview = {"rows": rows, "new": sum(1 for r in rows if not r["match_id"]), "replace": form.cleaned_data["replace"],
+                       "mixed_dnp": _mixed_dnp(rows)}
     return render(request, "inventory/bom_import.html", {"form": form, "rev": rev, "preview": preview})
 
 
+def _mixed_dnp(rows):
+    """Parts that appear both fitted and DNP in an import (they end up on one BOM line)."""
+    groups = {}
+    for r in rows:
+        key = ("id", r["match_id"]) if r.get("match_id") else (
+            ("mpn", r["mpn"].lower()) if r["mpn"] else ("vf", r["value"].lower(), r["footprint"].lower()))
+        groups.setdefault(key, []).append(r)
+    out = []
+    for rs in groups.values():
+        if len({r["dnp"] for r in rs}) > 1:
+            out.append(" / ".join(r["references"] or r["value"] for r in rs))
+    return out
+
+
+def _dnp_note(line, refs):
+    refs = [r for r in refs if r]
+    if not refs:
+        return
+    note = "Not fitted (DNP): " + ", ".join(refs)
+    line.notes = (f"{line.notes}; {note}" if line.notes else note)[:200]
+
+
 def _apply_import(rev, rows, replace, user):
+    """Returns (parts created, rows linked to existing parts, warnings).
+
+    A BOM line is either fitted or DNP. When the same part shows up in a fitted row
+    and a DNP row (KiCad/KiBot group them separately), the fitted references stay on
+    the line and the DNP ones are recorded in the line's notes, so they are neither
+    placed by the assembler nor taken from stock.
+    """
     created = linked = 0
+    notes = []
     with transaction.atomic():
         if replace:
             rev.bom_lines.all().delete()
@@ -246,10 +293,22 @@ def _apply_import(rev, rows, replace, user):
             line, made = BomLine.objects.get_or_create(revision=rev, part=part, defaults={
                 "quantity": r["quantity"], "references": r["references"], "dnp": r["dnp"]})
             if not made:
-                line.quantity += r["quantity"]
-                line.references = ", ".join(x for x in [line.references, r["references"]] if x)
+                if line.dnp == r["dnp"]:
+                    line.quantity += r["quantity"]
+                    line.references = ", ".join(x for x in [line.references, r["references"]] if x)
+                elif r["dnp"]:  # fitted line, DNP row: leave the DNP parts off
+                    _dnp_note(line, [r["references"]])
+                    notes.append(f"{part.ipn}: {r['references'] or 'some references'} marked DNP but the same part is fitted "
+                                 f"as {line.references or 'other references'} — the DNP ones were left off the line (see its notes).")
+                else:  # DNP line, fitted row: the line becomes fitted
+                    _dnp_note(line, [line.references])
+                    notes.append(f"{part.ipn}: {line.references or 'some references'} marked DNP but the same part is fitted "
+                                 f"as {r['references'] or 'other references'} — the line is fitted; the DNP ones are in its notes.")
+                    line.dnp = False
+                    line.quantity = r["quantity"]
+                    line.references = r["references"]
                 line.save()
-    return created, linked
+    return created, linked, notes
 
 
 @login_required
@@ -285,7 +344,8 @@ def bom_compare(request, pk, other_pk):
             change = "changed"
         else:
             change = "same"
-        rows.append({"part": (x or y).part, "old": x, "new": y, "change": change})
+        rows.append({"part": (x or y).part, "old": x, "new": y, "change": change,
+                     "references": (y.references if y else "") or (x.references if x else "")})
     summary = {k: sum(1 for r in rows if r["change"] == k) for k in ("added", "removed", "changed", "same")}
     return render(request, "inventory/bom_compare.html", {"a": a, "b": b, "rows": rows, "summary": summary,
                                                           "hide_same": request.GET.get("all") != "1"})

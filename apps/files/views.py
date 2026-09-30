@@ -45,12 +45,16 @@ def validate_upload(f):
     return None
 
 
-def store_upload(f, *, project, folder, user, task=None, request=None):
+def store_upload(f, *, project, folder, user, task=None, request=None, as_new=False):
     """Save an uploaded file. If a live document with the same name is already in
-    the folder, the upload becomes its next version instead of a duplicate."""
-    from .models import safe_name
+    the folder, the upload becomes its next version instead of a duplicate —
+    unless `as_new` is set (chat shares), which always makes a new document with
+    a unique name such as "photo (2).png"."""
+    from .models import safe_name, unique_name
     name = safe_name(f.name)
-    doc = Document.objects.alive().filter(project=project, folder=folder, name=name).first()
+    if as_new:
+        name = unique_name(project, folder, name)
+    doc = Document.objects.alive().filter(project=project, folder=folder, name=name).order_by("pk").first()
     new = doc is None
     if new:
         doc = Document.objects.create(project=project, folder=folder, name=name, task=task, created_by=user, updated_by=user)
@@ -81,7 +85,7 @@ class DocumentEditForm(forms.ModelForm):
         self.fields["folder"].empty_label = "(top level)"
         self.fields["folder"].label_from_instance = lambda f: " / ".join([a.name for a in f.ancestors()] + [f.name])
         self.fields["task"].queryset = Task.objects.filter(project=doc.project) if doc.project_id else Task.objects.none()
-        self.fields["task"].empty_label = "None"
+        self.fields["task"].empty_label = "— no task —"
         if not doc.project_id:
             self.fields.pop("task")
 
@@ -300,7 +304,7 @@ def _serve(request, version, inline):
 @login_required
 def download(request, pk):
     version = get_object_or_404(DocumentVersion.objects.select_related("document__project"), pk=pk)
-    if not version.document.can_view(request.user):
+    if not version.document.can_view(request.user) or version.document.deleted_at:
         raise Http404
     return _serve(request, version, inline=request.GET.get("inline") == "1")
 
@@ -313,6 +317,8 @@ def trash(request):
     days = SiteSettings.load().trash_days
     for d in docs:
         d.purge_on = d.deleted_at + timezone.timedelta(days=days)
+    for d in docs:
+        d.user_can_edit = d.can_edit(request.user)
     return render(request, "files/trash.html", {"docs": docs, "days": days})
 
 
@@ -321,9 +327,13 @@ def trash(request):
 def trash_action(request, pk):
     doc = _document(request, pk, edit=True, include_deleted=True)
     if request.POST.get("action") == "restore":
+        old_name = doc.name
         doc.restore()
         audit(request, "file.restored", doc)
-        messages.success(request, f"{doc.name} restored.")
+        if doc.name != old_name:
+            messages.success(request, f"{old_name} restored as {doc.name}, because a file with that name is already in the folder.")
+        else:
+            messages.success(request, f"{doc.name} restored.")
     elif request.POST.get("action") == "purge":
         if not request.user.can_manage_projects:
             raise PermissionDenied("Only leads and administrators can delete files permanently.")
@@ -359,7 +369,11 @@ def storage(request):
 @require_POST
 def prune_versions(request):
     """Deletes all but the newest N versions of every file."""
-    keep = max(1, int(request.POST.get("keep", 3) or 3))
+    try:
+        keep = max(1, int(request.POST.get("keep", 3) or 3))
+    except (TypeError, ValueError):
+        messages.error(request, "Enter how many versions to keep, e.g. 3.")
+        return redirect("files:storage")
     removed = freed = 0
     for doc in Document.objects.filter(version_count__gt=keep):
         for v in doc.versions.order_by("-number")[keep:]:

@@ -97,6 +97,9 @@ class Mesh:
         """Check limits and give uncoloured parts a colour."""
         if not self.parts:
             raise MeshError("The file doesn't contain any surfaces to show.")
+        for p in self.parts:
+            if not np.isfinite(p.vertices).all():
+                raise MeshError(f"Part “{p.name}” has invalid coordinates (not a number, or too large); the file may be damaged.")
         n = self.triangle_count
         if n > MAX_TRIANGLES:
             raise MeshError(f"The model has {n:,} triangles, more than the {MAX_TRIANGLES:,} the viewer can show. "
@@ -143,6 +146,8 @@ def weld(vertices, tolerance=1e-5):
     v = np.asarray(vertices, dtype=np.float32).reshape(-1, 3)
     if len(v) == 0:
         return v, np.zeros((0, 3), dtype=np.uint32)
+    if not np.isfinite(v).all() or np.abs(v).max() > 1e12:
+        raise MeshError("The file has invalid coordinates (not a number, or too large); it may be damaged.")
     key = np.round(v / tolerance).astype(np.int64)
     _, first, inverse = np.unique(key, axis=0, return_index=True, return_inverse=True)
     return v[first], inverse.reshape(-1, 3).astype(np.uint32)

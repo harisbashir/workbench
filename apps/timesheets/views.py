@@ -1,4 +1,3 @@
-import csv
 from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
@@ -14,6 +13,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from apps.accounts.models import User
+from apps.core import csvsafe
 from apps.production.models import BuildOrder
 from apps.projects.models import Activity, Project, Task
 
@@ -54,10 +54,16 @@ def week_start(d):
     return d - timedelta(days=d.weekday())
 
 
+# Weeks outside this range can't be shown (prev/next links would overflow date arithmetic).
+FIRST_DAY, LAST_DAY = date(1970, 1, 5), date(9998, 12, 20)
+
+
 def parse_week(request):
     try:
         d = date.fromisoformat(request.GET.get("week", ""))
     except ValueError:
+        d = timezone.localdate()
+    if not FIRST_DAY <= d <= LAST_DAY:
         d = timezone.localdate()
     return week_start(d)
 
@@ -115,14 +121,19 @@ def log_for_task(request, key, number):
     if not task.project.can_edit(request.user):
         raise PermissionDenied
     try:
-        hours = Decimal(request.POST.get("hours", "0"))
-        day = date.fromisoformat(request.POST.get("date") or timezone.localdate().isoformat())
-    except Exception:
+        hours = Decimal((request.POST.get("hours") or "0").strip())
+    except ArithmeticError:  # decimal.InvalidOperation for text like "abc"
         hours = Decimal(0)
+    if not hours.is_finite():  # "NaN", "Infinity"
+        hours = Decimal(0)
+    try:
+        day = date.fromisoformat(request.POST.get("date") or timezone.localdate().isoformat())
+    except ValueError:
         day = timezone.localdate()
     if not (Decimal("0.25") <= hours <= Decimal("16")):
         messages.error(request, "Enter between 0.25 and 16 hours.")
     else:
+        hours = hours.quantize(Decimal("0.01"))
         TimeEntry.objects.create(user=request.user, project=task.project, task=task, date=day, hours=hours,
                                  note=(request.POST.get("note") or "")[:200])
         messages.success(request, f"Logged {hours} h on {task.key}.")
@@ -180,11 +191,13 @@ def export_csv(request):
     except ValueError:
         end = timezone.localdate()
         start = end.replace(day=1)
+    if start > end:
+        start, end = end, start
     entries = TimeEntry.objects.filter(date__range=(start, end), user__in=_people_for(request.user),
                                        project__in=Project.objects.visible_to(request.user)).select_related("user", "project", "task")
     resp = HttpResponse(content_type="text/csv")
     resp["Content-Disposition"] = f'attachment; filename="time-{start}-to-{end}.csv"'
-    w = csv.writer(resp)
+    w = csvsafe.writer(resp)  # task titles and notes can't become spreadsheet formulas
     w.writerow(["Date", "Person", "Username", "Project", "Task", "Task title", "Hours", "Note"])
     for e in entries.order_by("date", "user__username"):
         w.writerow([e.date, e.user.display_name, e.user.username, e.project.key, e.task.key if e.task else "",

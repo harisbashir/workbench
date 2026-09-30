@@ -89,14 +89,14 @@ def my_work(request):
 
 @login_required
 def search(request):
-    q = request.GET.get("q", "").strip()
+    q = request.GET.get("q", "").strip()[:200]
     results = {}
     if len(q) >= 2:
         visible = Project.objects.visible_to(request.user)
         task_filter = Q(title__icontains=q) | Q(description__icontains=q)
         if "-" in q:
             key, _, num = q.upper().partition("-")
-            if num.isdigit():
+            if num.isdigit() and len(num) <= 9:
                 task_filter |= Q(project__key=key, number=int(num))
         results["tasks"] = Task.objects.filter(project__in=visible).filter(task_filter).select_related("project")[:25]
         results["projects"] = visible.filter(Q(name__icontains=q) | Q(key__icontains=q))[:10]
@@ -210,7 +210,6 @@ def system_page(request, tab="overview"):
     from django.conf import settings as dj
     from django.urls import reverse
 
-    from apps.files.models import DocumentVersion
 
     from . import system
     from .forms import EmailSettingsForm, GeneralSettingsForm, StorageSettingsForm
@@ -231,10 +230,9 @@ def system_page(request, tab="overview"):
         from .forms import LogoForm
         ctx["logo_form"] = LogoForm()
     if tab == "overview":
-        from django.db.models import Sum as S
         ctx.update({
             "health": system.health(), "disk": system.disk_usage(), "db_size": system.database_size(),
-            "files_size": DocumentVersion.objects.aggregate(s=S("size"))["s"] or 0,
+            "files": __import__("apps.core.storage", fromlist=["x"]).file_totals(),
             "backups": system.list_backups()[:1], "data_dir": dj.DATA_DIR, "storage": __import__("apps.core.storage", fromlist=["x"]).storage_info(), "https": dj.HTTPS, "domain": dj.DOMAIN,
             "version": system.VERSION, "db_vendor": "SQLite" if system.is_sqlite() else "PostgreSQL",
             "user_count": __import__("apps.accounts.models", fromlist=["User"]).User.objects.filter(is_active=True).count(),
@@ -278,8 +276,8 @@ def system_action(request):
             return redirect("/system/backups/#exports")
         job = ExportJob.objects.create(requested_by=request.user, include_versions=bool(request.POST.get("include_versions")))
         audit(request, "export.requested", None, include_versions=job.include_versions)
-        beat = system.health().get("scheduler_seen")
-        if not beat or (timezone.now() - timezone.datetime.fromisoformat(beat)).total_seconds() > 180:
+        state = system.health().get("scheduler")
+        if state != "running":
             exporter.run_job(job)  # no background worker running (e.g. development): do it now
             exporter.prune_exports()
             messages.success(request, "Export ready." if job.status == "ready" else f"Export failed: {job.message}")

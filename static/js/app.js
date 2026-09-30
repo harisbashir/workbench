@@ -26,6 +26,20 @@
       b.addEventListener("click", (e) => { if (!window.confirm(b.dataset.confirm)) e.preventDefault(); });
     });
 
+    // Every ordinary form: a second click while the first request is on its way does nothing.
+    // (Buttons come back after a few seconds, e.g. when the response was a file download.)
+    document.addEventListener("submit", (e) => {
+      const f = e.target;
+      if (!(f instanceof HTMLFormElement) || f.method.toLowerCase() !== "post" || f.target || f.hasAttribute("data-js")) return;
+      if (f.dataset.busy) { e.preventDefault(); return; }
+      setTimeout(() => {
+        if (e.defaultPrevented) return;
+        f.dataset.busy = "1";
+        setTimeout(() => { delete f.dataset.busy; }, 6000);
+      }, 0);
+    });
+    window.addEventListener("pageshow", () => document.querySelectorAll("form[data-busy]").forEach((f) => delete f.dataset.busy));
+
     // Auto-submit filter forms when a select changes
     document.querySelectorAll("[data-autosubmit]").forEach((el) => {
       el.addEventListener("change", () => el.form.submit());
@@ -353,6 +367,7 @@
       const cont = prevAuthor === m.author + m.kind && m.day === prevDay;
       const row = el("div", "msg" + (cont ? " cont" : "") + (m.kind !== "user" ? " bot" : ""));
       row.dataset.id = m.id;
+      row._body = m.body || "";
       const av = el("span", "avatar sm" + (m.kind === "github" ? " gh" : m.kind === "system" ? " wb" : ""), esc(m.initials));
       const body = el("div", "m-body");
       const head = el("div", "m-head");
@@ -400,6 +415,7 @@
     function replace(m) {
       const row = log.querySelector('.msg[data-id="' + m.id + '"]');
       if (!row) return;
+      row._body = m.body || "";
       row.querySelector(".m-text").innerHTML = m.html;
       if (m.deleted) { const t = row.querySelector(".m-tools"); if (t) t.remove(); }
     }
@@ -444,7 +460,7 @@
         if (!window.confirm("Delete this message?")) return;
         fd.append("action", "delete");
       } else {
-        const current = row.querySelector(".m-text").innerText;
+        const current = row._body || row.querySelector(".m-text").innerText;
         const next = window.prompt("Edit message", current);
         if (next === null || !next.trim()) return;
         fd.append("body", next);

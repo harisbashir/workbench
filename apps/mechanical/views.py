@@ -1,12 +1,13 @@
-import io
 import os
+import shutil
+import tempfile
 import zipfile
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.db.models import Count, Q, Sum
-from django.http import HttpResponse, JsonResponse
+from django.http import FileResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
@@ -48,6 +49,8 @@ def _check_unlocked(request, project, part):
 def part_edit(request, key, pk=None):
     project = _project(request, key, edit=True)
     part = get_object_or_404(MechanicalPart, pk=pk, project=project) if pk else None
+    if part:
+        _check_unlocked(request, project, part)  # a released part's details are locked like its files
     old_status = part.status if part else None
     form = PartForm(request.POST or None, instance=part, project=project)
     if request.method == "POST":
@@ -181,16 +184,20 @@ def download(request, key, pk, file_id):
 @login_required
 def download_all(request, key, pk):
     project, part = _part(request, key, pk)
-    buf = io.BytesIO()
     base = f"{project.key}-{part.name}-rev{part.revision}".replace(" ", "-")
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        for f in part.files.filter(is_current=True):
-            with f.file.open("rb") as fh:
-                z.writestr(f"{base}/{FileKind(f.kind).label}/{f.name}", fh.read())
+    # Built in a temporary file (not in memory) and streamed: CAD files can be hundreds of MB each.
+    tmp = tempfile.TemporaryFile()
+    try:
+        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED, allowZip64=True) as z:
+            for f in part.files.filter(is_current=True):
+                with f.file.open("rb") as fh, z.open(f"{base}/{FileKind(f.kind).label}/{f.name}", "w", force_zip64=True) as out:
+                    shutil.copyfileobj(fh, out, 1024 * 1024)
+        tmp.seek(0)
+    except BaseException:
+        tmp.close()
+        raise
     audit(request, "mechanical.downloaded_all", part)
-    resp = HttpResponse(buf.getvalue(), content_type="application/zip")
-    resp["Content-Disposition"] = f'attachment; filename="{base}.zip"'
-    return resp
+    return FileResponse(tmp, as_attachment=True, filename=f"{base}.zip", content_type="application/zip")
 
 
 @login_required

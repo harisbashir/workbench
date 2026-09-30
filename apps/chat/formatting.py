@@ -14,6 +14,21 @@ MENTION_RE = re.compile(r"(?<![\w])@([\w.+-]+\w)")
 CODE_RE = re.compile(r"`([^`\n]+)`")
 BOLD_RE = re.compile(r"\*\*([^*\n]+)\*\*")
 FENCE_RE = re.compile(r"```\n?(.*?)```", re.S)
+# Control characters (other than tab/newline/CR) never belong in chat text, and \x00/\x01
+# are used below as placeholders, so they are removed before formatting.
+CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def clean_text(text):
+    """Removes control characters that could break formatting (and that Postgres rejects)."""
+    return CONTROL_RE.sub("", text or "")
+
+
+def _restore(pattern, store, html):
+    def put(m):
+        i = int(m.group(1))
+        return store[i] if i < len(store) else ""
+    return re.sub(pattern, put, html)
 
 
 def render(text, known_keys=None):
@@ -23,7 +38,7 @@ def render(text, known_keys=None):
         blocks.append(f"<pre><code>{m.group(1)}</code></pre>")
         return f"\x00{len(blocks) - 1}\x00"
 
-    html = escape(text)
+    html = escape(clean_text(text))
     html = FENCE_RE.sub(stash_fence, html)
 
     codes = []
@@ -50,9 +65,9 @@ def render(text, known_keys=None):
             part = BOLD_RE.sub(r"<strong>\1</strong>", part)
             parts[i] = part
     html = "".join(parts)
-    html = re.sub("\x01(\\d+)\x01", lambda m: codes[int(m.group(1))], html)
+    html = _restore("\x01(\\d+)\x01", codes, html)
     # Markdown-style headings ("## Changes") in notes and descriptions.
     html = re.sub(r"(?m)^#{1,3} +(.+)$", r'<strong class="md-h">\1</strong>', html)
     html = html.replace("\n", "<br>")
-    html = re.sub("\x00(\\d+)\x00", lambda m: blocks[int(m.group(1))], html)
+    html = _restore("\x00(\\d+)\x00", blocks, html)
     return mark_safe(html)

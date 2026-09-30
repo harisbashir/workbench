@@ -28,6 +28,9 @@ def _sample():
         {"id": "x2", "type": "text", "x": 900, "y": 250, "w": 140, "h": 30, "label": "Note: 10 kΩ pull-ups"},
         {"id": "x3", "type": "battery", "x": 1100, "y": 120, "w": 100, "h": 60, "label": "Li-ion", "color": "dark"},
         {"id": "x4", "type": "board", "x": 1100, "y": 260, "w": 180, "h": 100, "label": "Control board", "sub": "Rev A"},
+        # overflowing texts: long words are broken and wrapping stops at the box height
+        {"id": "x5", "type": "block", "x": 1300, "y": 100, "w": 60, "h": 30, "label": "W" * 60 + " tiny words here", "sub": "x" * 80},
+        {"id": "x6", "type": "mcu", "x": 1300, "y": 200, "w": 90, "h": 120, "label": "MCU", "sub": "word " * 40 + "Ω→ünïcode"},
     ]
     d["edges"] += [
         {"id": "y1", "from": "x1", "to": "n5", "kind": "analog", "label": "ADC\nch 3", "arrow": "start", "route": "straight"},

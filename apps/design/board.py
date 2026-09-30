@@ -11,7 +11,7 @@ import math
 import re
 import zipfile
 
-from .gerber import BBox, board_shape, escape, f, parse_excellon, parse_gerber
+from .gerber import BBox, Budget, GerberLimitError, board_shape, escape, f, parse_excellon, parse_gerber
 
 MAX_FILES = 300
 MAX_TOTAL = 120 * 1024 * 1024
@@ -167,17 +167,27 @@ def collect(entries):
                     raise ValueError("The Gerber files are too large to show (over 120 MB unzipped).")
                 if info.filename.lower().endswith(".zip"):
                     continue
-                out.append((info.filename.split("/")[-1], z.read(info)))
+                try:
+                    content = z.read(info)
+                except (zipfile.BadZipFile, NotImplementedError, RuntimeError, EOFError) as exc:
+                    raise ValueError(f"{info.filename.split('/')[-1]} in the zip can't be read ({exc}).")
+                out.append((info.filename.split("/")[-1], content))
         else:
             total += len(data)
+            if total > MAX_TOTAL:
+                raise ValueError("The Gerber files are too large to show (over 120 MB).")
             out.append((name, data))
     return out
 
 
 # ---------------------------------------------------------------------- drawing --
 
-def render_board(entries, prefix="g"):
-    """entries: [(name, bytes)] (zips allowed). Returns {"svg": …, "layers": […], "info": {…}, "warnings": […]}."""
+def render_board(entries, prefix="g", budget=None):
+    """entries: [(name, bytes)] (zips allowed). Returns {"svg": …, "layers": […], "info": {…}, "warnings": […]}.
+
+    Raises ValueError (GerberLimitError) when the files need more time or shapes than
+    a render is allowed; see the limits in gerber.py."""
+    budget = budget or Budget()
     files = collect(entries)
     layers, warnings, job = [], [], {}
     for name, data in files:
@@ -193,7 +203,12 @@ def render_board(entries, prefix="g"):
             continue
         i = len(layers)
         try:
-            L = parse_excellon(text, name) if kind == "drill" else parse_gerber(text, name, prefix=f"{prefix}{i}")
+            L = (parse_excellon(text, name, budget=budget) if kind == "drill"
+                 else parse_gerber(text, name, prefix=f"{prefix}{i}", budget=budget))
+        except GerberLimitError:
+            raise  # the whole render is over budget: stop, don't try the other files
+        except MemoryError:
+            raise GerberLimitError(f"{name} is too complex to draw.")
         except Exception as exc:  # a broken file shouldn't stop the rest from showing
             warnings.append(f"Couldn't read {name}: {exc}")
             continue
@@ -212,7 +227,7 @@ def render_board(entries, prefix="g"):
         return [L for L in layers if L.kind == kind and (side is None or L.side == side)]
 
     outline = next(iter(pick("outline")), None)
-    shape = board_shape(outline) if outline else ""
+    shape = board_shape(outline, budget=budget) if outline else ""
     frame = BBox()
     if outline and not outline.center_bbox.empty:
         frame.merge(outline.center_bbox)

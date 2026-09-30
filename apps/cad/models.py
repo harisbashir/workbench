@@ -69,3 +69,23 @@ class MeshPreview(models.Model):
             self.mesh_status = MeshStatus.PENDING
         else:
             self.mesh_status = MeshStatus.NONE
+
+
+class MeshJob(models.Model):
+    """Bookkeeping for a conversion in progress: when it started and how often it was tried.
+
+    A row exists while a file is being converted; it is removed when the conversion ends. A row
+    that is older than the time limit means the process doing the work died (restart, crash), and
+    `jobs.tick()` retries the file or gives up after a few attempts.
+    """
+
+    model = models.CharField(max_length=60)  # "design.DesignFile"
+    object_id = models.PositiveBigIntegerField()
+    attempts = models.PositiveSmallIntegerField(default=0)
+    started_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        unique_together = [("model", "object_id")]
+
+    def __str__(self):
+        return f"{self.model} {self.object_id} (attempt {self.attempts})"

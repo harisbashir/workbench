@@ -17,7 +17,9 @@ from django.utils.dateparse import parse_datetime
 from apps.accounts.models import User
 from apps.chat.models import Message, post_system_message
 from apps.core.utils import notify
-from apps.projects.models import TASK_KEY_RE, Activity, Project, Task, log_activity
+import re
+
+from apps.projects.models import Activity, Project, Task, log_activity
 
 from .models import PullRequest
 
@@ -37,11 +39,26 @@ def _user_for(login):
     return User.objects.filter(github_username__iexact=login, is_active=True).first()
 
 
+# Task keys in any case: branch names are usually lower case ("pwr-12-usb-esd").
+TASK_KEY_ANY_CASE_RE = re.compile(r"(?<![A-Za-z0-9])([A-Za-z][A-Za-z0-9]{1,9})-(\d+)\b")
+
+
+def _first_line(text, limit):
+    lines = (text or "").strip().splitlines()
+    return lines[0][:limit] if lines else ""
+
+
+def branch_from_ref(ref):
+    """'refs/heads/feature/x' -> 'feature/x'; tags and other refs -> ''."""
+    prefix = "refs/heads/"
+    return ref[len(prefix):] if ref.startswith(prefix) else ""
+
+
 def _tasks_in(project, *texts):
     found = {}
     for text in texts:
-        for key, num in TASK_KEY_RE.findall(text or ""):
-            if key == project.key:
+        for key, num in TASK_KEY_ANY_CASE_RE.findall(text or ""):
+            if key.upper() == project.key:
                 t = Task.objects.filter(project=project, number=int(num)).first()
                 if t:
                     found[t.pk] = t
@@ -153,20 +170,21 @@ def on_review(project, p):
 
 
 def on_push(project, p):
-    ref = p.get("ref", "")
-    branch = ref.rsplit("/", 1)[-1]
+    branch = branch_from_ref(p.get("ref") or "")
+    if not branch:
+        return  # tag pushes and other refs aren't branch work
     commits = p.get("commits") or []
     pusher = (p.get("pusher") or {}).get("name", "") or (p.get("sender") or {}).get("login", "")
     linked = 0
     for c in commits[:50]:
-        msg = (c.get("message") or "").splitlines()[0][:200]
+        msg = _first_line(c.get("message"), 200) or "(no message)"
         for t in _tasks_in(project, c.get("message")):
             _act(project, f"committed to {branch}: “{msg}”", (c.get("author") or {}).get("username") or pusher, task=t, url=c.get("url", ""))
             linked += 1
     default = (p.get("repository") or {}).get("default_branch", "main")
     if branch == default and commits:
         n = len(commits)
-        _say(project, f"{pusher} pushed {n} commit{'s' if n != 1 else ''} to {branch}: “{(commits[-1].get('message') or '').splitlines()[0][:120]}”",
+        _say(project, f"{pusher} pushed {n} commit{'s' if n != 1 else ''} to {branch}: “{_first_line(commits[-1].get('message'), 120) or '(no message)'}”",
              p.get("compare", ""))
 
 

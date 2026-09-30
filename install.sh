@@ -77,6 +77,11 @@ if ! command -v docker >/dev/null 2>&1; then
   say "Installing Docker"
   curl -fsSL https://get.docker.com | $SUDO sh
 fi
+if [ "$(id -u)" -ne 0 ] && ! id -nG | grep -qw docker; then
+  # Lets this user run "docker compose …" (as in the README) without sudo after logging in again.
+  # Note: members of the docker group can control the whole server, like sudo.
+  $SUDO usermod -aG docker "$(id -un)" 2>/dev/null && ADDED_TO_DOCKER=1
+fi
 docker compose version >/dev/null 2>&1 || $SUDO docker compose version >/dev/null 2>&1 \
   || die "Docker Compose v2 is required ('docker compose'). Please update Docker."
 DOCKER="docker"
@@ -209,20 +214,33 @@ if [ $ASK_DOMAIN -eq 1 ]; then
   say "Domain name"
   info "If people reach Workbench over the internet, enter the domain pointed at this server"
   info "(e.g. workbench.yourcompany.com) to turn on HTTPS automatically."
-  info "Leave empty to use http://<server-ip>:8000 (fine on a VPN or office network)."
+  info "Leave empty to use http://<server-ip>:8000 (only on a VPN or office network:"
+  info "Docker opens that port to every network the server is on, even with a firewall)."
   read -r -p "    Domain [${current_domain}]: " domain
   domain="${domain:-$current_domain}"
 fi
+current_bind="$(grep -E '^WORKBENCH_BIND=' .env | cut -d= -f2- || true)"
+port="$(grep -E '^WORKBENCH_PORT=' .env | cut -d= -f2- || true)"
+port="${port:-8000}"
 grep -v -E '^(WORKBENCH_DOMAIN|WORKBENCH_BIND)=' .env > .env.tmp || true
 mv .env.tmp .env
+chmod 600 .env
 profile=()
 if [ -n "$domain" ]; then
   printf 'WORKBENCH_DOMAIN=%s\nWORKBENCH_BIND=127.0.0.1\n' "$domain" >> .env
   profile=(--profile https)
   url="https://$domain"
 else
-  ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
-  url="http://${ip:-localhost}:8000"
+  # Keep an address someone chose on purpose (e.g. a VPN/Tailscale IP), but not the
+  # localhost-only one that belongs to the HTTPS setup.
+  if [ -n "$current_bind" ] && [ "$current_bind" != "127.0.0.1" ]; then
+    printf 'WORKBENCH_BIND=%s\n' "$current_bind" >> .env
+  fi
+  ip="${current_bind:-$(hostname -I 2>/dev/null | awk '{print $1}')}"
+  [ "$ip" = "127.0.0.1" ] && ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  url="http://${ip:-localhost}:$port"
+  # Switching from HTTPS back to plain HTTP: stop the HTTPS proxy.
+  $DOCKER compose --profile https stop caddy >/dev/null 2>&1 || true
 fi
 git config core.fileMode false   # ignore lost "executable" flags (see update.sh)
 chmod +x install.sh update.sh 2>/dev/null || true
@@ -240,7 +258,7 @@ for _ in $(seq 1 90); do
   fi
   sleep 2
 done
-[ $ok -eq 1 ] || die "Workbench didn't start. See: $DOCKER compose logs workbench"
+[ $ok -eq 1 ] || die "Workbench didn't start. See: $DOCKER compose logs workbench  (run in $DIR)"
 
 code="$($DOCKER compose exec -T workbench python -c "import json;print(json.load(open('/data/secrets.json'))['setup_token'])" 2>/dev/null || true)"
 version="$(cat VERSION 2>/dev/null || echo '?')"
@@ -248,6 +266,11 @@ say "Workbench $version is running"
 info "1. Open        $url"
 if [ -n "$code" ]; then info "2. Setup code  $code  (only needed the first time)"; fi
 info "3. Create your administrator account and scan the QR code with your phone."
+if [ "${ADDED_TO_DOCKER:-0}" = 1 ]; then
+  echo
+  info "You were added to the 'docker' group: log out and back in once, then 'docker compose …'"
+  info "commands work without sudo (until then, put sudo in front of them)."
+fi
 echo
 info "Your data (database, files, backups) is in: $DIR/data"
 info "To update later:  $DIR/update.sh"

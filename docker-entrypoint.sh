@@ -22,7 +22,15 @@ case "$cmd" in
   serve)
     python manage.py migrate --noinput -v0
     python manage.py bootstrap
-    python manage.py run_scheduler &
+    # Background jobs (nightly backups, email, conversions). If the worker ever stops, it is
+    # started again after a short pause; /healthz reports it if it keeps failing.
+    (
+      while true; do
+        python manage.py run_scheduler || true
+        echo "Background worker stopped; starting it again in 10 seconds." >&2
+        sleep 10
+      done
+    ) &
     exec gunicorn config.wsgi:application \
       --bind 0.0.0.0:8000 \
       --workers "${WORKBENCH_WORKERS:-3}" --threads 4 --worker-class gthread \

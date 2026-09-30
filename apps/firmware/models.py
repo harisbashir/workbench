@@ -35,10 +35,22 @@ def parse_version(text):
     return int(m.group(1)), int(m.group(2)), int(m.group(3)), m.group(4) or ""
 
 
+def _pre_key(pre):
+    """Semver pre-release precedence as a sortable string: identifiers are compared
+    one by one, numeric ones numerically and below alphanumeric ones (rc.2 < rc.10)."""
+    parts = []
+    for ident in pre.split("."):
+        if ident.isdigit():
+            parts.append("0" + ident.lstrip("0").rjust(12, "0"))
+        else:
+            parts.append("1" + ident)
+    return ".".join(parts)
+
+
 def sort_key(version):
     major, minor, patch, pre = parse_version(version)
-    # Pre-releases (1.2.0-rc.1) sort before the final release (1.2.0).
-    return f"{major:06d}.{minor:06d}.{patch:06d}.{pre or '~'}"
+    # Pre-releases (1.2.0-rc.1) sort before the final release (1.2.0): "~" sorts after "0" and "1".
+    return f"{major:06d}.{minor:06d}.{patch:06d}.{_pre_key(pre) if pre else '~'}"[:255]
 
 
 class Firmware(models.Model):
@@ -119,7 +131,7 @@ class FirmwareRelease(models.Model):
 
     firmware = models.ForeignKey(Firmware, on_delete=models.CASCADE, related_name="releases")
     version = models.CharField(max_length=60, help_text="Semantic version: MAJOR.MINOR.PATCH, e.g. 1.4.2 or 2.0.0-rc.1")
-    sort_key = models.CharField(max_length=120, editable=False, db_index=True)
+    sort_key = models.CharField(max_length=255, editable=False, db_index=True)
     status = models.CharField(max_length=12, choices=Status.choices, default=Status.DRAFT, db_index=True)
     git_ref = models.CharField("Git tag or commit", max_length=100, blank=True,
                                help_text="The tag or commit this was built from, e.g. v1.4.2 or 3f9c2ab")

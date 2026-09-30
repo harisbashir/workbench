@@ -70,6 +70,9 @@ class SiteSettings(models.Model):
 
     setup_completed_at = models.DateTimeField(null=True, blank=True)
     last_backup_at = models.DateTimeField(null=True, blank=True)
+    last_nightly_attempt_at = models.DateTimeField(null=True, blank=True, editable=False)
+    last_backup_error = models.CharField(max_length=300, blank=True, editable=False)
+    last_housekeeping_on = models.DateField(null=True, blank=True, editable=False)
 
     class Meta:
         verbose_name = "site settings"

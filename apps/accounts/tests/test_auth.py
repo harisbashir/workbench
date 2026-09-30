@@ -68,7 +68,9 @@ class LoginAndTwoFactorTests(TestCase):
             self.client.post(reverse("accounts:login"), {"username": "eng", "password": "wrong"})
         self.assertTrue(User.objects.get(username="eng").is_locked)
         r = self.client.post(reverse("accounts:login"), {"username": "eng", "password": PASSWORD})
-        self.assertContains(r, "temporarily locked")
+        # Locked accounts get the same message as a wrong password (no username discovery).
+        self.assertContains(r, "Wrong username or password")
+        self.assertNotIn("_auth_user_id", self.client.session)
         self.assertTrue(AuditLog.objects.filter(action="login.locked").exists())
 
     def test_set_password_link_is_single_use(self):

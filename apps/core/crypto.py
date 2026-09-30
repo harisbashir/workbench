@@ -16,6 +16,14 @@ def encrypt(value: str) -> str:
     return _fernet().encrypt(value.encode()).decode()
 
 
+def can_decrypt(token: str) -> bool:
+    try:
+        _fernet().decrypt(token.encode())
+        return True
+    except (InvalidToken, ValueError):
+        return False
+
+
 def decrypt(token: str) -> str:
     try:
         return _fernet().decrypt(token.encode()).decode()

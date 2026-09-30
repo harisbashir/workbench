@@ -24,6 +24,17 @@ from .forms import ChangePasswordForm, CodeForm, LoginForm, ProfileForm, SetPass
 from .models import RecoveryCode, User
 
 
+def end_sessions(user):
+    """Sign a person out everywhere (e.g. after a 2FA reset or when deactivated)."""
+    from django.contrib.sessions.models import Session
+    ended = 0
+    for s in Session.objects.filter(expire_date__gt=timezone.now()).iterator():
+        if str(s.get_decoded().get("_auth_user_id")) == str(user.pk):
+            s.delete()
+            ended += 1
+    return ended
+
+
 def _safe_next(request, default="core:dashboard"):
     nxt = request.POST.get("next") or request.GET.get("next")
     if nxt and url_has_allowed_host_and_scheme(nxt, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
@@ -31,38 +42,67 @@ def _safe_next(request, default="core:dashboard"):
     return reverse(default)
 
 
+LOGIN_FAILED = ("Wrong username or password. After {n} wrong attempts an account is locked for {m} minutes "
+                "— ask an administrator if you're locked out.")
+IP_MAX_FAILURES = 30  # per address per lockout window, across all usernames
+
+
+def _ip_key(request):
+    from apps.core.utils import client_ip
+    return f"login-fail:{client_ip(request)}"
+
+
+def _record_failure(candidate):
+    """Count a failed attempt atomically; lock the account at the limit. Old failures expire."""
+    from django.db.models import F
+    now = timezone.now()
+    window = timedelta(minutes=settings.LOGIN_LOCKOUT_MINUTES)
+    if candidate.last_failed_login and now - candidate.last_failed_login > window:
+        User.objects.filter(pk=candidate.pk).update(failed_logins=0)
+    User.objects.filter(pk=candidate.pk).update(failed_logins=F("failed_logins") + 1, last_failed_login=now)
+    count = User.objects.filter(pk=candidate.pk).values_list("failed_logins", flat=True).first() or 0
+    if count >= settings.LOGIN_MAX_ATTEMPTS:
+        User.objects.filter(pk=candidate.pk).update(failed_logins=0, locked_until=now + window)
+        return True
+    return False
+
+
 def login_view(request):
+    from django.core.cache import cache
     if request.user.is_authenticated:
         return redirect("core:dashboard")
     form = LoginForm(request.POST or None)
+    failed_msg = LOGIN_FAILED.format(n=settings.LOGIN_MAX_ATTEMPTS, m=settings.LOGIN_LOCKOUT_MINUTES)
     if request.method == "POST" and form.is_valid():
         username = form.cleaned_data["username"].strip()
         candidate = User.objects.filter(username__iexact=username).first()
-        if candidate and candidate.is_locked:
+        if cache.get(_ip_key(request), 0) >= IP_MAX_FAILURES:
+            audit(request, "login.blocked_ip", candidate, username=username)
+            form.add_error(None, "Too many failed sign-ins from this network. Wait a few minutes and try again.")
+        elif candidate and candidate.is_locked:
             audit(request, "login.blocked_locked", candidate, actor=candidate)
-            form.add_error(None, "This account is temporarily locked after too many failed attempts. Try again later or ask an administrator.")
+            # Same message as a wrong password, so the page doesn't reveal which usernames exist.
+            form.add_error(None, failed_msg)
         else:
             user = authenticate(request, username=candidate.username if candidate else username,
                                 password=form.cleaned_data["password"])
             if user is not None:
-                user.failed_logins = 0
-                user.locked_until = None
-                user.save(update_fields=["failed_logins", "locked_until"])
+                if not user.mfa_enabled:
+                    User.objects.filter(pk=user.pk).update(failed_logins=0, locked_until=None)
                 login(request, user)
                 request.session["mfa_verified"] = False
                 audit(request, "login.password_ok", user)
                 if user.mfa_enabled:
                     return redirect(f"{reverse('accounts:mfa_verify')}?next={_safe_next(request)}")
                 return redirect(_safe_next(request))
-            if candidate:
-                candidate.failed_logins += 1
-                if candidate.failed_logins >= settings.LOGIN_MAX_ATTEMPTS:
-                    candidate.locked_until = timezone.now() + timedelta(minutes=settings.LOGIN_LOCKOUT_MINUTES)
-                    candidate.failed_logins = 0
-                    audit(request, "login.locked", candidate, actor=candidate)
-                candidate.save(update_fields=["failed_logins", "locked_until"])
+            try:
+                cache.incr(_ip_key(request))
+            except ValueError:
+                cache.set(_ip_key(request), 1, settings.LOGIN_LOCKOUT_MINUTES * 60)
+            if candidate and _record_failure(candidate):
+                audit(request, "login.locked", candidate, actor=candidate)
             audit(request, "login.failed", candidate, username=username)
-            form.add_error(None, "Wrong username or password.")
+            form.add_error(None, failed_msg)
     return render(request, "accounts/login.html", {"form": form, "next": request.GET.get("next", "")})
 
 
@@ -121,6 +161,10 @@ def mfa_verify(request):
     user = request.user
     if not user.mfa_enabled:
         return redirect("accounts:mfa_setup")
+    if user.is_locked:
+        logout(request)
+        messages.error(request, "This account is temporarily locked after too many failed attempts.")
+        return redirect("accounts:login")
     form = CodeForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
         code = form.cleaned_data["code"].replace(" ", "")
@@ -129,6 +173,7 @@ def mfa_verify(request):
         if not ok and "-" in code:
             ok = used_recovery = RecoveryCode.use(user, code)
         if ok:
+            User.objects.filter(pk=user.pk).update(mfa_failures=0, failed_logins=0, locked_until=None)
             request.session.cycle_key()
             request.session["mfa_verified"] = True
             audit(request, "login.mfa_ok", user, recovery_code=used_recovery)
@@ -137,6 +182,15 @@ def mfa_verify(request):
                 messages.warning(request, f"You signed in with a recovery code. {left} left. Generate new ones from Security settings.")
             return redirect(_safe_next(request))
         audit(request, "login.mfa_failed", user)
+        from django.db.models import F
+        User.objects.filter(pk=user.pk).update(mfa_failures=F("mfa_failures") + 1)
+        if (User.objects.filter(pk=user.pk).values_list("mfa_failures", flat=True).first() or 0) >= settings.LOGIN_MAX_ATTEMPTS:
+            User.objects.filter(pk=user.pk).update(
+                mfa_failures=0, locked_until=timezone.now() + timedelta(minutes=settings.LOGIN_LOCKOUT_MINUTES))
+            audit(request, "login.locked", user, actor=user, reason="too many wrong 2FA codes")
+            logout(request)
+            messages.error(request, f"Too many wrong codes. The account is locked for {settings.LOGIN_LOCKOUT_MINUTES} minutes.")
+            return redirect("accounts:login")
         form.add_error("code", "That code didn't work. Try the newest code from your authenticator app, or a recovery code.")
     return render(request, "accounts/mfa_verify.html", {"form": form, "next": request.GET.get("next", "")})
 
@@ -152,6 +206,9 @@ def recovery_codes(request):
 @login_required
 @require_POST
 def regenerate_recovery_codes(request):
+    if not request.user.check_password(request.POST.get("password", "")):
+        messages.error(request, "Enter your current password to generate new recovery codes.")
+        return redirect("accounts:security")
     request.session["show_recovery_codes"] = RecoveryCode.generate_for(request.user)
     audit(request, "mfa.recovery_regenerated", request.user)
     return redirect("accounts:recovery_codes")
@@ -200,13 +257,17 @@ def user_list(request):
 @admin_required
 def user_edit(request, pk=None):
     obj = get_object_or_404(User, pk=pk) if pk else None
-    form = UserAdminForm(request.POST or None, instance=obj)
+    was_active = obj.is_active if obj else True
+    form = UserAdminForm(request.POST or None, instance=obj, editor=request.user,
+                         initial=None if obj else {"time_zone": SiteSettings.load().time_zone})
     if request.method == "POST" and form.is_valid():
         creating = obj is None
         user = form.save(commit=False)
         if creating:
             user.set_unusable_password()
         user.save()
+        if was_active and not user.is_active:
+            end_sessions(user)
         audit(request, "user.created" if creating else "user.updated", user, role=user.role, active=user.is_active)
         if creating:
             request.session["invite_link"] = {"user": user.display_name, "url": _set_password_link(request, user)}
@@ -224,10 +285,13 @@ def user_invite(request, pk):
         from apps.core import email as mail
         url = _set_password_link(request, user)
         try:
-            mail.send(user.email, "Your Workbench account",
+            sent = mail.send(user.email, "Your Workbench account",
                       f"Hi {user.first_name or user.username},\n\n{request.user.display_name} has set up a Workbench account for you.\n"
                       f"Your username is: {user.username}\n\nChoose your password here (the link works once and expires in 3 days):\n{url}\n\n"
                       "After that you'll set up two-factor sign-in with an authenticator app on your phone.", site)
+            if not sent:
+                messages.error(request, "Email isn't set up yet (System & backups → Email), so nothing was sent. Copy the link instead.")
+                return redirect("accounts:user_invite", pk=user.pk)
             audit(request, "user.invite_emailed", user)
             messages.success(request, f"Sign-in link emailed to {user.email}.")
         except Exception as e:
@@ -246,9 +310,11 @@ def user_reset_mfa(request, pk):
     user = get_object_or_404(User, pk=pk)
     user.mfa_enabled = False
     user.mfa_secret = ""
+    user.mfa_failures = 0
     user.save()
     user.recovery_codes.all().delete()
-    audit(request, "mfa.reset_by_admin", user)
+    ended = end_sessions(user)
+    audit(request, "mfa.reset_by_admin", user, sessions_ended=ended)
     messages.success(request, f"Two-factor authentication reset for {user.display_name}. They will set it up again at next sign-in.")
     return redirect("accounts:user_list")
 
@@ -259,7 +325,8 @@ def user_unlock(request, pk):
     user = get_object_or_404(User, pk=pk)
     user.locked_until = None
     user.failed_logins = 0
-    user.save(update_fields=["locked_until", "failed_logins"])
+    user.mfa_failures = 0
+    user.save(update_fields=["locked_until", "failed_logins", "mfa_failures"])
     audit(request, "user.unlocked", user)
     messages.success(request, f"{user.display_name} is unlocked.")
     return redirect("accounts:user_list")

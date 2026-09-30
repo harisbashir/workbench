@@ -34,5 +34,7 @@ class Command(BaseCommand):
         except ValueError as e:
             raise CommandError(str(e))
         self.stdout.write(self.style.SUCCESS(f"Restored backup from {manifest.get('created')} (Workbench {manifest.get('version')})."))
+        for note in manifest.get("restore_notes", []):
+            self.stdout.write(self.style.WARNING(note))
         self.stdout.write(f"Your previous data was kept in {safety} — delete it once you've checked everything.")
         self.stdout.write("Now start Workbench again. Database migrations run automatically on start.")

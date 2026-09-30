@@ -48,8 +48,11 @@
       {% if can_edit %}<form method="post" action="{% url 'diagrams:status' project.key d.pk %}">{% csrf_token %}<button class="btn btn-primary" name="action" value="submit">Submit v{{ d.current_version }} for review</button></form>{% endif %}
     {% elif d.status == 'review' %}<p class="small"><strong>v{{ d.current_version }}</strong> is waiting for review.</p>
       {% if can_approve %}<form method="post" action="{% url 'diagrams:status' project.key d.pk %}" class="stack-sm">{% csrf_token %}
+        <input type="hidden" name="version" value="{{ d.current_version }}">
+        {% if not is_current %}<p class="small warn-text">You're looking at v{{ v.number }}; the decision applies to v{{ d.current_version }}. <a href="{{ d.get_absolute_url }}">See it first</a>.</p>{% endif %}
+        {% if own_version %}<p class="small muted">You saved v{{ d.current_version }} yourself, so another lead or administrator on the project approves it. You can still ask for changes.</p>{% endif %}
         <textarea name="note" rows="2" placeholder="Note (required when asking for changes)" aria-label="Review note"></textarea>
-        <div class="btn-row"><button class="btn btn-primary" name="action" value="approve">{% icon 'check' 14 %} Approve v{{ d.current_version }}</button><button class="btn" name="action" value="changes">Ask for changes</button></div></form>
+        <div class="btn-row">{% if not own_version %}<button class="btn btn-primary" name="action" value="approve">{% icon 'check' 14 %} Approve v{{ d.current_version }}</button>{% endif %}<button class="btn" name="action" value="changes">Ask for changes</button></div></form>
       {% else %}<p class="small muted">The project lead or an administrator approves it.</p>{% endif %}
     {% else %}<p class="small">{% icon 'check' 14 %} <strong>v{{ d.approved_version }}</strong> was approved by {{ d.approved_by|default:"—" }} on {{ d.approved_at|date:"M j, Y" }}. Saving a new version starts a new draft; this approval stays on record.</p>
       {% if can_approve %}<form method="post" action="{% url 'diagrams:status' project.key d.pk %}">{% csrf_token %}<button class="btn btn-sm" name="action" value="reopen">Reopen as draft</button></form>{% endif %}{% endif %}

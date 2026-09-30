@@ -55,7 +55,8 @@
           {% for t in pr.tasks.all %}<a class="task-ref small" href="{{ t.get_absolute_url }}">{{ t.key }}</a>{% endfor %}</div>
           <span class="right">{% if pr.checks %}{% status_badge pr.checks pr.get_checks_display %}{% endif %}{% if pr.state == 'draft' %}{% status_badge 'draft' 'Draft' %}{% endif %}</span></li>{% endfor %}</ul>
       {% elif project.github_repo %}<p class="muted small">No open pull requests. They'll appear here once GitHub sends events.</p>
-      {% else %}<p class="muted small">Link a GitHub repository in <a href="{% url 'projects:edit' project.key %}">project settings</a> to see pull requests here.</p>{% endif %}
+      {% elif user.can_manage_projects %}<p class="muted small">Link a GitHub repository in <a href="{% url 'projects:edit' project.key %}">project settings</a> to see pull requests here.</p>
+      {% else %}<p class="muted small">No GitHub repository is linked. A lead can link one in the project settings.</p>{% endif %}
     </div></div>
     <div class="card"><div class="card-head"><h2>Team</h2></div><div class="card-body">
       {% if project.lead %}<div class="kv"><span>Lead</span><span class="person"><span class="avatar sm">{{ project.lead.initials }}</span>{{ project.lead }}</span></div>{% endif %}

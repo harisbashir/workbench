@@ -3,8 +3,10 @@
 #
 #   ./update.sh              update to the newest release (or the newest commit of your branch)
 #   ./update.sh --check      only say whether an update is available (exit code 10 if so)
-#   ./update.sh --to v1.3.2  go to a specific version
+#   ./update.sh --to v1.4.1  go to a specific (newer) version
 #   ./update.sh --yes        don't ask before updating (for scheduled updates)
+#   ./update.sh --to v1.4.0 --downgrade   go back to an older version (see README: restore a backup too)
+#   ./update.sh --no-pull    don't refresh the base images (offline / air-gapped servers)
 #
 # What it does: takes a backup, downloads the new version, builds it while the
 # current version keeps running, restarts, and checks that Workbench is healthy.
@@ -15,6 +17,8 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 
 CHECK=0
 YES=0
+DOWNGRADE=0
+PULL=1
 TARGET=""
 say()  { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 info() { printf '    %s\n' "$*"; }
@@ -25,12 +29,25 @@ while [ $# -gt 0 ]; do
     --check) CHECK=1; shift ;;
     --yes|-y) YES=1; shift ;;
     --to) TARGET="$2"; shift 2 ;;
-    -h|--help) sed -n '2,14p' "$0"; exit 0 ;;
+    --downgrade) DOWNGRADE=1; shift ;;
+    --no-pull) PULL=0; shift ;;
+    -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
     *) die "Unknown option: $1 (see --help)" ;;
   esac
 done
 
 [ -d .git ] || die "This folder isn't a git checkout of Workbench."
+
+# Run git as the folder's owner: mixing root and a normal user breaks git ("dubious
+# ownership", root-owned files in .git).
+owner_uid="$(stat -c %u .git)"
+if [ "$(id -u)" = 0 ] && [ "$owner_uid" != 0 ]; then
+  owner="$(stat -c %U .git)"
+  exec sudo -u "$owner" -H bash "$0" "$@"
+fi
+if [ "$(id -u)" != 0 ] && [ "$(id -u)" != "$owner_uid" ]; then
+  die "This folder belongs to $(stat -c %U .git). Run the update as that user, or with sudo."
+fi
 # Copies uploaded through the GitHub website or from Windows can lose the scripts'
 # "executable" flag. Don't treat that as a local change, and put the flag back.
 git config core.fileMode false
@@ -40,8 +57,8 @@ profile=()
 if grep -qE '^WORKBENCH_DOMAIN=.+' .env 2>/dev/null; then profile=(--profile https); fi
 compose() { $DOCKER compose "${profile[@]}" "$@"; }
 LOG="data/update.log"
-mkdir -p data
-log() { printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG"; }
+[ -w data ] && touch "$LOG" 2>/dev/null && [ -w "$LOG" ] || LOG="$HOME/.workbench-update.log"
+log() { { printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG"; } 2>/dev/null || true; }
 
 # --- What are we on, and what's newest? ---------------------------------------------
 current_commit="$(git rev-parse HEAD)"
@@ -65,9 +82,16 @@ if [ "$target_commit" = "$current_commit" ]; then
   say "Workbench $current_version is up to date."
   exit 0
 fi
-if [ -z "$TARGET" ] && git merge-base --is-ancestor "$target_commit" "$current_commit"; then
-  say "Workbench $current_version is newer than $target — nothing to do."
-  exit 0
+if git merge-base --is-ancestor "$target_commit" "$current_commit"; then
+  if [ -z "$TARGET" ]; then
+    say "Workbench $current_version is newer than $target — nothing to do."
+    exit 0
+  fi
+  if [ $DOWNGRADE -eq 0 ]; then
+    die "$target ($target_version) is older than the running version ($current_version). An older version may not
+    understand the newer database. To go back safely, follow 'Go back to the previous version' in the README
+    (it restores the backup taken before the update), or add --downgrade if you know the database is compatible."
+  fi
 fi
 
 say "Update available: $current_version → $target_version"
@@ -77,6 +101,11 @@ git --no-pager log --no-merges --format='    • %s' "$current_commit..$target_c
 if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
   git status --short --untracked-files=no | sed 's/^/    /'
   die "These files were changed on the server. Move the changes elsewhere, or undo them with: git checkout -- ."
+fi
+
+free_kb="$(df -Pk . | awk 'NR==2 {print $4}')"
+if [ "${free_kb:-0}" -lt 2097152 ]; then
+  die "Less than 2 GB of free disk space. Free some space first (old backups in data/backups, 'docker system prune')."
 fi
 
 if [ $YES -eq 0 ]; then
@@ -106,7 +135,14 @@ else
 fi
 
 say "Building"
-if ! compose build; then
+# Keep the running image so a failed update can go back without rebuilding.
+$DOCKER image tag workbench:latest workbench:rollback >/dev/null 2>&1 || true
+pull=()
+if [ $PULL -eq 1 ]; then
+  pull=(--pull)   # also picks up security fixes in the base image
+  if [ ${#profile[@]} -gt 0 ]; then compose pull -q caddy >/dev/null 2>&1 || true; fi
+fi
+if ! compose build "${pull[@]}"; then
   log "build failed; back to $current_commit"
   git -c advice.detachedHead=false checkout -q "$current_commit" 2>/dev/null || true
   [ -n "$branch" ] && git checkout -q "$branch" && git reset -q --hard "$current_commit"
@@ -140,15 +176,21 @@ if healthy; then
 fi
 
 # --- 3. Didn't start: go back ------------------------------------------------------------
+set +e   # from here on, keep going whatever fails, and always try to leave Workbench running
 say "The new version didn't start — going back to $current_version"
-compose logs --tail 40 workbench | sed 's/^/    /' || true
+compose logs --tail 40 workbench | sed 's/^/    /'
 log "unhealthy after update; rolling back to $current_commit"
 git -c advice.detachedHead=false checkout -q "$current_commit"
 [ -n "$branch" ] && git checkout -q "$branch" && git reset -q --hard "$current_commit"
-compose build
+if ! $DOCKER image tag workbench:rollback workbench:latest >/dev/null 2>&1; then
+  compose build
+fi
 if [ -n "$backup" ]; then
   compose stop workbench
-  compose run --rm -T workbench restore "$backup" --yes
+  if ! compose run --rm -T workbench restore "$backup" --yes; then
+    log "restore of $backup failed"
+    info "Restoring the backup failed. Your data from just before is in data/pre-restore-*/."
+  fi
 fi
 compose up -d
 if healthy; then

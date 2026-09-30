@@ -37,6 +37,21 @@ def can_approve(user, project):
     return not user.is_read_only and (user.can_manage_projects or project.lead_id == user.pk)
 
 
+def project_approvers(project):
+    """People on the project who can approve: its lead and members with a lead or administrator role."""
+    people = set(project.members.filter(is_active=True))
+    if project.lead and project.lead.is_active:
+        people.add(project.lead)
+    return {u for u in people if can_approve(u, project)}
+
+
+def self_approval_blocked(user, project, version):
+    """Four-eyes rule: you can't approve a version you saved yourself, unless nobody else on the project can approve."""
+    if version is None or version.created_by_id != user.pk:
+        return False
+    return bool(project_approvers(project) - {user})
+
+
 def _version(diagram, number=None):
     qs = diagram.versions.select_related("created_by")
     v = qs.filter(number=number).first() if number else qs.first()
@@ -124,11 +139,16 @@ def create(request, key):
             data = starters.system(list(project.boards.all()), project.name)
         else:
             data = starters.board_high_level(c["board"].name)
+        try:
+            data = geometry.clean(data)
+        except ValueError as exc:
+            form.add_error("start", f"That drawing can't be copied: {exc}")
+            return render(request, "diagrams/create.html", {"form": form, "project": project, "board": board})
         with transaction.atomic():
             d = Diagram.objects.create(project=project, board=c["board"], name=c["name"], level=c["level"],
                                        description=c["description"], created_by=request.user, updated_by=request.user,
                                        current_version=1)
-            DiagramVersion.objects.create(diagram=d, number=1, data=geometry.clean(data), note="Created", created_by=request.user)
+            DiagramVersion.objects.create(diagram=d, number=1, data=data, note="Created", created_by=request.user)
         log_activity(project, f"started the block diagram “{d.name}”", actor=request.user, url=d.get_absolute_url())
         audit(request, "diagram.created", d)
         return redirect("diagrams:edit", key=project.key, pk=d.pk)
@@ -153,6 +173,7 @@ def detail(request, key, pk):
         "open_comments": sum(1 for c in comments if not c.resolved),
         "node_choices": sorted(((nid, lbl) for nid, lbl in labels.items() if lbl), key=lambda x: x[1].lower()),
         "can_edit": project.can_edit(request.user), "can_approve": can_approve(request.user, project),
+        "own_version": self_approval_blocked(request.user, project, _version(d)) if d.current_version else False,
         "is_current": v.number == d.current_version,
     })
 
@@ -179,7 +200,24 @@ def status(request, key, pk):
     elif action in ("approve", "changes"):
         if not can_approve(request.user, project):
             raise PermissionDenied("Only the project lead or an administrator can approve diagrams.")
+        try:
+            reviewed = int(request.POST.get("version") or 0)
+        except ValueError:
+            reviewed = 0
+        if d.status != S.REVIEW:
+            messages.error(request, "This diagram isn't waiting for review.")
+            return redirect(d)
+        if reviewed != d.current_version:
+            messages.error(request, f"The drawing changed while you were reviewing it: v{d.current_version} is now the newest. "
+                                    "Look at it before you decide.")
+            return redirect(d)
+        self_approved = False
         if action == "approve":
+            current = _version(d)
+            if self_approval_blocked(request.user, project, current):
+                messages.error(request, f"You saved v{d.current_version} yourself, so someone else on the project has to approve it.")
+                return redirect(d)
+            self_approved = current.created_by_id == request.user.pk
             d.status, d.approved_version, d.approved_by, d.approved_at = S.APPROVED, d.current_version, request.user, timezone.now()
             msg = f"v{d.current_version} approved."
             post_system_message(project, f"{request.user.display_name} approved the block diagram “{d.name}” v{d.current_version}.")
@@ -205,7 +243,11 @@ def status(request, key, pk):
     else:
         raise Http404
     log_activity(project, f"{msg.lower().rstrip('.')} — block diagram “{d.name}”", actor=request.user, url=d.get_absolute_url())
-    audit(request, f"diagram.{action}", d, version=d.current_version)
+    if action == "approve" and self_approved:
+        audit(request, "diagram.approve", d, version=d.current_version,
+              self_approved="yes — the author is the only lead or administrator on the project")
+    else:
+        audit(request, f"diagram.{action}", d, version=d.current_version)
     messages.success(request, msg)
     return redirect(d)
 
@@ -276,26 +318,42 @@ def edit(request, key, pk):
     })
 
 
+class BadRequest(Exception):
+    pass
+
+
 def _json_body(request):
+    """The request's JSON object, or BadRequest (answered with 400)."""
+    if len(request.body or b"") > geometry.MAX_JSON_BYTES:
+        raise BadRequest(f"The drawing is too large to save (more than {geometry.MAX_JSON_BYTES // 1024} KB).")
     try:
-        return json.loads(request.body or b"{}")
-    except ValueError:
-        raise Http404
+        body = json.loads(request.body or b"{}")
+    except (ValueError, UnicodeDecodeError):
+        raise BadRequest("The request isn't valid JSON.")
+    if not isinstance(body, dict):
+        raise BadRequest("The request must be a JSON object.")
+    return body
+
+
+def _bad(message):
+    return JsonResponse({"ok": False, "error": message}, status=400)
 
 
 @login_required
 @require_POST
 def save(request, key, pk):
     project, d = _diagram(request, key, pk, edit=True)
-    body = _json_body(request)
     try:
+        body = _json_body(request)
         data = geometry.clean(body.get("data"))
-    except ValueError as exc:
-        return JsonResponse({"ok": False, "error": str(exc)}, status=400)
+    except (BadRequest, ValueError) as exc:
+        return _bad(str(exc))
     base = body.get("base")
+    if base is not None and (isinstance(base, bool) or not isinstance(base, int)):
+        return _bad("The base version must be a number.")
     with transaction.atomic():
         d = Diagram.objects.select_for_update().get(pk=d.pk)
-        if base is not None and int(base) != d.current_version and not body.get("force"):
+        if base is not None and base != d.current_version and body.get("force") is not True:
             last = d.versions.select_related("created_by").first()
             who = last.created_by.display_name if last and last.created_by else "someone"
             return JsonResponse({"ok": False, "conflict": True, "version": d.current_version,
@@ -305,7 +363,7 @@ def save(request, key, pk):
             return JsonResponse({"ok": True, "version": d.current_version, "unchanged": True})
         d.current_version += 1
         DiagramVersion.objects.create(diagram=d, number=d.current_version, data=data,
-                                      note=str(body.get("note") or "")[:300], created_by=request.user)
+                                      note=geometry.clean_text(body.get("note"), 300), created_by=request.user)
         reopened = d.status == Diagram.Status.APPROVED
         if reopened:
             d.status = Diagram.Status.DRAFT
@@ -349,16 +407,17 @@ def export(request, key, pk, number, fmt):
 @login_required
 @require_POST
 def preview_pdf(request, key, pk):
-    """PDF of the unsaved drawing in the editor."""
-    project, d = _diagram(request, key, pk)
-    body = _json_body(request)
+    """PDF of the unsaved drawing in the editor (only editors have one)."""
+    project, d = _diagram(request, key, pk, edit=True)
     try:
+        body = _json_body(request)
         data = geometry.clean(body.get("data"))
-    except ValueError as exc:
-        return JsonResponse({"ok": False, "error": str(exc)}, status=400)
+    except (BadRequest, ValueError) as exc:
+        return _bad(str(exc))
     v = DiagramVersion(diagram=d, number=d.current_version, data=data, created_by=request.user, created_at=timezone.now())
     tb = title_block(d, v)
     tb["Version"] = f"v{d.current_version} + unsaved changes"
-    resp = HttpResponse(R.to_pdf(data, title_block=tb, page=body.get("page")), content_type="application/pdf")
+    page = body.get("page") if isinstance(body.get("page"), str) and body["page"] in R.PAGES else None
+    resp = HttpResponse(R.to_pdf(data, title_block=tb, page=page), content_type="application/pdf")
     resp["Content-Disposition"] = f'attachment; filename="{_filename(d, v, "pdf")}"'
     return resp

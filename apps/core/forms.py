@@ -90,6 +90,19 @@ class StorageSettingsForm(forms.ModelForm):
             raise forms.ValidationError("Use an hour from 0 to 23.")
         return h
 
+    def clean_backup_keep(self):
+        n = self.cleaned_data["backup_keep"]
+        if not 1 <= n <= 90:
+            raise forms.ValidationError("Keep between 1 and 90 backups.")
+        return n
+
+    def clean_max_upload_mb(self):
+        mb = self.cleaned_data["max_upload_mb"]
+        ceiling = settings.MAX_UPLOAD_MB
+        if not 1 <= mb <= ceiling:
+            raise forms.ValidationError(f"Use a size from 1 to {ceiling} MB (the server's limit, WORKBENCH_MAX_UPLOAD_MB).")
+        return mb
+
 
 class LogoForm(forms.Form):
     logo = forms.FileField(required=False, label="Logo (for light backgrounds)",
@@ -150,13 +163,24 @@ class StorageLocationForm(forms.Form):
         from .storage import PROVIDERS
         d = super().clean()
         if d.get("kind") == "local":
-            path = (d.get("path") or "").strip() or str(settings.FILES_DIR)
-            if not path.startswith("/"):
+            from pathlib import Path
+            raw = (d.get("path") or "").strip() or str(settings.FILES_DIR)
+            if not raw.startswith("/"):
                 self.add_error("path", "Use a full path starting with /, e.g. /mnt/storage/workbench.")
-            elif any(path.rstrip("/") == str(p).rstrip("/") or path.startswith(str(p).rstrip("/") + "/")
-                     for p in (settings.BACKUP_DIR, settings.DB_DIR)):
+                return d
+            path = Path(raw).resolve()
+            data = Path(settings.DATA_DIR).resolve()
+            reserved = [Path(settings.BACKUP_DIR).resolve(), Path(settings.DB_DIR).resolve()]
+            system_dirs = [Path(p) for p in ("/", "/app", "/bin", "/boot", "/dev", "/etc", "/home", "/lib", "/proc",
+                                             "/root", "/sbin", "/sys", "/tmp", "/usr", "/var")]
+            if path == data or path in data.parents:
+                self.add_error("path", "That's the data folder itself (or contains it). Pick a folder for files only, "
+                                       "e.g. the default data/files or a mounted disk such as /mnt/storage/workbench.")
+            elif any(path == r or r in path.parents for r in reserved):
                 self.add_error("path", "Pick a folder outside the database and backup folders.")
-            d["path"] = path.rstrip("/") or "/"
+            elif path in system_dirs or len(path.parts) < 3 and path != Path(settings.FILES_DIR).resolve():
+                self.add_error("path", "Pick a dedicated folder, e.g. /mnt/storage/workbench.")
+            d["path"] = str(path)
             return d
         provider = d.get("provider") or "aws"
         info = PROVIDERS.get(provider)

@@ -103,6 +103,19 @@ def _compress(drawing):
         log.warning("Couldn't compress KiCad preview %s", drawing)
 
 
+def compress_missing(seconds=20):
+    """Compress cached drawings that have no compressed copy yet (drawn before 1.8.1). Returns how many."""
+    deadline = time.monotonic() + seconds
+    done = 0
+    for svg in cache_dir().glob("*.svg"):
+        if time.monotonic() >= deadline:
+            break
+        if not svg.with_name(svg.name + ".gz").exists():
+            _compress(svg)
+            done += 1
+    return done
+
+
 def _load(blob):
     if blob.size > MAX_BYTES:
         raise KicadError(f"The file is larger than {MAX_BYTES // (1024 * 1024)} MB, so it isn't drawn.")
@@ -376,6 +389,7 @@ def prerender(limit=20, days=7, seconds=60):
         mark = vf.pk
     if mark != start:
         _write(mark_file, str(mark))
+    compress_missing()
     return done + _draw_wanted()
 
 

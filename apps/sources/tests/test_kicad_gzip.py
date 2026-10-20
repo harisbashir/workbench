@@ -91,3 +91,30 @@ class CompressedDrawingTests(TestCase):
         self.assertTrue(meta["ok"], meta)
         self.assertTrue(Path(meta["svg_path"] + ".gz").exists())
         self.assertEqual(gzip.decompress(Path(meta["svg_path"] + ".gz").read_bytes()), Path(meta["svg_path"]).read_bytes())
+
+    def test_drawings_from_before_the_update_are_compressed_by_the_scheduler(self):
+        self.c.get(self.url("pwr.kicad_sch"))
+        self.c.get(self.url("pwr.kicad_pcb"))
+        for p in render.cache_dir().glob("*.gz"):
+            p.unlink()  # as drawn by 1.8.0
+        self.assertEqual(render.compress_missing(), 2)
+        r = self.c.get(self.url("pwr.kicad_sch"), HTTP_ACCEPT_ENCODING="gzip")
+        self.assertEqual(r["Content-Encoding"], "gzip")
+        self.assertTrue(gzip.decompress(body(r)).startswith(b"<svg"))
+        self.assertEqual(render.compress_missing(), 0)  # only once
+
+    def test_compressing_old_drawings_stops_when_the_time_is_up(self):
+        self.c.get(self.url("pwr.kicad_sch"))
+        self.c.get(self.url("pwr.kicad_pcb"))
+        for p in render.cache_dir().glob("*.gz"):
+            p.unlink()
+        self.assertEqual(render.compress_missing(seconds=0), 0)
+        self.assertEqual(render.compress_missing(), 2)
+
+    def test_scheduler_compresses_old_drawings(self):
+        self.c.get(self.url("pwr.kicad_sch"))
+        for p in render.cache_dir().glob("*.gz"):
+            p.unlink()
+        render.prerender()
+        meta = render.render_blob(self.f.repo.latest().files.get(path="pwr.kicad_sch").blob, "pwr.kicad_sch", svg="path")
+        self.assertTrue(Path(meta["svg_path"] + ".gz").exists())

@@ -307,7 +307,7 @@ Version 1.4 adds boards to products. Existing revisions are moved onto a board c
 
 ### Upgrading to 1.8
 
-Version 1.8 draws KiCad files over 50 MB in the background (in a separate process with the limits above) and stops pre-release firmware (`1.2.0-rc.1`) from being released for production. Nothing to do on upgrade; previews are drawn again once. Pre-releases that were already released keep their status. Version 1.8.1 sends KiCad drawings compressed (an 85 MB board's drawing goes from 61 MB to about 4 MB), which matters most when the server is reached without the HTTPS proxy.
+Version 1.8 draws KiCad files over 50 MB in the background (in a separate process with the limits above) and stops pre-release firmware (`1.2.0-rc.1`) from being released for production. Nothing to do on upgrade; previews are drawn again once. Pre-releases that were already released keep their status. Version 1.8.1 sends KiCad drawings compressed (an 85 MB board's drawing goes from 61 MB to about 4 MB), which matters most when the server is reached without the HTTPS proxy. Version 1.8.2 also compresses drawings made before 1.8.1, in the background, so nothing needs clearing.
 
 ### Upgrading to 1.7
 

@@ -229,8 +229,9 @@ def build_create(request):
     if request.method == "POST" and form.is_valid():
         b = form.save(commit=False)
         b.created_by = request.user
-        b.save()
-        b.copy_firmware_from_revision()
+        with transaction.atomic():
+            b.save()
+            b.copy_firmware_from_revision()
         log_activity(b.revision.project, f"planned build {b.number}: {b.quantity} × {b.revision.title}", actor=request.user, url=b.get_absolute_url())
         audit(request, "build.created", b)
         if not b.revision.bom_lines.exists():
@@ -259,7 +260,7 @@ def _set_build_firmware(request, b):
             raw = request.POST.get(f"row_{row.pk}", "")
             if raw.isdigit() and int(raw) != row.release_id:
                 rel = fw_versions(b, row.release.firmware_id).filter(pk=int(raw)).first()
-                if rel is None or b.build_firmware.filter(release=rel).exists():
+                if rel is None or (row.slot_id is None and b.build_firmware.filter(slot=None, release=rel).exists()):
                     skipped += 1
                 else:
                     row.release = rel
@@ -271,7 +272,7 @@ def _set_build_firmware(request, b):
             if rel is None:
                 skipped += 1
             else:
-                BuildFirmware.objects.get_or_create(build=b, release=rel)
+                BuildFirmware.objects.get_or_create(build=b, release=rel, slot=None)
     chosen = ", ".join(str(r.release) for r in b.build_firmware.select_related("release__firmware")) or "none"
     audit(request, "build.firmware", b, firmware=chosen)
     log_activity(b.revision.project, f"set firmware for build {b.number}: {chosen}", actor=request.user, url=b.get_absolute_url())

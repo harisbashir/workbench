@@ -94,3 +94,14 @@ class BuildFirmwareTests(TestCase):
         page = self.client.get(b.get_absolute_url()).content.decode()
         self.assertIn("U1 Main MCU", page)
         self.assertIn("Bootloader", page)
+
+    def test_two_controllers_same_firmware(self):
+        from apps.firmware.models import ControllerSlot
+        from apps.projects.models import Controller
+        u2 = Controller.objects.create(board=self.f.board, designator="U2", name="Second MCU")
+        slot2 = ControllerSlot.objects.create(controller=u2, firmware=self.f.app, flash_order=2)
+        sets.save_set(self.f.rev, {slot2.pk: self.f.app100.pk}, self.f.eng)
+        b = self.create_build()
+        self.assertEqual(b.firmware_rows().filter(release=self.f.app100).count(), 2)
+        self.act(b, action="reset_firmware")
+        self.assertEqual(b.firmware_rows().count(), 3)

@@ -1,5 +1,6 @@
 """Flashing bundle: every image a board needs, in flashing order, plus a manifest a flashing station can read."""
 import json
+import re
 import zipfile
 from collections import namedtuple
 
@@ -10,6 +11,11 @@ from .models import FirmwareArtifact, FirmwareRelease
 
 BundleRow = namedtuple("BundleRow", "label designator release flash_order")
 FLASHABLE = (FirmwareArtifact.Kind.IMAGE, FirmwareArtifact.Kind.BOOTLOADER, FirmwareArtifact.Kind.PACKAGE)
+
+
+def safe_part(text):
+    """Keep zip folder names to plain characters, so no path in the bundle can climb out of its folder."""
+    return re.sub(r"[^A-Za-z0-9_.+-]", "", text or "").strip(".")
 
 
 class BundleError(Exception):
@@ -35,7 +41,7 @@ def write_bundle(rows, fh, title=""):
         for r, a in files:
             if r not in folders:
                 rel = r.release
-                folders[r] = f"{len(folders) + 1:02d}-{r.designator or 'board'}-{rel.firmware.slug}-{rel.version}"
+                folders[r] = f"{len(folders) + 1:02d}-{safe_part(r.designator) or 'board'}-{rel.firmware.slug}-{safe_part(rel.version)}"
             path = f"{folders[r]}/{a.name}"
             with a.file.open("rb") as src, z.open(path, "w", force_zip64=True) as dst:
                 for chunk in iter(lambda: src.read(1024 * 1024), b""):

@@ -1,4 +1,5 @@
 """Controllers on boards and the firmware each board revision ships with."""
+import re
 import tempfile
 
 from django import forms
@@ -6,7 +7,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.http import FileResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.text import slugify
@@ -17,7 +18,7 @@ from apps.projects.models import Board, Controller, Revision, log_activity
 
 from . import sets
 from .bundle import BundleError, BundleRow, write_bundle
-from .models import ControllerSlot, Firmware
+from .models import ControllerSlot, Firmware, FirmwareSetEntry
 from .views import _project
 
 
@@ -47,9 +48,20 @@ class ControllerForm(forms.ModelForm):
 
     def clean_designator(self):
         d = self.cleaned_data["designator"].strip().upper()
+        if not re.fullmatch(r"[A-Z0-9_-]+", d):
+            raise forms.ValidationError("Use letters, numbers, - and _ only, e.g. U1 or IC_3.")
         if Controller.objects.filter(board=self.board, designator=d).exclude(pk=self.instance.pk).exists():
             raise forms.ValidationError(f"{d} is already on this board.")
         return d
+
+    def clean(self):
+        data = super().clean()
+        if self.instance.pk and "firmwares" in data:
+            dropped = self.instance.slots.exclude(firmware__in=data["firmwares"])
+            locked = locked_revisions(dropped)
+            if locked:
+                self.add_error("firmwares", f"The firmware is locked on {locked}. Ask a lead to unlock it before removing a firmware.")
+        return data
 
     def save(self, commit=True):
         c = super().save(commit=False)
@@ -64,6 +76,12 @@ class ControllerForm(forms.ModelForm):
         return c
 
 
+def locked_revisions(slots):
+    """Names of revisions whose locked firmware set uses any of these slots."""
+    entries = FirmwareSetEntry.objects.filter(slot__in=slots, revision__firmware_set_locked=True).select_related("revision__board")
+    return ", ".join(sorted({e.revision.title for e in entries}))
+
+
 def _board(request, key, board, edit=False):
     project = _project(request, key, edit=edit)
     return project, get_object_or_404(Board, pk=board, project=project)
@@ -76,8 +94,12 @@ def controller_edit(request, key, board, pk=None):
     form = ControllerForm(request.POST or None, instance=c, board=b)
     if request.method == "POST" and form.is_valid():
         creating = c is None
-        with transaction.atomic():
-            c = form.save()
+        try:
+            with transaction.atomic():
+                c = form.save()
+        except IntegrityError:
+            form.add_error("designator", "That designator is already on this board.")
+            return render(request, "firmware/controller_form.html", {"form": form, "project": project, "b": b, "c": c})
         audit(request, "controller.created" if creating else "controller.updated", c, board=b.name)
         if creating:
             log_activity(project, f"added controller {c} to {b.name}", actor=request.user, url=b.get_absolute_url())
@@ -93,6 +115,10 @@ def controller_edit(request, key, board, pk=None):
 def controller_delete(request, key, board, pk):
     project, b = _board(request, key, board, edit=True)
     c = get_object_or_404(Controller, pk=pk, board=b)
+    locked = locked_revisions(c.slots.all())
+    if locked:
+        messages.error(request, f"{c} can't be removed: its firmware is locked on {locked}. Ask a lead to unlock it first.")
+        return redirect(b)
     audit(request, "controller.deleted", c, board=b.name)
     log_activity(project, f"removed controller {c} from {b.name}", actor=request.user, url=b.get_absolute_url())
     messages.success(request, f"{c} removed.")
@@ -113,8 +139,8 @@ def revision_set(request, key, pk):
     project, rev = _revision(request, key, pk, edit=True)
     choices = {}
     for name, value in request.POST.items():
-        if name.startswith("slot_") and name[5:].isdigit():
-            choices[int(name[5:])] = int(value) if value.isdigit() else None
+        if name.startswith("slot_") and name[5:].isdigit() and (value.isdigit() or value == ""):
+            choices[int(name[5:])] = int(value) if value else None
     errors = sets.save_set(rev, choices, request.user)
     for e in errors:
         messages.error(request, e)

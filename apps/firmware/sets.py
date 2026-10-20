@@ -73,6 +73,9 @@ def save_set(revision, choices, user):
             if release_id is None:
                 FirmwareSetEntry.objects.filter(revision=locked, slot=slot).delete()
                 continue
+            current = FirmwareSetEntry.objects.filter(revision=locked, slot=slot).values_list("release_id", flat=True).first()
+            if current == release_id:
+                continue  # unchanged: keep it even if it's no longer selectable (e.g. deprecated since)
             rel = selectable_releases(slot, locked).filter(pk=release_id).first()
             if rel is None:
                 version = FirmwareRelease.objects.filter(pk=release_id, firmware=slot.firmware).values_list("version", flat=True).first()

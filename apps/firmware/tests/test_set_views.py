@@ -68,3 +68,18 @@ class SetViewTests(TestCase):
         self.assertIn(self.f.rev.get_absolute_url(), page)
         rel_page = signed_in(self.f.eng).get(self.f.app100.get_absolute_url()).content.decode()
         self.assertIn(self.f.rev.get_absolute_url(), rel_page)
+
+    def test_saving_with_untouched_deprecated_pin_is_not_an_error(self):
+        signed_in(self.f.eng).post(self.url, self.data(self.f.boot100, self.f.app100))
+        self.f.app100.status = "deprecated"
+        self.f.app100.save()
+        self.f.rev.status = "released"
+        self.f.rev.save()
+        r = signed_in(self.f.eng).post(self.url, self.data(self.f.boot100, self.f.app100), follow=True)
+        self.assertNotContains(r, "be used on")
+        self.assertEqual(FirmwareSetEntry.objects.get(slot=self.f.app_slot).release, self.f.app100)
+
+    def test_non_numeric_value_leaves_slot_alone(self):
+        signed_in(self.f.eng).post(self.url, self.data(self.f.boot100, self.f.app100))
+        signed_in(self.f.eng).post(self.url, {f"slot_{self.f.app_slot.pk}": "abc"})
+        self.assertTrue(FirmwareSetEntry.objects.filter(slot=self.f.app_slot).exists())

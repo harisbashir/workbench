@@ -351,7 +351,11 @@ class BuildFirmware(models.Model):
 
     class Meta:
         ordering = ["controller_label", "flash_order", "release__firmware__name"]
-        unique_together = [("build", "release")]
+        constraints = [
+            # One row per controller slot; rows added by hand (no slot) can't repeat a release.
+            models.UniqueConstraint(fields=["build", "slot"], condition=models.Q(slot__isnull=False), name="buildfirmware_one_per_slot"),
+            models.UniqueConstraint(fields=["build", "release"], condition=models.Q(slot__isnull=True), name="buildfirmware_manual_once"),
+        ]
 
     def __str__(self):
         return f"{self.controller_label or 'Board'} · {self.release}"

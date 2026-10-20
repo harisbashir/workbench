@@ -77,3 +77,15 @@ class GuessKindTests(TestCase):
     def test_bootloader_debug_symbols_are_debug(self):
         self.assertEqual(FirmwareArtifact.guess_kind("bootloader.elf"), "debug")
         self.assertEqual(FirmwareArtifact.guess_kind("bootloader.bin"), "bootloader")
+
+
+class BundlePathTests(TestCase):
+    def test_designator_is_made_safe_in_paths(self):
+        from apps.firmware.bundle import BundleRow, write_bundle
+        f = make_fixture()
+        FirmwareArtifact.store(f.app100, SimpleUploadedFile("app.bin", b"x"), f.eng)
+        buf = io.BytesIO()
+        manifest = write_bundle([BundleRow("U1", "../../X", f.app100, 1)], buf)
+        names = zipfile.ZipFile(buf).namelist()
+        self.assertFalse(any(".." in n for n in names))
+        self.assertNotIn("..", manifest["items"][0]["file"])

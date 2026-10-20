@@ -476,6 +476,7 @@ def revision_detail(request, key, pk):
     from decimal import Decimal
 
     from apps.design.views import board_summary
+    from apps.firmware.sets import missing_count, set_rows
     from apps.production.models import BuildOrder
 
     project = _project_for(request, key)
@@ -497,8 +498,8 @@ def revision_detail(request, key, pk):
         "can_change_checks": _can_change_checks(request.user, project, rev),
         "can_delete_checks": project.can_edit(request.user) and request.user.can_manage_projects,
         "revisions": project.revisions.all(),
-        "firmware": [(fw, fw.recommended_for(rev), fw.releases.filter(revisions=rev, status="testing").order_by("-sort_key").first())
-                     for fw in project.firmwares.all()],
+        "firmware_rows": set_rows(rev), "firmware_missing": missing_count(rev),
+        "can_lock_firmware": request.user.can_manage_projects and project.can_edit(request.user),
         "board": board_summary(rev),
         "design_files": rev.design_files.filter(is_current=True).order_by("category", "name"),
         "model_file": rev.design_files.filter(is_current=True, category="model").exclude(mesh_status="").order_by("-uploaded_at").first(),

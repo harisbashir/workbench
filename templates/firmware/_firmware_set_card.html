@@ -1,0 +1,21 @@
+{% load workbench %}<div class="card" id="firmware"><div class="card-head"><h3>{% icon 'cpu' 16 %} Firmware for {{ rev.title }}</h3>{% if rev.firmware_set_locked %}<span class="badge">Locked</span>{% endif %}</div><div class="card-body">
+  {% if firmware_rows %}
+  {% if can_edit and not rev.firmware_set_locked %}<form method="post" action="{% url 'firmware:revision_set' project.key rev.pk %}">{% csrf_token %}{% endif %}
+  {% for row in firmware_rows %}<div class="fw-slot">
+    <div class="small"><strong>{{ row.slot.controller }}</strong> · <a href="{{ row.slot.firmware.get_absolute_url }}">{{ row.slot.firmware.name }}</a></div>
+    {% if can_edit and not rev.firmware_set_locked %}
+      <select name="slot_{{ row.slot.pk }}" aria-label="Version of {{ row.slot.firmware.name }} on {{ row.slot.controller }}">
+        <option value="">— none —</option>
+        {% for r in row.choices %}<option value="{{ r.pk }}"{% if row.release %}{% if r == row.release %} selected{% endif %}{% elif r == row.recommended %} selected{% endif %}>{{ r.version }}{% if r.status != 'released' %} ({{ r.get_status_display|lower }}){% endif %}{% if r == row.recommended %} — recommended{% endif %}</option>{% endfor %}
+        {% if row.release and row.release not in row.choices %}<option value="{{ row.release.pk }}" selected>{{ row.release.version }} ({{ row.release.get_status_display|lower }})</option>{% endif %}
+      </select>
+    {% elif row.release %}<a class="mono" href="{{ row.release.get_absolute_url }}"><strong>{{ row.release.version }}</strong></a>{% endif %}
+    <div class="small">{% for lvl, t in row.issues %}<span class="{% if lvl == 'bad' %}overdue{% else %}warn-text{% endif %}">{{ t }}</span><br>{% empty %}<span class="ok-text">✓ Released and compatible</span>{% endfor %}</div>
+  </div>{% endfor %}
+  {% if can_edit and not rev.firmware_set_locked %}<button class="btn btn-sm btn-primary">Save firmware</button></form>{% endif %}
+  {% if rev.firmware_set_locked %}<p class="muted small">Locked by a lead. The versions can't change until it's unlocked.</p>{% endif %}
+  {% if can_lock_firmware %}<form method="post" action="{% url 'firmware:revision_set_lock' project.key rev.pk %}">{% csrf_token %}
+    <input type="hidden" name="action" value="{% if rev.firmware_set_locked %}unlock{% else %}lock{% endif %}">
+    <button class="btn btn-sm btn-ghost">{% if rev.firmware_set_locked %}Unlock{% else %}Lock these versions{% endif %}</button></form>{% endif %}
+  {% else %}<p class="muted small">Add the controllers on this board to choose the firmware each one ships with. <a href="{{ rev.board.get_absolute_url }}">Go to {{ rev.board.name }}</a></p>{% endif %}
+</div></div>

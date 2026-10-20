@@ -692,3 +692,5 @@ details.menu > summary::-webkit-details-marker { display: none; }
 .bad-text { color: var(--danger, #b42318); }
 .cancel-return { display: flex; gap: 8px; align-items: flex-start; }
 .cancel-return input { margin-top: 3px; flex: none; }
+.fw-slot { padding: 8px 0; border-bottom: 1px solid var(--border); display: grid; gap: 4px; }
+.fw-slot:last-of-type { border-bottom: 0; margin-bottom: 8px; }

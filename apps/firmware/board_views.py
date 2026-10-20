@@ -2,13 +2,15 @@
 from django import forms
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from apps.core.utils import audit
-from apps.projects.models import Board, Controller, log_activity
+from apps.projects.models import Board, Controller, Revision, log_activity
 
+from . import sets
 from .models import ControllerSlot, Firmware
 from .views import _project
 
@@ -90,3 +92,44 @@ def controller_delete(request, key, board, pk):
     messages.success(request, f"{c} removed.")
     c.delete()
     return redirect(b)
+
+
+# --- Firmware set of a revision ------------------------------------------------------
+
+def _revision(request, key, pk, edit=False):
+    project = _project(request, key, edit=edit)
+    return project, get_object_or_404(Revision, pk=pk, project=project)
+
+
+@login_required
+@require_POST
+def revision_set(request, key, pk):
+    project, rev = _revision(request, key, pk, edit=True)
+    choices = {}
+    for name, value in request.POST.items():
+        if name.startswith("slot_") and name[5:].isdigit():
+            choices[int(name[5:])] = int(value) if value.isdigit() else None
+    errors = sets.save_set(rev, choices, request.user)
+    for e in errors:
+        messages.error(request, e)
+    if not errors:
+        messages.success(request, f"Firmware for {rev.title} saved.")
+    if errors != [sets.LOCKED_MESSAGE]:
+        summary = ", ".join(f"{e.slot.controller.designator} {e.slot.firmware.name} {e.release.version}"
+                            for e in rev.firmware_set.select_related("slot__controller", "slot__firmware", "release"))
+        audit(request, "revision.firmware_set", rev, firmware=summary or "none")
+        log_activity(project, f"set the firmware for {rev.title}", actor=request.user, url=rev.get_absolute_url())
+    return redirect(rev)
+
+
+@login_required
+@require_POST
+def revision_set_lock(request, key, pk):
+    project, rev = _revision(request, key, pk, edit=True)
+    if not request.user.can_manage_projects:
+        raise PermissionDenied("Only a lead or an administrator can lock or unlock the firmware.")
+    locking = request.POST.get("action") == "lock"
+    if sets.set_lock(rev, locking):
+        audit(request, "revision.firmware_set_lock" if locking else "revision.firmware_set_unlock", rev)
+        messages.success(request, f"Firmware for {rev.title} {'locked' if locking else 'unlocked'}.")
+    return redirect(rev)

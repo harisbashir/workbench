@@ -20,4 +20,6 @@ urlpatterns = [
     path("projects/<str:key>/boards/<int:board>/controllers/new/", board_views.controller_edit, name="controller_create"),
     path("projects/<str:key>/boards/<int:board>/controllers/<int:pk>/edit/", board_views.controller_edit, name="controller_edit"),
     path("projects/<str:key>/boards/<int:board>/controllers/<int:pk>/delete/", board_views.controller_delete, name="controller_delete"),
+    path("projects/<str:key>/revisions/<int:pk>/firmware/", board_views.revision_set, name="revision_set"),
+    path("projects/<str:key>/revisions/<int:pk>/firmware/lock/", board_views.revision_set_lock, name="revision_set_lock"),
 ]

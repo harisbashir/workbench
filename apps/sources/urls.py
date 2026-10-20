@@ -17,4 +17,5 @@ urlpatterns = [
     path("projects/<str:key>/sources/<slug:slug>/checkin/", views.checkin_start, name="checkin"),
     path("projects/<str:key>/sources/<slug:slug>/checkin/<int:draft>/", views.checkin_preview, name="checkin_preview"),
     path("projects/<str:key>/sources/<slug:slug>/lock/", views.lock_action, name="lock"),
+    path("projects/<str:key>/sources/<slug:slug>/promote/<int:v>/", views.promote, name="promote"),
 ]

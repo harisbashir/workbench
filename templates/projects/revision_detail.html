@@ -4,7 +4,7 @@
 <div class="page-head"><div class="titles">
   <div class="crumbs"><a href="{% url 'projects:list' %}">Projects</a> / <a href="{{ project.get_absolute_url }}">{{ project.name }}</a> / <a href="{% url 'projects:hardware' project.key %}">Hardware</a> / <a href="{{ rev.board.get_absolute_url }}">{{ rev.board.name }}</a> /</div>
   <h1>{{ rev.name }} {% status_badge rev.status rev.get_status_display %}</h1>
-  <p class="intro">{% if rev.target_date %}<span class="meta-item">Target {{ rev.target_date|naturalday }}</span>{% endif %}{% if rev.git_ref %}<span class="meta-item">git <code>{{ rev.git_ref }}</code></span>{% endif %}{% if rev.notes %}<span class="meta-item">{{ rev.notes }}</span>{% endif %}</p></div>
+  <p class="intro">{% if rev.target_date %}<span class="meta-item">Target {{ rev.target_date|naturalday }}</span>{% endif %}{% if rev.git_ref %}<span class="meta-item">git <code>{{ rev.git_ref }}</code></span>{% endif %}{% if rev.source_version %}<span class="meta-item">Built from <a href="{{ rev.source_version.get_absolute_url }}">{{ rev.source_version.repository.name }} v{{ rev.source_version.number }}</a></span>{% endif %}{% if rev.notes %}<span class="meta-item">{{ rev.notes }}</span>{% endif %}</p></div>
   <div class="actions">
     <a class="btn" href="{% url 'design:files' project.key rev.pk %}">{% icon 'pcb' 16 %} Design files</a>
     <a class="btn" href="{% url 'inventory:bom' rev.pk %}">{% icon 'chip' 16 %} BOM</a>

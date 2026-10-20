@@ -8,6 +8,8 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
+from django.core.files import File
+from django.db import transaction
 from django.db.models import Prefetch
 from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -18,7 +20,8 @@ from django.views.decorators.http import require_POST
 from apps.chat.formatting import render as render_text
 from apps.core.storage import file_response
 from apps.core.utils import audit, notify
-from apps.projects.models import Project, log_activity
+from apps.firmware.models import FirmwareArtifact, FirmwareRelease, parse_version
+from apps.projects.models import Project, Revision, log_activity
 
 from . import checkin, diff, highlight, intake
 from .models import Blob, Draft, Repository, Version
@@ -182,6 +185,9 @@ def repo_detail(request, key, slug):
         "folder": folder, "crumbs": breadcrumbs(folder), "dirs": dirs, "files": files, "readme": readme,
         "readme_is_html": bool(readme) and hasattr(readme, "__html__"),
         "history": repo.versions.select_related("author")[:50], "locks": list(locks.values()),
+        "promote_revisions": (repo.board.revisions.exclude(status=Revision.Status.OBSOLETE)
+                              if repo.kind == Repository.Kind.KICAD and repo.board_id else None),
+        "next_version": repo.firmware.suggest_next_version() if repo.firmware_id else "",
         "can_edit": project.can_edit(request.user), "can_manage": request.user.can_manage_projects, "tab": "sources",
     })
 
@@ -213,6 +219,16 @@ def file_view(request, key, slug, v, path):
     })
 
 
+def write_zip(files, fh):
+    """Write VersionFiles into a zip in the open binary file `fh`, and rewind it."""
+    with zipfile.ZipFile(fh, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True) as z:
+        for f in files:
+            with f.blob.file.open("rb") as src, z.open(f.path, "w", force_zip64=True) as dst:
+                for chunk in iter(lambda: src.read(1024 * 1024), b""):
+                    dst.write(chunk)
+    fh.seek(0)
+
+
 @login_required
 def version_zip(request, key, slug, v):
     project, repo = _repo(request, key, slug)
@@ -223,12 +239,7 @@ def version_zip(request, key, slug, v):
                                 "Download the files you need one by one.")
         return redirect(version)
     fh = tempfile.TemporaryFile(dir=settings.DATA_DIR)
-    with zipfile.ZipFile(fh, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True) as z:
-        for f in files:
-            with f.blob.file.open("rb") as src, z.open(f.path, "w", force_zip64=True) as dst:
-                for chunk in iter(lambda: src.read(1024 * 1024), b""):
-                    dst.write(chunk)
-    fh.seek(0)
+    write_zip(files, fh)
     resp = FileResponse(fh, as_attachment=True, filename=f"{project.key}-{repo.slug}-v{version.number}.zip",
                         content_type="application/zip")
     resp["X-Content-Type-Options"] = "nosniff"
@@ -348,3 +359,51 @@ def lock_action(request, key, slug):
                 notify(holder.user, f"{request.user} released your check-out of {name} in {repo.name}.", repo.get_absolute_url())
             messages.success(request, f"{name} released.")
     return redirect(back)
+
+
+# --- Promote to production ------------------------------------------------------------
+
+@login_required
+@require_POST
+def promote(request, key, slug, v):
+    project, repo = _repo(request, key, slug, edit=True)
+    version = _version(repo, v)
+    if repo.kind == Repository.Kind.KICAD and repo.board_id:
+        rev = get_object_or_404(Revision, pk=request.POST.get("revision") or 0, board_id=repo.board_id, project=project)
+        if rev.status == Revision.Status.RELEASED and rev.source_version_id and rev.source_version_id != version.pk:
+            messages.error(request, f"{rev.title} is released for production, so the design it was built from can't change.")
+            return redirect(version)
+        rev.source_version = version
+        rev.save(update_fields=["source_version"])
+        audit(request, "sources.promote", repo, version=version.number, revision=rev.title)
+        log_activity(project, f"marked {rev.title} as built from {repo.name} v{version.number}", actor=request.user, url=rev.get_absolute_url())
+        messages.success(request, f"{rev.title} is now built from {repo.name} v{version.number}.")
+        return redirect(rev)
+    if not repo.firmware_id:
+        messages.error(request, "Choose which firmware this repository releases (Edit) before making a release from it.")
+        return redirect(version)
+    fw = repo.firmware
+    number = (request.POST.get("version") or "").strip() or fw.suggest_next_version()
+    if parse_version(number) is None:
+        messages.error(request, f"“{number}” isn't a version number like 1.4.2.")
+        return redirect(version)
+    number = number.lstrip("vV")
+    if fw.releases.filter(version=number).exists():
+        messages.error(request, f"{fw.name} {number} already exists. Choose a new version number.")
+        return redirect(version)
+    files = list(version.files.select_related("blob"))
+    if sum(f.blob.size for f in files) > settings.MAX_UPLOAD_MB * 1024 * 1024:
+        messages.error(request, f"This version is larger than {settings.MAX_UPLOAD_MB} MB, so it can't be attached as source.")
+        return redirect(version)
+    with transaction.atomic():
+        rel = FirmwareRelease.objects.create(firmware=fw, version=number, status=FirmwareRelease.Status.DRAFT,
+                                             git_ref=f"sources v{version.number}", notes=version.message, created_by=request.user)
+        with tempfile.TemporaryFile(dir=settings.DATA_DIR) as fh:
+            write_zip(files, fh)
+            art = FirmwareArtifact.store(rel, File(fh, name=f"{repo.slug}-v{version.number}-source.zip"), request.user)
+        art.kind = FirmwareArtifact.Kind.OTHER
+        art.save(update_fields=["kind"])
+    audit(request, "sources.promote", repo, version=version.number, release=f"{fw.name} {rel.version}")
+    log_activity(project, f"made {fw.name} {rel.version} (draft) from {repo.name} v{version.number}", actor=request.user, url=rel.get_absolute_url())
+    messages.success(request, f"Draft release {fw.name} {rel.version} created with the source attached. Upload the built files next.")
+    return redirect(rel)

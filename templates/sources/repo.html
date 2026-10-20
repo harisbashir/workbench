@@ -37,6 +37,23 @@
       <div class="small muted">{{ h.author|default:"—" }} · {{ h.created_at|naturaltime }} · <span class="ok-text">+{{ h.lines_added }}</span> <span class="overdue">−{{ h.lines_removed }}</span>{% if h.number > 1 %} · <a href="{% url 'sources:compare' project.key repo.slug %}?a={{ h.number|add:'-1' }}&amp;b={{ h.number }}">Changes</a>{% endif %}</div>
     </div>{% empty %}<p class="muted small">No versions yet.</p>{% endfor %}
   </div></div>
+  {% if can_edit and version %}{% if promote_revisions is not None %}
+  <div class="card"><div class="card-head"><h3>{% icon 'pcb' 16 %} Use v{{ version.number }} for a revision</h3></div><div class="card-body">
+    {% if promote_revisions %}<form method="post" action="{% url 'sources:promote' project.key repo.slug version.number %}">{% csrf_token %}
+      <select name="revision" aria-label="Board revision">{% for r in promote_revisions %}<option value="{{ r.pk }}">{{ r.title }}{% if r.source_version_id == version.pk %} (already){% endif %}</option>{% endfor %}</select>
+      <p class="help">Records that this revision's Gerbers were made from this design version.</p>
+      <button class="btn btn-sm">Mark as built from v{{ version.number }}</button></form>
+    {% else %}<p class="muted small">Add a revision to {{ repo.board.name }} first.</p>{% endif %}
+  </div></div>
+  {% elif repo.firmware %}
+  <div class="card"><div class="card-head"><h3>{% icon 'cpu' 16 %} Make a firmware release</h3></div><div class="card-body">
+    <form method="post" action="{% url 'sources:promote' project.key repo.slug version.number %}">{% csrf_token %}
+      <label class="field-label" for="pr-version">{{ repo.firmware.name }} version</label>
+      <input id="pr-version" type="text" name="version" value="{{ next_version }}" placeholder="e.g. 1.4.2">
+      <p class="help">Creates a draft release with v{{ version.number }}'s source attached. You then upload the built files.</p>
+      <button class="btn btn-sm">Create draft release</button></form>
+  </div></div>
+  {% endif %}{% endif %}
   {% if locks %}<div class="card"><div class="card-head"><h3>{% icon 'lock' 16 %} Checked out</h3></div><div class="card-body">
     {% for lk in locks %}<div class="kv"><span class="mono small">{{ lk.path }}</span><span class="small">{{ lk.user }} · {{ lk.created_at|naturaltime }}</span></div>{% endfor %}
   </div></div>{% endif %}

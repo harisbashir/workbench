@@ -160,6 +160,8 @@ class Revision(models.Model):
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.DESIGN)
     target_date = models.DateField(null=True, blank=True)
     git_ref = models.CharField(max_length=100, blank=True, help_text="Optional git tag or commit this revision was released from.")
+    source_version = models.ForeignKey("sources.Version", null=True, blank=True, on_delete=models.SET_NULL, related_name="revisions",
+                                       help_text="The KiCad design version in Sources this revision was made from.")
     firmware_set_locked = models.BooleanField(default=False, help_text="The firmware chosen for each controller can't change until a lead unlocks it.")
     notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

@@ -12,7 +12,9 @@
     <div class="form-actions"><button class="btn btn-primary">Save</button>
       <a class="btn btn-ghost" href="{% if repo %}{{ repo.get_absolute_url }}{% else %}{% url 'sources:project' project.key %}{% endif %}">Cancel</a></div>
   </form>
-  {% if repo and user.can_manage_projects %}<form method="post" action="{% url 'sources:repo_delete' project.key repo.slug %}" data-confirm="Delete {{ repo.name }} and all {{ repo.latest_number }} of its versions? This can't be undone.">{% csrf_token %}
-    <button class="btn btn-ghost btn-danger">Delete this repository</button></form>{% endif %}
+  {% if repo and user.can_manage_projects %}
+  {% if released_links %}<p class="help">This repository can't be deleted: it holds the design files of released {{ released_links|join:", " }}.</p>
+  {% else %}<form method="post" action="{% url 'sources:repo_delete' project.key repo.slug %}" data-confirm="Delete {{ repo.name }} and all {{ repo.latest_number }} of its versions?{% if other_links %} {{ other_links|join:", " }} will no longer show where {% if other_links|length == 1 %}its{% else %}their{% endif %} design files came from.{% endif %} This can't be undone.">{% csrf_token %}
+    <button class="btn btn-ghost btn-danger">Delete this repository</button></form>{% endif %}{% endif %}
 </div></div>
 {% endblock %}

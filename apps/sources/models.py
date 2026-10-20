@@ -10,7 +10,7 @@ File contents live in Django's storage (local disk or S3) under sources/blobs/, 
 by their SHA-256, so unchanged files cost nothing in later versions.
 """
 from django.conf import settings
-from django.db import models
+from django.db import IntegrityError, models, transaction
 from django.urls import reverse
 from django.utils.text import slugify
 
@@ -45,14 +45,27 @@ class Repository(models.Model):
     def __str__(self):
         return f"{self.project.key} · {self.name}"
 
+    def _slug_taken(self, slug):
+        return Repository.objects.filter(project=self.project, slug=slug).exclude(pk=self.pk).exists()
+
     def save(self, *args, **kwargs):
-        if not self.slug:
-            base = slugify(self.name)[:70] or "repository"
+        if self.slug:
+            return super().save(*args, **kwargs)
+        base = slugify(self.name)[:70] or "repository"
+        lost = set()  # taken by someone saving at the same moment
+        for attempt in range(5):
             slug, i = base, 2
-            while Repository.objects.filter(project=self.project, slug=slug).exclude(pk=self.pk).exists():
+            while slug in lost or self._slug_taken(slug):
                 slug, i = f"{base}-{i}", i + 1
             self.slug = slug
-        super().save(*args, **kwargs)
+            try:
+                with transaction.atomic():
+                    return super().save(*args, **kwargs)
+            except IntegrityError:
+                self.slug = ""
+                lost.add(slug)
+                if attempt == 4:
+                    raise
 
     def get_absolute_url(self):
         return reverse("sources:repo", args=[self.project.key, self.slug])

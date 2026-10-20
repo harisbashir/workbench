@@ -307,7 +307,7 @@ Version 1.4 adds boards to products. Existing revisions are moved onto a board c
 
 ### Upgrading to 1.7
 
-Version 1.7 adds KiCad previews to Sources. Nothing to do on upgrade: previews are drawn when someone opens a file, or in the background after a check-in, and kept in `data/cache/kicad` (safe to delete).
+Version 1.7 adds KiCad previews to Sources. Nothing to do on upgrade: previews are drawn when someone opens a file, or in the background after a check-in, and kept in `data/cache/kicad` (safe to delete). Version 1.7.1 stores previews in a new layout, so they're drawn again once after updating.
 
 ### Upgrading to 1.6
 

@@ -6,6 +6,9 @@
   const form = document.querySelector("[data-checkin-form]");
   if (!form) return;
   const folder = form.querySelector("[data-folder-input]");
+  // Only offered when this script runs: without it the browser would drop the folder structure.
+  const folderField = form.querySelector("[data-folder-field]");
+  if (folderField) folderField.classList.remove("hidden");
   const box = form.querySelector("[data-progress]");
   const bar = form.querySelector("[data-bar]");
   const status = form.querySelector("[data-status]");

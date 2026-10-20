@@ -244,11 +244,13 @@ class BuildOrder(models.Model):
         return bool(n)
 
     def copy_firmware_from_revision(self):
-        """Replace this build's firmware with the revision's firmware set. Returns the number of rows."""
+        """Replace this build's firmware with the revision's firmware set. Returns the number of rows,
+        or None if the build was finished or cancelled meanwhile (it's left as it was)."""
         from apps.firmware.models import FirmwareSetEntry
         entries = FirmwareSetEntry.objects.filter(revision_id=self.revision_id).select_related("slot__controller", "release")
         with transaction.atomic():
-            BuildOrder.objects.select_for_update().filter(pk=self.pk).first()
+            if not BuildOrder.objects.select_for_update().filter(pk=self.pk, status__in=self.ACTIVE).exists():
+                return None
             self.build_firmware.all().delete()
             BuildFirmware.objects.bulk_create([
                 BuildFirmware(build=self, slot=e.slot, controller_label=str(e.slot.controller), release=e.release,

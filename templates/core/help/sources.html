@@ -38,7 +38,7 @@
 <h2>KiCad previews</h2>
 <p>KiCad 6, 7, 8 and 9 files open as drawings instead of text:</p>
 <ul>
-  <li><strong>Schematics</strong> (<code>.kicad_sch</code>) show the sheet with its parts, wires, labels and sub-sheets. Click a part to see its reference, value and footprint; click a sub-sheet box to open it. The list beside the sheet shows every part and named net.</li>
+  <li><strong>Schematics</strong> (<code>.kicad_sch</code>) show the sheet with its parts, wires, labels and sub-sheets. Click a part to see its reference, value and footprint; click a sub-sheet box to open it. A sheet used more than once (two copies of the same channel, say) shows the references of the copy you opened it from. The list beside the sheet shows every part and named net.</li>
   <li><strong>PCBs</strong> (<code>.kicad_pcb</code>) open in the same viewer as Gerbers: top, bottom and every layer, with solder mask colours and measuring.</li>
   <li><strong>Compare with the previous version</strong> lists the parts added, removed and changed (value, footprint, moved, rotated), and the nets that changed, then shows both versions side by side with the changes coloured: green added, red removed, amber changed.</li>
 </ul>
@@ -47,9 +47,9 @@
 <h2>From Sources to production</h2>
 <ul>
   <li><strong>Firmware:</strong> on a firmware repository, <em>Make a firmware release</em> creates a draft release of the linked firmware with that version's source attached. Upload the built <code>.bin</code>/<code>.hex</code> to the release and take it through testing as usual.</li>
-  <li><strong>KiCad:</strong> on a KiCad repository, <em>Mark as built from</em> records which design version a board revision's Gerbers came from. The revision page then shows "Built from Power board KiCad v22".</li>
+  <li><strong>KiCad:</strong> on a KiCad repository, <em>Mark as built from</em> records which design version a board revision's Gerbers came from. The revision page then shows "Built from Power board KiCad v22". A repository that a released revision was built from can't be deleted.</li>
 </ul>
 
 <h2>Limits</h2>
-<p>A check-in can have up to 5,000 files, and up to 1,000 when you choose a folder (use a zip for more). The size limits are the same as for file uploads. Windows program files (<code>.exe</code>, <code>.msi</code>, <code>.dll</code>…) are refused; zip them and tick “Keep zip files as zips” if you need to keep one. Scripts and web files are fine, and are only ever downloaded, never run.</p>
+<p>A check-in can have up to 5,000 files, and up to 1,000 when you choose a folder (use a zip for more). Choosing a folder needs JavaScript in your browser; without it, zip the folder and upload the zip. A zip can hold up to 20,000 entries. The size limits are the same as for file uploads. Windows program files (<code>.exe</code>, <code>.msi</code>, <code>.dll</code>…) are refused; zip them and tick “Keep zip files as zips” if you need to keep one. Scripts and web files are fine, and are only ever downloaded, never run.</p>
 {% endblock %}

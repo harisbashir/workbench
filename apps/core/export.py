@@ -25,6 +25,7 @@ import logging
 import re
 import shutil
 import zipfile
+from collections import Counter
 from pathlib import Path
 
 from django.conf import settings
@@ -86,6 +87,12 @@ class Writer:
             log.warning("Export: couldn't read %s: %s", field_file.name, exc)
             self.z.writestr(target + " (MISSING).txt", f"This file couldn't be read from storage: {exc}\n")
             return False
+
+
+def _repo_folders(repos):
+    """{repository id: folder name}: the name, plus the short name when two would share a folder."""
+    seen = Counter(clean(r.name).lower() for r in repos)
+    return {r.pk: r.name if seen[clean(r.name).lower()] == 1 else f"{r.name} ({r.slug})" for r in repos}
 
 
 def _folder_parts(folder):
@@ -200,8 +207,10 @@ def build_export(include_versions=False, user=None):
                     elif include_versions:
                         w.stored(rb + ["Design files", df.get_category_display(), "_older versions", f"v{df.version} - {df.name}"], df.file)
             # Sources: the latest version of each repository, plus its history
-            for repo in p.repositories.all():
-                sb = pbase + ["Sources", repo.name]
+            repos = list(p.repositories.all())
+            folders = _repo_folders(repos)
+            for repo in repos:
+                sb = pbase + ["Sources", folders[repo.pk]]
                 latest = repo.latest()
                 if latest is not None:
                     for f in latest.files.select_related("blob"):

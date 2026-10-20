@@ -8,11 +8,11 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.db import IntegrityError, transaction
-from django.http import FileResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.text import slugify
 from django.views.decorators.http import require_POST
 
+from apps.core.storage import stream_response
 from apps.core.utils import audit
 from apps.projects.models import Board, Controller, Revision, log_activity
 
@@ -178,9 +178,7 @@ def _bundle_response(request, rows, title, filename, back):
         messages.error(request, str(exc))
         return redirect(back)
     fh.seek(0)
-    resp = FileResponse(fh, as_attachment=True, filename=filename, content_type="application/zip")
-    resp["X-Content-Type-Options"] = "nosniff"
-    return resp
+    return stream_response(fh, filename=filename, content_type="application/zip")
 
 
 @login_required

@@ -152,15 +152,16 @@ def _footprint(node):
     for pad in find_all(node, "pad"):
         px, py, pa = xy(pad)
         size = find(pad, "size")
-        w, h = (num(size[1]), num(size[2])) if size is not None and len(size) > 2 else (0.0, 0.0)
+        w, h = (abs(num(size[1])), abs(num(size[2]))) if size is not None and len(size) > 2 else (0.0, 0.0)
         drill = find(pad, "drill")
         d = None
         if drill is not None:
             vals = [v for v in drill[1:] if not isinstance(v, list)]
             if vals and vals[0] == "oval":
-                d = ("oval", num(vals[1]) if len(vals) > 1 else 0, num(vals[2]) if len(vals) > 2 else num(vals[1]) if len(vals) > 1 else 0)
+                d = ("oval", abs(num(vals[1])) if len(vals) > 1 else 0,
+                     abs(num(vals[2])) if len(vals) > 2 else abs(num(vals[1])) if len(vals) > 1 else 0)
             elif vals:
-                d = ("circle", num(vals[0]), num(vals[0]))
+                d = ("circle", abs(num(vals[0])), abs(num(vals[0])))
         layers = find(pad, "layers")
         net = find(pad, "net")
         bx, by = T(px, py)
@@ -199,7 +200,7 @@ def load_pcb(text, budget=None):
                        _width(arc, 0.2), int(num(value(arc, "net"), 0))))
     for via in find_all(tree, "via"):
         x, y, _ = xy(via)
-        b.vias.append((x, y, num(value(via, "size"), 0.6), num(value(via, "drill"), 0.3), int(num(value(via, "net"), 0))))
+        b.vias.append((x, y, abs(num(value(via, "size"), 0.6)), abs(num(value(via, "drill"), 0.3)), int(num(value(via, "net"), 0))))
     for zone in find_all(tree, "zone"):
         net = int(num(value(zone, "net"), 0))
         for fpoly in find_all(zone, "filled_polygon"):
@@ -274,7 +275,7 @@ class _Layer:
 def _pad_shape(pad, grow=0.0):
     """SVG element for a pad (Y up), plus its bounding radius."""
     x, y = _xyup(pad["x"], pad["y"])
-    w, h = pad["w"] + 2 * grow, pad["h"] + 2 * grow
+    w, h = max(pad["w"] + 2 * grow, 0.0), max(pad["h"] + 2 * grow, 0.0)
     rot = f' transform="rotate({f(pad["angle"])} {f(x)} {f(y)})"' if pad["angle"] % 360 else ""
     shape = pad["shape"]
     if shape == "circle":

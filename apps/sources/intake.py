@@ -6,6 +6,7 @@ unpack into something enormous, and file types that could run in a browser are r
 import os
 import re
 import stat
+import struct
 import zipfile
 from dataclasses import dataclass, field
 
@@ -16,6 +17,7 @@ from apps.core.models import SiteSettings
 from . import blobs
 
 MAX_FILES = 5000
+MAX_ZIP_ENTRIES = 20_000     # entries (files and folders) in one zip; its index is read into memory
 MAX_PATH = 400
 MAX_RATIO = 100              # unpacked size / compressed size, for entries over 1 MB
 MB = 1024 * 1024
@@ -110,7 +112,33 @@ def _join(into, name):
     return normalise_path(f"{into}/{name}" if into else name)
 
 
+def zip_entry_count(fh):
+    """How many entries a zip says it has, read from its end record without loading its index; None if
+    that record can't be found."""
+    try:
+        fh.seek(0, 2)
+        size = fh.tell()
+        tail_len = min(size, 65_536 + 22 + 20 + 56)
+        fh.seek(size - tail_len)
+        tail = fh.read(tail_len)
+    except (OSError, ValueError):
+        return None
+    at = tail.rfind(b"PK\x05\x06")
+    if at < 0 or len(tail) < at + 22:
+        return None
+    count = struct.unpack("<H", tail[at + 10:at + 12])[0]
+    z64 = tail.rfind(b"PK\x06\x06", 0, at)
+    if count == 0xFFFF and z64 >= 0 and len(tail) >= z64 + 40:
+        count = struct.unpack("<Q", tail[z64 + 32:z64 + 40])[0]
+    fh.seek(0)
+    return count
+
+
 def _take_zip(result, upload, into):
+    count = zip_entry_count(upload)
+    if count is not None and count > MAX_ZIP_ENTRIES:
+        result.refuse(upload.name, f"This zip has too many files ({count:,}; the limit is {MAX_ZIP_ENTRIES:,}). Split it into smaller zips.")
+        return
     try:
         z = zipfile.ZipFile(upload)
     except zipfile.BadZipFile:

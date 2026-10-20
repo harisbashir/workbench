@@ -248,11 +248,13 @@ def fw_versions(b, firmware_id):
 
 
 def _set_build_firmware(request, b):
-    """Apply the build page's firmware form: change versions, remove rows, add one. Returns how many choices were refused."""
+    """Apply the build page's firmware form: change versions, remove rows, add one. Returns how many choices were
+    refused, or None if the build was finished or cancelled meanwhile (nothing is changed)."""
     from apps.firmware.models import FirmwareRelease
     skipped = 0
     with transaction.atomic():
-        BuildOrder.objects.select_for_update().filter(pk=b.pk).first()
+        if not BuildOrder.objects.select_for_update().filter(pk=b.pk, status__in=BuildOrder.ACTIVE).exists():
+            return None
         for row in b.build_firmware.select_related("release"):
             if request.POST.get(f"remove_{row.pk}"):
                 row.delete()
@@ -286,9 +288,12 @@ def build_detail(request, pk):
         raise PermissionDenied
     reqs = b.requirements()
     from apps.firmware.models import FirmwareRelease
-    from apps.firmware.sets import issues_for
-    firmware = [{"row": row, "rel": row.release, "issues": issues_for(row.release, b.revision),
-                 "versions": [r for r in fw_versions(b, row.release.firmware_id)]} for row in b.firmware_rows()]
+    from apps.firmware.sets import Releases, issues_for
+    rows = list(b.firmware_rows())
+    known = Releases([row.release.firmware_id for row in rows], b.revision)
+    firmware = [{"row": row, "rel": row.release, "issues": issues_for(row.release, b.revision, known),
+                 "versions": [r for r in known.by_firmware[row.release.firmware_id] if r.status in ("released", "testing")]}
+                for row in rows]
     fw_choices = list(FirmwareRelease.objects.filter(firmware__project=b.revision.project, status__in=["released", "testing"])
                       .exclude(build_firmware__build=b).select_related("firmware").order_by("firmware__name", "-sort_key"))
     from .fab_views import FabOrderForm, ReceiveForm, build_context
@@ -394,11 +399,17 @@ def build_action(request, pk):
             messages.info(request, "Nothing returned — enter how many of each part are left over.")
     elif action == "set_firmware" and b.status in BuildOrder.ACTIVE:
         skipped = _set_build_firmware(request, b)
-        if skipped:
-            messages.warning(request, "Only released or testing firmware of this project can be used; the rest was left out.")
-        messages.success(request, "Firmware for this build saved.")
+        if skipped is None:
+            messages.info(request, f"{b.number} was finished or cancelled meanwhile, so its firmware wasn't changed.")
+        else:
+            if skipped:
+                messages.warning(request, "Only released or testing firmware of this project can be used; the rest was left out.")
+            messages.success(request, "Firmware for this build saved.")
     elif action == "reset_firmware" and b.status in BuildOrder.ACTIVE:
         n = b.copy_firmware_from_revision()
+        if n is None:
+            messages.info(request, f"{b.number} was finished or cancelled meanwhile, so its firmware wasn't changed.")
+            return redirect(b)
         audit(request, "build.firmware", b, reset="from revision")
         log_activity(project, f"reset the firmware for build {b.number} from {b.revision.title}", actor=request.user, url=b.get_absolute_url())
         messages.success(request, f"Firmware copied from {b.revision.title}: {n} version{'s' if n != 1 else ''}.")

@@ -310,7 +310,7 @@ def assemble(layers, shape, frame, warnings, job=None, prefix="g", has_outline=T
 
     mirror = f'translate({f(frame.minx + frame.maxx)} 0) scale(-1 1)'
     views = {
-        "top": f'<g data-view="top" clip-path="url(#{prefix}clip)" mask="url(#{prefix}holes)">{side_view("top")}</g>',
+        "top": f'<g data-view="top"><g clip-path="url(#{prefix}clip)" mask="url(#{prefix}holes)">{side_view("top")}</g></g>',
         "bottom": f'<g data-view="bottom" transform="{mirror}"><g clip-path="url(#{prefix}clip)" mask="url(#{prefix}holes)">'
                   f'{side_view("bottom")}</g></g>',
     }

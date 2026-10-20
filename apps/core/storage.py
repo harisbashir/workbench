@@ -410,6 +410,11 @@ def file_response(field_file, *, filename, inline=False, content_type=None):
         if _missing(exc) or isinstance(exc, OSError):
             raise Http404("The file is missing from storage.")
         raise
+    return stream_response(fh, filename=filename, inline=inline, content_type=content_type)
+
+
+def stream_response(fh, *, filename, inline=False, content_type=None):
+    """Send an open binary file to the browser; it's closed when the response is done."""
     ctype = content_type or mimetypes.guess_type(filename)[0] or "application/octet-stream"
     resp = FileResponse(fh, content_type=ctype, as_attachment=not inline, filename=filename)
     resp["X-Content-Type-Options"] = "nosniff"

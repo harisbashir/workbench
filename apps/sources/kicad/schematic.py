@@ -62,6 +62,7 @@ class Symbol:
     dnp: bool = False
     power: bool = False
     fields: list = field(default_factory=list)      # [(name, text, x, y, angle, size, justify, hidden)]
+    instances: dict = field(default_factory=dict)   # KiCad 7+: sheet path -> (reference, unit) for each copy of the sheet
 
 
 @dataclass
@@ -93,6 +94,30 @@ class Schematic:
     sheets: list = field(default_factory=list)
     graphics: list = field(default_factory=list)    # sheet-level polylines, rectangles…
     newer: bool = False
+    uuid: str = ""
+    symbol_instances: dict = field(default_factory=dict)  # KiCad 6, root sheet only: "/sheet…/symbol uuid" -> (reference, unit)
+
+    def root_path(self):
+        """The instance path of this sheet when it's the top sheet."""
+        return f"/{self.uuid}" if self.uuid else ""
+
+    def use_instance(self, path, v6=None):
+        """Show the references of one copy of a sheet used more than once. `path` is that copy's sheet path
+        ("/top uuid/sheet uuid/…"); `v6` is the top sheet's symbol_instances, for KiCad 6 files.
+        Returns whether any reference changed."""
+        below_top = "/" + path.split("/", 2)[2] if path.count("/") >= 2 else ""
+        changed = False
+        for s in self.symbols:
+            hit = s.instances.get(path) if s.instances else (v6 or {}).get(f"{below_top}/{s.uuid}")
+            if not hit or (hit[0] or s.ref, hit[1] or s.unit) == (s.ref, s.unit):
+                continue
+            s.ref, s.unit = hit[0] or s.ref, hit[1] or s.unit
+            s.fields = [(n, s.ref if n == "Reference" else t, *rest) for n, t, *rest in s.fields]
+            changed = True
+        return changed
+
+    def instance_paths(self):
+        return sorted({p for s in self.symbols for p in s.instances})
 
     def nets(self):
         names = {t for kind, t, *_ in self.labels}
@@ -154,6 +179,14 @@ def _lib_symbol(node):
     return ls
 
 
+def _instance_paths(nodes):
+    out = {}
+    for p in nodes:
+        if len(p) > 1 and isinstance(p[1], str):
+            out[p[1]] = (str(value(p, "reference", "") or ""), int(num(value(p, "unit"), 0)))
+    return out
+
+
 def load_schematic(text, budget=None):
     stripped = text.lstrip()
     if stripped.startswith("EESchema"):
@@ -173,7 +206,10 @@ def load_schematic(text, budget=None):
             size = tuple(float(v) for v in PAPER.get(str(paper[1]), (297, 210)))
         if "portrait" in paper[1:]:
             size = (size[1], size[0])
-    sch = Schematic(version=version, paper=size, newer=version > NEWEST_KNOWN)
+    sch = Schematic(version=version, paper=size, newer=version > NEWEST_KNOWN, uuid=str(value(tree, "uuid", "") or ""))
+    si = find(tree, "symbol_instances")
+    if si is not None:
+        sch.symbol_instances = _instance_paths(find_all(si, "path"))
     tb = find(tree, "title_block")
     if tb is not None:
         for key in ("title", "date", "rev", "company"):
@@ -194,6 +230,10 @@ def load_schematic(text, budget=None):
                    dnp=value(node, "dnp") == "yes", fields=_properties(node))
         props = {f[0]: f[1] for f in s.fields}
         s.ref, s.value, s.footprint = props.get("Reference", ""), props.get("Value", ""), props.get("Footprint", "")
+        inst = find(node, "instances")
+        if inst is not None:
+            s.instances = _instance_paths([p for proj in find_all(inst, "project") for p in find_all(proj, "path")]
+                                          + find_all(inst, "path"))
         lib = sch.lib.get(lib_id)
         s.power = bool(lib and lib.power)
         sch.symbols.append(s)

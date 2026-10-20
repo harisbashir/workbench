@@ -1,6 +1,7 @@
 import logging
 import os
 import posixpath
+import re
 import tempfile
 import zipfile
 
@@ -12,7 +13,7 @@ from django.core.exceptions import PermissionDenied
 from django.core.files import File
 from django.db import IntegrityError, transaction
 from django.db.models import Prefetch
-from django.http import FileResponse, Http404, HttpResponse, JsonResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
@@ -20,7 +21,7 @@ from urllib.parse import quote as urlquote
 from django.views.decorators.http import require_POST
 
 from apps.chat.formatting import render as render_text
-from apps.core.storage import file_response
+from apps.core.storage import file_response, stream_response
 from apps.core.utils import audit, notify
 from apps.design.board import FINISHES, MASK_COLOURS
 from apps.design.views import MASKS
@@ -62,7 +63,7 @@ def _version(repo, number):
 @login_required
 def overview(request):
     projects = (Project.objects.visible_to(request.user).filter(repositories__isnull=False).distinct().order_by("key")
-                .prefetch_related(Prefetch("repositories", Repository.objects.select_related("board"))))
+                .prefetch_related(Prefetch("repositories", Repository.objects.select_related("board", "controller"))))
     return render(request, "sources/overview.html", {"projects": projects})
 
 
@@ -123,7 +124,12 @@ def repo_edit(request, key, slug=None):
             log_activity(project, f"added the repository “{repo.name}”", actor=request.user, url=repo.get_absolute_url())
             messages.success(request, f"{repo.name} added. Next: check in its files.")
         return redirect(repo)
-    return render(request, "sources/repo_form.html", {"form": form, "project": project, "repo": repo, "tab": "sources"})
+    linked = list(Revision.objects.filter(source_version__repository=repo).select_related("board", "project")) if repo else []
+    return render(request, "sources/repo_form.html", {
+        "form": form, "project": project, "repo": repo, "tab": "sources",
+        "released_links": [r.title for r in linked if r.status == Revision.Status.RELEASED],
+        "other_links": [r.title for r in linked if r.status != Revision.Status.RELEASED],
+    })
 
 
 @login_required
@@ -132,6 +138,12 @@ def repo_delete(request, key, slug):
     project, repo = _repo(request, key, slug, edit=True)
     if not request.user.can_manage_projects:
         raise PermissionDenied("Only a lead or an administrator can delete a repository.")
+    released = [r.title for r in Revision.objects.filter(source_version__repository=repo, status=Revision.Status.RELEASED)
+                .select_related("board", "project")]
+    if released:
+        messages.error(request, f"{repo.name} can't be deleted: it holds the design files of released "
+                                f"{', '.join(released)}. Released revisions keep a record of where their files came from.")
+        return redirect("sources:repo_edit", project.key, repo.slug)
     audit(request, "sources.repo_deleted", repo, versions=repo.latest_number)
     log_activity(project, f"deleted the repository “{repo.name}”", actor=request.user)
     messages.success(request, f"{repo.name} deleted.")
@@ -253,10 +265,7 @@ def version_zip(request, key, slug, v):
         return redirect(version)
     fh = tempfile.TemporaryFile(dir=settings.DATA_DIR)
     write_zip(files, fh)
-    resp = FileResponse(fh, as_attachment=True, filename=f"{project.key}-{repo.slug}-v{version.number}.zip",
-                        content_type="application/zip")
-    resp["X-Content-Type-Options"] = "nosniff"
-    return resp
+    return stream_response(fh, filename=f"{project.key}-{repo.slug}-v{version.number}.zip", content_type="application/zip")
 
 
 MAX_DIFF_FILES = 100
@@ -279,7 +288,7 @@ def compare(request, key, slug):
     split = request.GET.get("view") == "split"
     return render(request, "sources/compare.html", {
         "project": project, "repo": repo, "a": a, "b": b, "files": files, "split": split,
-        "versions": repo.versions.only("number", "message")[:200], "too_many": len(files) > MAX_DIFF_FILES,
+        "versions": repo.versions.values("number")[:200], "too_many": len(files) > MAX_DIFF_FILES,
         "added": sum(f["diff"]["added"] for f in files if f["diff"]), "removed": sum(f["diff"]["removed"] for f in files if f["diff"]),
         "tab": "sources",
     })
@@ -456,27 +465,58 @@ def _child_sheet(path, file):
     return None if child.startswith("..") or child.startswith("/") else child
 
 
+INSTANCE_RE = re.compile(r"(/[0-9A-Za-z-]{1,40}){1,20}")
+
+
+def _instance(request, tree, path, trail, meta):
+    """(instance path, render options) for a schematic sheet opened from its parent. A sheet used more than
+    once is drawn with the references of the copy it was opened from."""
+    inst = request.GET.get("inst", "")
+    if not INSTANCE_RE.fullmatch(inst):
+        return "", {}
+    if not meta.get("ok") or meta.get("kind") != "sch":
+        return inst, {}
+    if meta.get("instance_paths"):  # KiCad 7 and newer keep every copy's references in the sheet itself
+        return inst, ({"instance": inst} if len(meta["instance_paths"]) > 1 else {})
+    root = trail[0] if trail else None  # KiCad 6 keeps them in the top sheet
+    if root is None or root not in tree:
+        return inst, {}
+    v6 = kicad_render.render_blob(tree[root], root, svg=False).get("symbol_instances")
+    return inst, ({"instance": inst, "v6": v6} if v6 else {})
+
+
 @login_required
 def kicad_view(request, key, slug, v, path):
     project, repo, version, vf = _kicad_file(request, key, slug, v, path)
-    result = kicad_render.render_blob(vf.blob, path)
+    result = kicad_render.render_blob(vf.blob, path, svg=False)
     tree = checkin.tree(version)
     trail = [p for p in request.GET.get("trail", "").split(",") if p and p in tree][:20]
+    inst, options = _instance(request, tree, path, trail, result)
+    if options:
+        result = kicad_render.render_blob(vf.blob, path, svg=False, **options)
+    if not inst and not trail and result.get("ok") and result.get("uuid"):
+        inst = f"/{result['uuid']}"  # opened as the top sheet
     trail_q = urlquote(",".join(trail + [path]), safe=",/")
     sheets = []
     for s in result.get("sheets", []) if result.get("ok") else []:
         child = _child_sheet(path, s["file"])
         ok = child is not None and child in tree and child != path and child not in trail
+        child_inst = f"{inst}/{s['uuid']}" if inst and s.get("uuid") and INSTANCE_RE.fullmatch(f"{inst}/{s['uuid']}") else ""
+        query = f"?trail={trail_q}" + (f"&inst={urlquote(child_inst, safe='/')}" if child_inst else "")
         sheets.append({**s, "path": child if ok else None,
-                       "url": f"{reverse('sources:kicad', args=[project.key, repo.slug, version.number, child])}?trail={trail_q}" if ok else "",
+                       "url": f"{reverse('sources:kicad', args=[project.key, repo.slug, version.number, child])}{query}" if ok else "",
                        "loop": child is not None and (child == path or child in trail)})
     crumbs = []
+    steps = inst.split("/") if inst.count("/") == len(trail) + 1 else []  # "", top uuid, one uuid per sheet below
     for i, p in enumerate(trail):
         q = ",".join(trail[:i])
+        params = ([f"trail={urlquote(q, safe=',/')}"] if q else []) + ([f"inst={urlquote('/'.join(steps[:i + 2]), safe='/')}"] if steps and i else [])
         crumbs.append({"name": posixpath.basename(p), "url": reverse("sources:kicad", args=[project.key, repo.slug, version.number, p])
-                       + (f"?trail={urlquote(q, safe=',/')}" if q else "")})
+                       + (f"?{'&'.join(params)}" if params else "")})
     previous = version.number - 1 if version.number > 1 and version.parent and version.parent.files.filter(path=path).exists() else None
     svg_url = reverse("sources:kicad_svg", args=[project.key, repo.slug, version.number, path])
+    if options:
+        svg_url += f"?inst={urlquote(inst, safe='/')}&trail={urlquote(','.join(trail), safe=',/')}"
     return render(request, "sources/kicad.html", {
         "project": project, "repo": repo, "version": version, "path": path, "name": posixpath.basename(path),
         "result": result, "sheets": sheets, "crumbs": crumbs, "svg_url": svg_url, "previous": previous,
@@ -501,7 +541,10 @@ def kicad_svg(request, key, slug, v, path):
             log.exception("Couldn't compare %s", path)
             result = kicad_render.render_blob(vf.blob, path)
     else:
-        result = kicad_render.render_blob(vf.blob, path)
+        tree = checkin.tree(version)
+        trail = [p for p in request.GET.get("trail", "").split(",") if p and p in tree][:20]
+        _, options = _instance(request, tree, path, trail, kicad_render.render_blob(vf.blob, path, svg=False))
+        result = kicad_render.render_blob(vf.blob, path, **options)
     if not result.get("ok"):
         raise Http404(result.get("error", ""))
     resp = HttpResponse(result["svg"], content_type="image/svg+xml; charset=utf-8")

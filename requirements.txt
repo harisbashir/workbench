@@ -10,3 +10,4 @@ django-storages[s3]>=1.14,<2  # optional Amazon S3 / S3-compatible file storage
 psycopg[binary]>=3.2,<4    # optional PostgreSQL database
 numpy>=1.26,<3             # 3D model conversion and thumbnails
 cascadio>=0.1.1,<0.2       # converts STEP/IGES CAD files (KiCad board models, enclosures) for the 3D viewer
+Pygments>=2.18,<3          # code highlighting in Sources

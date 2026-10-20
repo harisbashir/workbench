@@ -103,6 +103,7 @@ INSTALLED_APPS = [
     "apps.chat",
     "apps.files",
     "apps.firmware",
+    "apps.sources",
     "apps.cad",
     "apps.mechanical",
     "apps.diagrams",
@@ -249,6 +250,7 @@ MAX_UPLOAD_MB = min(int(env("WORKBENCH_MAX_UPLOAD_MB", 2000)), 2000)
 WORKBENCH_CURRENCY = env("WORKBENCH_CURRENCY", "USD").upper()
 DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
+DATA_UPLOAD_MAX_NUMBER_FILES = 1000  # folder check-ins in Sources; bigger ones go as a zip
 FILE_UPLOAD_PERMISSIONS = 0o640
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

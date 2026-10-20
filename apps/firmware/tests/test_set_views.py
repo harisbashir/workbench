@@ -60,3 +60,11 @@ class SetViewTests(TestCase):
         page = signed_in(self.f.outsider).get(self.f.rev.get_absolute_url()).content.decode()
         self.assertIn("U1 Main MCU", page)
         self.assertNotIn(self.url, page)
+
+    def test_firmware_page_shows_used_on(self):
+        signed_in(self.f.eng).post(self.url, self.data(self.f.boot100, self.f.app100))
+        page = signed_in(self.f.eng).get(self.f.app.get_absolute_url()).content.decode()
+        self.assertIn("U1 Main MCU", page)
+        self.assertIn(self.f.rev.get_absolute_url(), page)
+        rel_page = signed_in(self.f.eng).get(self.f.app100.get_absolute_url()).content.decode()
+        self.assertIn(self.f.rev.get_absolute_url(), rel_page)

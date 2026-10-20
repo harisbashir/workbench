@@ -29,11 +29,23 @@
   <li><strong>Deprecated</strong> means a newer version replaced it. <strong>Recalled</strong> means it must not be used: give a reason, and everyone on the project is notified. Builds using it can't be started.</li>
 </ol>
 
-<h2>Board revisions and firmware</h2>
-<p>Each release lists the board revisions it runs on, so Rev A and Rev B can have different firmware. The project's <em>Firmware</em> tab has a table showing the recommended version for each revision: the newest <em>released</em> version marked compatible with it. The revision page shows the same.</p>
+<h2>Controllers: which chip runs which firmware</h2>
+<p>A board can have more than one chip that runs firmware, for example a main MCU and a radio module. On the board's page, under <em>Controllers</em>, add each one with its designator (<code>U1</code>), a name and the part number, and tick the firmware it runs. A controller can run more than one firmware: a bootloader is flashed first, then the application.</p>
+
+<h2>Firmware for each board revision</h2>
+<p>On a revision's page, the <em>Firmware</em> panel lists every controller and its firmware. Choose the version each one ships with and press <em>Save firmware</em>. Workbench suggests the newest released version that's marked compatible with the revision, and warns you when:</p>
+<ul>
+  <li>a controller has no version chosen yet,</li>
+  <li>a version is recalled, deprecated or still in testing,</li>
+  <li>a version isn't marked compatible with the revision, or a newer one is available.</li>
+</ul>
+<p>Once a revision is <em>released for production</em>, only released firmware can be chosen. A lead can <strong>lock</strong> the firmware so it can't change by accident; unlocking it is recorded in the audit log.</p>
 
 <h2>Production builds</h2>
-<p>On a build, choose the firmware to flash. The build page shows each file's SHA-256 checksum and warns if a version isn't released, isn't marked compatible with the board, has a newer release, or has been recalled.</p>
+<p>A new build copies the firmware chosen on its revision. It's a snapshot: changing the revision later doesn't change what the build recorded. On the build page you can still change a version (released or testing), add another firmware, remove one, or copy the revision's firmware again. Each file's SHA-256 checksum is shown, and a build with recalled firmware can't be started.</p>
+
+<h2>Flashing bundle</h2>
+<p>The revision and build pages have a <em>flashing bundle</em> download: one zip with every image in flashing order, in folders like <code>01-U1-bootloader-1.0.0/</code>, plus a <code>manifest.json</code> that lists each controller, firmware, version, file, SHA-256 checksum and flash order. Debug files such as <code>.elf</code> are left out. A bundle with recalled firmware can't be downloaded.</p>
 
 <h2>Checking a downloaded file</h2>
 <pre><code>sha256sum firmware.bin                      # Linux / macOS

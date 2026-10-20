@@ -26,6 +26,11 @@
       {% if can_edit and not status %}<p>Create the first release and upload its binary (.bin, .hex, .elf, .uf2…).</p><a class="btn btn-primary" href="{% url 'firmware:release_create' project.key fw.slug %}">New release</a>{% endif %}</div>{% endif %}
   </div>
   <div class="stack">
+    <div class="card"><div class="card-head"><h3>Runs on</h3></div><div class="card-body">
+      {% for s in used_on %}<div class="kv"><a href="{{ s.controller.board.get_absolute_url }}">{{ s.controller.board.name }}</a><span>{{ s.controller }}</span></div>
+      {% empty %}<p class="muted small">Not assigned to a controller yet. Add controllers on a board's page.</p>{% endfor %}
+      {% for e in pinned %}{% if forloop.first %}<p class="small"><strong>Ships with</strong></p>{% endif %}<div class="kv"><a href="{{ e.revision.get_absolute_url }}#firmware">{{ e.revision.title }}</a><span class="mono">{{ e.release.version }}</span></div>{% endfor %}
+    </div></div>
     <div class="card"><div class="card-head"><h3>Recommended per board</h3></div><div class="card-body">
       {% for rev in revisions %}{% with rec=fw|recommended:rev %}<div class="kv"><a href="{{ rev.get_absolute_url }}">{{ rev.title }}</a><span>{% if rec %}<a href="{{ rec.get_absolute_url }}"><strong>{{ rec.version }}</strong></a>{% else %}<span class="faint">none released</span>{% endif %}</span></div>{% endwith %}
       {% empty %}<p class="muted small">No board revisions yet.</p>{% endfor %}

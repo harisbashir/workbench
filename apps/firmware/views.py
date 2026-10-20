@@ -15,7 +15,7 @@ from apps.core.utils import audit, notify
 from apps.files.models import BLOCKED_EXTENSIONS
 from apps.projects.models import Project, Revision, Task, log_activity
 
-from .models import Firmware, FirmwareArtifact, FirmwareRelease, parse_version
+from .models import Firmware, FirmwareArtifact, FirmwareRelease, FirmwareSetEntry, parse_version
 
 ARTIFACT_ORDER = {"image": 0, "package": 1, "bootloader": 2, "debug": 3, "other": 4}
 
@@ -162,6 +162,8 @@ def firmware_detail(request, key, slug):
         "project": project, "fw": fw, "releases": releases, "status": status,
         "statuses": FirmwareRelease.Status.choices, "can_edit": project.can_edit(request.user),
         "revisions": project.revisions.exclude(status=Revision.Status.OBSOLETE),
+        "used_on": fw.slots.select_related("controller__board"),
+        "pinned": FirmwareSetEntry.objects.filter(slot__firmware=fw).select_related("revision__board", "release", "slot__controller"),
     })
 
 
@@ -221,7 +223,8 @@ def release_detail(request, key, slug, version):
         "project": project, "fw": fw, "rel": rel,
         "artifacts": sorted(rel.artifacts.select_related("uploaded_by"), key=lambda a: (ARTIFACT_ORDER.get(a.kind, 9), a.name)),
         "revisions": rel.revisions.all(), "tasks": tasks, "older": older[:30], "compare_to": compare_to, "changelog": changelog,
-        "builds": BuildOrder.objects.filter(firmware_releases=rel).select_related("revision"),
+        "builds": BuildOrder.objects.filter(build_firmware__release=rel).distinct().select_related("revision"),
+        "pinned": rel.set_entries.select_related("revision__board", "slot__controller"),
         "can_edit": project.can_edit(request.user) and not rel.is_locked,
         "can_approve": can_approve(request.user, project),
         "activity": project.activities.filter(url=rel.get_absolute_url()).select_related("actor")[:20],

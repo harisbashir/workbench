@@ -57,7 +57,7 @@ release that is linked to a build stays PROTECTed as before.
 
 - Default choice for a slot: `firmware.recommended_for(revision)` (newest released compatible).
 - Revisions with status *Released for production* accept only **Released** firmware versions.
-- Warnings shown on the revision, the build and the dashboard: empty slot, release recalled or
+- Warnings shown on the revision, build and firmware release pages: empty slot, release recalled or
   deprecated, release not marked compatible with the revision. Recalling a release surfaces
   the warning everywhere it is used.
 - All changes go through permission checks (`project.can_edit`), are atomic, and audited:

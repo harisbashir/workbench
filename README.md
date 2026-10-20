@@ -77,7 +77,10 @@ Each product has a **Hardware** tab that holds everything physical about it.
 - Per project: firmware components (main application, bootloader…) with **semantic versions** (`1.4.0`, `1.4.0-rc.1`).
 - Each release has notes, files (`.bin`, `.hex`, `.elf`…) with **SHA-256 checksums**, and the **board revisions it's compatible with** — so Rev A and Rev B can run different firmware.
 - Lifecycle: Draft → Testing → **Released** (leads approve; files are locked) → Deprecated / **Recalled** (with a reason; the team is notified and builds using it are blocked).
-- A recommended release per board revision, a **changelog between any two versions**, and a record of the firmware flashed on each production build.
+- **Controllers on each board** (e.g. `U1` main MCU, `U7` radio), each with the firmware it runs — a bootloader and an application on the same chip, or different firmware on different chips.
+- Each board revision **chooses the version every controller ships with**, with warnings for missing, recalled, deprecated or incompatible versions. Leads can lock the choice once a revision is released.
+- Production builds keep a **copy of the revision's firmware**, and a **flashing bundle** downloads every image in flashing order with a `manifest.json` (controller, version, file, SHA-256) for flashing stations.
+- A recommended release per board revision and a **changelog between any two versions**.
 
 ![Firmware release](docs/screenshots/firmware-release.png)
 
@@ -293,6 +296,10 @@ If `git pull` complains about local changes, run `git stash` and try again.
 ### Upgrading to 1.4
 
 Version 1.4 adds boards to products. Existing revisions are moved onto a board called **Main board** in each project automatically; rename it, or add more boards, under the project's **Hardware** tab. Updating takes a little longer than usual the first time, because the container installs the 3D converter.
+
+### Upgrading to 1.5
+
+Version 1.5 adds controllers to boards. Builds keep the firmware they already had. To use the new firmware panel on revisions, open each board's page and add its controllers under **Controllers**, then choose the versions on each revision.
 
 ### Which version does a server get?
 

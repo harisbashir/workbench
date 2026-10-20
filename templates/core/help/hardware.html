@@ -8,6 +8,8 @@
 <p>A product often has several PCBs — for example a <em>power board</em>, a <em>control board</em> and a <em>front panel</em> or I/O board. Add each one under <em>Hardware → Add board</em>. Every board has its own revisions (Rev A, Rev B…), and every revision its own BOM, design files, 3D model, release checklist and builds. A product with a single PCB just has one board.</p>
 <p>Board revisions appear everywhere with the board's name — "PWR Control board Rev A" — so tasks, builds and firmware compatibility always point at the right PCB.</p>
 
+<p>Add the chips that run firmware under <em>Controllers</em> on the board's page. Each revision then chooses the firmware version every controller ships with. See <a href="{% url 'core:help_topic' 'firmware' %}">Firmware releases</a>.</p>
+
 <h2>3D models of boards</h2>
 <p>Export the board's 3D model from KiCad and upload it to the revision's <em>Design files</em>:</p>
 <ul>

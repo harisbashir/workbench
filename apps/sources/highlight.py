@@ -16,11 +16,11 @@ PLAIN = {".kicad_sch", ".kicad_pcb", ".kicad_pro", ".kicad_sym", ".kicad_mod", "
 
 def lexer_for(path):
     if any(path.lower().endswith(ext) for ext in PLAIN):
-        return TextLexer()
+        return TextLexer(stripnl=False, ensurenl=False)
     try:
         return get_lexer_for_filename(path, stripnl=False, ensurenl=False)
     except ClassNotFound:
-        return TextLexer()
+        return TextLexer(stripnl=False, ensurenl=False)
 
 
 def _css_class(ttype):

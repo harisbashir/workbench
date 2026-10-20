@@ -18,7 +18,7 @@ from apps.core.storage import file_response
 from apps.core.utils import audit
 from apps.projects.models import Project, log_activity
 
-from . import checkin, highlight
+from . import checkin, diff, highlight
 from .models import Repository, Version
 
 IMAGE_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp"}
@@ -231,3 +231,27 @@ def version_zip(request, key, slug, v):
                         content_type="application/zip")
     resp["X-Content-Type-Options"] = "nosniff"
     return resp
+
+
+MAX_DIFF_FILES = 100
+
+
+@login_required
+def compare(request, key, slug):
+    project, repo = _repo(request, key, slug)
+    if not repo.latest_number:
+        raise Http404("Nothing has been checked in yet.")
+    b_raw, a_raw = request.GET.get("b", ""), request.GET.get("a", "")
+    b = _version(repo, int(b_raw)) if b_raw.isdigit() else repo.latest()
+    a_num = int(a_raw) if a_raw.isdigit() else b.number - 1
+    a = _version(repo, a_num) if a_num else None
+    files = diff.changes(checkin.tree(a), checkin.tree(b))
+    for i, f in enumerate(files):
+        f["diff"] = diff.file_diff(f["path"], f["old"], f["new"]) if i < MAX_DIFF_FILES else None
+    split = request.GET.get("view") == "split"
+    return render(request, "sources/compare.html", {
+        "project": project, "repo": repo, "a": a, "b": b, "files": files, "split": split,
+        "versions": repo.versions.only("number", "message")[:200], "too_many": len(files) > MAX_DIFF_FILES,
+        "added": sum(f["diff"]["added"] for f in files if f["diff"]), "removed": sum(f["diff"]["removed"] for f in files if f["diff"]),
+        "tab": "sources",
+    })

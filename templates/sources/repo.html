@@ -34,7 +34,7 @@
   <div class="card"><div class="card-head"><h3>History</h3></div><div class="card-body">
     {% for h in history %}<div class="history-row{% if version and h.number == version.number %} current{% endif %}">
       <div><a href="{{ h.get_absolute_url }}"><strong>v{{ h.number }}</strong></a> {{ h.message }}</div>
-      <div class="small muted">{{ h.author|default:"—" }} · {{ h.created_at|naturaltime }} · <span class="ok-text">+{{ h.lines_added }}</span> <span class="overdue">−{{ h.lines_removed }}</span>{% block history_actions %}{% endblock %}</div>
+      <div class="small muted">{{ h.author|default:"—" }} · {{ h.created_at|naturaltime }} · <span class="ok-text">+{{ h.lines_added }}</span> <span class="overdue">−{{ h.lines_removed }}</span>{% if h.number > 1 %} · <a href="{% url 'sources:compare' project.key repo.slug %}?a={{ h.number|add:'-1' }}&amp;b={{ h.number }}">Changes</a>{% endif %}{% block history_actions %}{% endblock %}</div>
     </div>{% empty %}<p class="muted small">No versions yet.</p>{% endfor %}
   </div></div>
   {% if locks %}<div class="card"><div class="card-head"><h3>{% icon 'lock' 16 %} Checked out</h3></div><div class="card-body">

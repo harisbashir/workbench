@@ -719,3 +719,9 @@ table.code tr:target td { background: var(--warning-soft); }
 .code .cp, .code .cpf { color: var(--hl-pre); }
 .code .m, .code .mi, .code .mf, .code .mh, .code .mo, .code .mb, .code .il { color: var(--hl-num); }
 .code .nf, .code .fm, .code .nb, .code .bp { color: var(--hl-fn); }
+.compare-pick { gap: 6px; align-items: center; }
+.diff tr.add td.src, .diff td.src.add { background: var(--accent-soft); }
+.diff tr.del td.src, .diff td.src.del { background: var(--danger-soft); }
+.diff td.src.empty { background: var(--surface-2); }
+.diff tr.fold td { background: var(--surface-2); color: var(--text-3); text-align: center; font-style: italic; }
+.diff.split td.src { width: 50%; }

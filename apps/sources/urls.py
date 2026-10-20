@@ -13,4 +13,5 @@ urlpatterns = [
     path("projects/<str:key>/sources/<slug:slug>/delete/", views.repo_delete, name="repo_delete"),
     path("projects/<str:key>/sources/<slug:slug>/file/<int:v>/<path:path>", views.file_view, name="file"),
     path("projects/<str:key>/sources/<slug:slug>/zip/<int:v>/", views.version_zip, name="version_zip"),
+    path("projects/<str:key>/sources/<slug:slug>/compare/", views.compare, name="compare"),
 ]

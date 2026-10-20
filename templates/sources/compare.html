@@ -1,0 +1,37 @@
+{% extends "base.html" %}{% load workbench %}
+{% block title %}Compare · {{ repo.name }}{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles">
+  <div class="crumbs"><a href="{% url 'sources:project' project.key %}">Sources</a> / <a href="{{ repo.get_absolute_url }}">{{ repo.name }}</a> /</div>
+  <h1>{% icon 'compare' 22 %} {% if a %}v{{ a.number }}{% else %}Empty{% endif %} → v{{ b.number }}</h1>
+  <p class="intro">{{ files|length }} file{{ files|length|pluralize }} changed · <span class="ok-text">+{{ added }}</span> <span class="overdue">−{{ removed }}</span> lines{% if b.message %} · {{ b.message }}{% endif %}</p>
+</div>
+<form class="actions compare-pick" method="get">
+  <select name="a" aria-label="From version"><option value="0">Empty</option>{% for v in versions %}<option value="{{ v.number }}"{% if a and v.number == a.number %} selected{% endif %}>v{{ v.number }}</option>{% endfor %}</select>
+  <span>→</span>
+  <select name="b" aria-label="To version">{% for v in versions %}<option value="{{ v.number }}"{% if v.number == b.number %} selected{% endif %}>v{{ v.number }}</option>{% endfor %}</select>
+  <select name="view" aria-label="Layout"><option value="">One column</option><option value="split"{% if split %} selected{% endif %}>Side by side</option></select>
+  <button class="btn">Compare</button>
+</form></div>
+{% if too_many %}<div class="alert alert-warning small">Only the first 100 changed files are shown in full.</div>{% endif %}
+{% for f in files %}
+<div class="card diff-file">
+  <div class="card-head"><h3 class="mono"><span class="badge badge-{% if f.status == 'added' %}success{% elif f.status == 'deleted' %}failure{% else %}review{% endif %}">{{ f.status }}</span> {{ f.path }}</h3>
+    {% if f.diff and f.diff.kind == 'text' %}<span class="small"><span class="ok-text">+{{ f.diff.added }}</span> <span class="overdue">−{{ f.diff.removed }}</span></span>{% endif %}
+    {% if f.new %}<a class="btn btn-sm btn-ghost" href="{% url 'sources:file' project.key repo.slug b.number f.path %}">View</a>{% endif %}</div>
+  {% if not f.diff %}<div class="card-body small muted">Not shown.</div>
+  {% elif f.diff.kind == 'binary' %}<div class="card-body small muted">Binary file{% if f.old and f.new %}: {{ f.old.size|filesizeformat }} → {{ f.new.size|filesizeformat }}{% endif %}.</div>
+  {% elif f.diff.kind == 'too_large' %}<div class="card-body small muted">Too large to compare here. Download both versions to compare them.
+    {% if f.old and a %}<a href="{% url 'sources:file' project.key repo.slug a.number f.path %}?raw=1">v{{ a.number }}</a>{% endif %} {% if f.new %}<a href="{% url 'sources:file' project.key repo.slug b.number f.path %}?raw=1">v{{ b.number }}</a>{% endif %}</div>
+  {% elif split %}<div class="code-view"><table class="code diff split"><tbody>
+    {% for row in f.diff.split %}{% if row.0 == 'fold' %}<tr class="fold"><td colspan="4">{{ row.1 }}</td></tr>
+    {% else %}<tr>{% if row.0 %}<td class="ln">{{ row.0.0 }}</td><td class="src {{ row.0.2 }}">{{ row.0.1 }}</td>{% else %}<td class="ln"></td><td class="src empty"></td>{% endif %}
+      {% if row.1 %}<td class="ln">{{ row.1.0 }}</td><td class="src {{ row.1.2 }}">{{ row.1.1 }}</td>{% else %}<td class="ln"></td><td class="src empty"></td>{% endif %}</tr>{% endif %}{% endfor %}
+  </tbody></table></div>
+  {% else %}<div class="code-view"><table class="code diff"><tbody>
+    {% for tag, old_no, new_no, html in f.diff.rows %}{% if tag == 'fold' %}<tr class="fold"><td colspan="3">{{ html }}</td></tr>
+    {% else %}<tr class="{{ tag }}"><td class="ln">{{ old_no|default_if_none:"" }}</td><td class="ln">{{ new_no|default_if_none:"" }}</td><td class="src">{% if tag == 'add' %}+{% elif tag == 'del' %}−{% else %} {% endif %}{{ html }}</td></tr>{% endif %}{% endfor %}
+  </tbody></table></div>{% endif %}
+</div>
+{% empty %}<div class="card"><div class="card-body muted">No differences.</div></div>{% endfor %}
+{% endblock %}

@@ -17,6 +17,7 @@ from django.utils.http import content_disposition_header, url_has_allowed_host_a
 from django.views.decorators.http import require_POST
 
 from apps.chat.models import post_system_message
+from apps.core.forms import NumberLimits
 from apps.core.utils import audit, notify
 from apps.projects.models import Revision, log_activity
 
@@ -146,7 +147,7 @@ class FabOrderForm(forms.Form):
     fab_ordered_at = forms.DateField(label="Ordered on", required=False, widget=forms.DateInput(attrs={"type": "date"}))
 
 
-class ReceiveForm(forms.Form):
+class ReceiveForm(NumberLimits, forms.Form):
     received_qty = forms.IntegerField(label="Boards received", min_value=0)
     fab_tracking = forms.CharField(label="Tracking number", max_length=120, required=False)
 

@@ -10,6 +10,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from apps.chat.models import post_system_message
+from apps.core.forms import NumberLimits
 from apps.core.utils import audit, notify, procurement_required
 from apps.inventory.models import BASE_CURRENCY, Part, Supplier
 from apps.projects.models import Project, Revision, log_activity
@@ -21,14 +22,14 @@ class DateInput(forms.DateInput):
     input_type = "date"
 
 
-class POForm(forms.ModelForm):
+class POForm(NumberLimits, forms.ModelForm):
     class Meta:
         model = PurchaseOrder
         fields = ["supplier", "reference", "expected_date", "shipping_cost", "notes"]
         widgets = {"expected_date": DateInput(), "notes": forms.Textarea(attrs={"rows": 2})}
 
 
-class POLineForm(forms.ModelForm):
+class POLineForm(NumberLimits, forms.ModelForm):
     class Meta:
         model = PurchaseOrderLine
         fields = ["part", "quantity", "unit_cost"]
@@ -59,7 +60,7 @@ class POLineForm(forms.ModelForm):
         return data
 
 
-class BuildForm(forms.ModelForm):
+class BuildForm(NumberLimits, forms.ModelForm):
     class Meta:
         model = BuildOrder
         fields = ["revision", "quantity", "assembly", "manufacturer", "due_date", "serial_prefix", "notes"]
@@ -75,7 +76,7 @@ class BuildForm(forms.ModelForm):
         self.fields["manufacturer"].help_text = "e.g. JLCPCB or Seeed Fusion. Add them under Parts → Suppliers."
         self.fields["assembly"].widget = forms.RadioSelect(choices=BuildOrder.Assembly.choices)
 
-class CompleteForm(forms.Form):
+class CompleteForm(NumberLimits, forms.Form):
     passed = forms.IntegerField(min_value=0, label="Boards that passed test")
     failed = forms.IntegerField(min_value=0, initial=0, label="Boards that failed test")
 

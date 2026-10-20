@@ -1,11 +1,12 @@
 from django import forms
 
+from apps.core.forms import NumberLimits
 from apps.projects.models import Board
 
 from .models import MechanicalPart
 
 
-class PartForm(forms.ModelForm):
+class PartForm(NumberLimits, forms.ModelForm):
     class Meta:
         model = MechanicalPart
         fields = ["name", "kind", "part_number", "revision", "status", "process", "material", "finish",

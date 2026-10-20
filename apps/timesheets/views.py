@@ -14,6 +14,7 @@ from django.views.decorators.http import require_POST
 
 from apps.accounts.models import User
 from apps.core import csvsafe
+from apps.core.forms import NumberLimits
 from apps.production.models import BuildOrder
 from apps.projects.models import Activity, Project, Task
 
@@ -24,7 +25,7 @@ class DateInput(forms.DateInput):
     input_type = "date"
 
 
-class TimeEntryForm(forms.ModelForm):
+class TimeEntryForm(NumberLimits, forms.ModelForm):
     class Meta:
         model = TimeEntry
         fields = ["date", "hours", "project", "task", "note"]

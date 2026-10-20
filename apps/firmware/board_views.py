@@ -12,6 +12,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.text import slugify
 from django.views.decorators.http import require_POST
 
+from apps.core.forms import NumberLimits
 from apps.core.storage import stream_response
 from apps.core.utils import audit
 from apps.projects.models import Board, Controller, Revision, log_activity
@@ -27,7 +28,7 @@ def flash_order_for(fw):
     return 1 if "boot" in fw.name.lower() else 2
 
 
-class ControllerForm(forms.ModelForm):
+class ControllerForm(NumberLimits, forms.ModelForm):
     firmwares = forms.ModelMultipleChoiceField(
         queryset=Firmware.objects.none(), required=False, widget=forms.CheckboxSelectMultiple,
         label="Firmware it runs",

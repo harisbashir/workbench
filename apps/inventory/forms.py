@@ -1,9 +1,11 @@
 from django import forms
 
+from apps.core.forms import NumberLimits
+
 from .models import BASE_CURRENCY, BomLine, Part, Supplier
 
 
-class PartForm(forms.ModelForm):
+class PartForm(NumberLimits, forms.ModelForm):
     class Meta:
         model = Part
         fields = ["ipn", "description", "category", "value", "footprint", "manufacturer", "mpn", "datasheet_url",
@@ -12,7 +14,7 @@ class PartForm(forms.ModelForm):
         labels = {"unit_cost": f"Unit cost ({BASE_CURRENCY})"}
 
 
-class SupplierForm(forms.ModelForm):
+class SupplierForm(NumberLimits, forms.ModelForm):
     class Meta:
         model = Supplier
         fields = ["name", "kind", "website", "contact_name", "email", "phone", "country", "currency", "lead_time_days", "notes"]
@@ -23,14 +25,14 @@ class SupplierForm(forms.ModelForm):
         return (self.cleaned_data.get("currency") or "").strip().upper()
 
 
-class StockAdjustForm(forms.Form):
+class StockAdjustForm(NumberLimits, forms.Form):
     MODE = [("add", "Add to stock"), ("remove", "Remove from stock"), ("set", "Set exact count (after a stock count)")]
     mode = forms.ChoiceField(choices=MODE, widget=forms.RadioSelect, initial="add")
     quantity = forms.IntegerField(min_value=0)
     note = forms.CharField(max_length=120, required=False, help_text="Why? e.g. Found in drawer, damaged, annual count.")
 
 
-class BomLineForm(forms.ModelForm):
+class BomLineForm(NumberLimits, forms.ModelForm):
     class Meta:
         model = BomLine
         fields = ["part", "quantity", "references", "fitted_by", "dnp", "notes"]

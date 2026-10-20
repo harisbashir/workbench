@@ -3,11 +3,31 @@ import zoneinfo
 from django import forms
 from django.conf import settings
 from django.contrib.auth.password_validation import validate_password
+from django.core.validators import MaxValueValidator
 from django.utils.crypto import constant_time_compare
 
 from apps.accounts.models import User
 
 from .models import SiteSettings
+
+
+class NumberLimits:
+    """Number boxes refuse numbers too large to be real with a plain message, instead of the database's own
+    limit (a 19-digit number) or an error page. `number_limits` gives a field its own limit."""
+    largest_number = 10_000_000
+    number_limits = {}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name, field in self.fields.items():
+            if not isinstance(field, forms.IntegerField):  # DecimalField and FloatField are IntegerFields too
+                continue
+            limit = self.number_limits.get(name, self.largest_number)
+            if field.max_value is None or field.max_value > limit:
+                field.max_value = limit
+                field.validators.append(MaxValueValidator(limit))
+                field.widget.attrs["max"] = limit
+            field.error_messages["max_value"] = f"Use a number up to {field.max_value:,}."
 
 TIME_ZONES = [(tz, tz) for tz in sorted(zoneinfo.available_timezones()) if "/" in tz and not tz.startswith("Etc/")] + [("UTC", "UTC")]
 
@@ -62,7 +82,9 @@ class GeneralSettingsForm(forms.ModelForm):
         fields = ["company_name", "site_url", "time_zone"]
 
 
-class EmailSettingsForm(forms.ModelForm):
+class EmailSettingsForm(NumberLimits, forms.ModelForm):
+    number_limits = {"smtp_port": 65535}
+
     smtp_password = forms.CharField(label="SMTP password", required=False, widget=forms.PasswordInput(render_value=False),
                                     help_text="Leave empty to keep the current password. For Gmail/Microsoft 365 use an app password.")
 
@@ -79,7 +101,7 @@ class EmailSettingsForm(forms.ModelForm):
         return obj
 
 
-class StorageSettingsForm(forms.ModelForm):
+class StorageSettingsForm(NumberLimits, forms.ModelForm):
     class Meta:
         model = SiteSettings
         fields = ["backup_enabled", "backup_hour", "backup_keep", "trash_days", "max_upload_mb"]

@@ -82,7 +82,7 @@ class CheckinViewTests(TestCase):
         commit(self.f.repo, self.f.eng2, base=1, **{"src/main.c": "int theirs;\n"})
         r = self.confirm(draft)
         self.assertEqual(r.status_code, 200)
-        self.assertContains(r, "Changed by someone else")
+        self.assertContains(r, "the version you started from")
         self.f.repo.refresh_from_db()
         self.assertEqual(self.f.repo.latest_number, 2)
 

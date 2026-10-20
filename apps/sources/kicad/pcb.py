@@ -332,6 +332,12 @@ def _shape_el(kind, data, width, filled):
     return "", []
 
 
+def _upright(angle):
+    """Footprint text turned past 90° is drawn the other way up, like KiCad, so it stays readable."""
+    a = angle % 360
+    return a - 180 if 90 < a <= 270 else a
+
+
 def _text_el(text, x, y, angle, size):
     text = CONTROL.sub("", text)
     x, y = _xyup(x, y)
@@ -470,7 +476,7 @@ def pcb_layers(board, budget=None):
         for layer, text, x, y, a, size in fp.texts:
             budget.add()
             if layer:
-                L(layer).add(_text_el(text, x, y, a, size), _xyup(x, y))
+                L(layer).add(_text_el(text, x, y, _upright(a), size), _xyup(x, y))
         for pad in fp.pads:
             budget.add()
             on = _pad_layers(pad, names)

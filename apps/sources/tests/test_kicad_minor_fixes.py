@@ -167,3 +167,19 @@ class InstanceViewTests(TempCache, TestCase):
 
     def test_bad_instance_is_ignored(self):
         self.assertIn("U3", self.page("buck.kicad_sch", "?inst=../../x"))
+
+
+class UprightTextTests(SimpleTestCase):
+    """Footprint text is kept readable, as KiCad does: text turned past 90° is drawn the other way up."""
+    def rotations(self, svg, ref):
+        return [m for m in re.findall(r'<text transform="[^"]*rotate\(([-\d.]+)\)[^>]*>([^<]*)</text>', svg) if m[1] == ref]
+
+    def test_upside_down_reference_is_turned_upright(self):
+        text = PCB.replace('(at 10 15 90)', '(at 10 15 180)').replace('(property "Reference" "R7" (at 0 -1.43 90)', '(property "Reference" "R7" (at 0 -1.43 180)')
+        angles = [float(a) % 360 for a, _ in self.rotations(pcb.render_pcb(text)["svg"], "R7")]
+        self.assertTrue(angles)
+        self.assertTrue(all(a <= 90 or a > 270 for a in angles), angles)
+
+    def test_sideways_reference_keeps_its_angle(self):
+        angles = [float(a) % 360 for a, _ in self.rotations(pcb.render_pcb(PCB)["svg"], "R7")]
+        self.assertEqual(angles, [270.0])

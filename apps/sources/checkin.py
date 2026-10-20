@@ -99,7 +99,7 @@ def plan(repo, staged, mode, base, user, refuse=()):
         holder = locks.get(path)
         name = os.path.basename(path)
         if (was.pk if was else None) != (now.pk if now else None):
-            p.refused.append((path, f"Changed by someone else since v{base}. Download v{latest} and merge your changes."))
+            p.refused.append((path, f"Changed since v{base}, the version you started from. Download v{latest} and merge your changes."))
         elif holder is not None and holder.pk != user.pk:
             p.refused.append((path, f"Checked out by {holder.get_full_name() or holder.username}."))
         elif needs_lock(path) and now is not None and holder is None:

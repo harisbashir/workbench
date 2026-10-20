@@ -28,6 +28,10 @@ BLOCKED_EXTENSIONS = {".exe", ".msi", ".scr", ".com", ".dll", ".hta", ".vbs", ".
 # Control characters and the characters that reverse text direction (used to disguise file names).
 BAD_CHARS = re.compile("[\x00-\x1f\x7f\u200e\u200f\u202a-\u202e\u2066-\u2069]")
 
+# Names Windows can't save: a version with one couldn't be unzipped or opened there.
+WINDOWS_CHARS = re.compile(r'[<>:"|?*]')
+WINDOWS_RESERVED = re.compile(r"^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$", re.I)
+
 IGNORED_DIRS = {".git", "__pycache__", "__MACOSX", ".svn", ".hg"}
 IGNORED_NAMES = {".DS_Store", "Thumbs.db", "desktop.ini", "fp-info-cache"}
 IGNORED_RE = re.compile(r"(^_autosave-|^~.*\.lck$|\.kicad_prl$|^#auto_saved_files#$)")
@@ -46,6 +50,18 @@ def normalise_path(raw):
     if any(s in (".", "..") or s != s.strip() for s in parts):
         return None
     return "/".join(parts)
+
+
+def windows_problem(path):
+    """Why Windows couldn't save a file at `path`, or None."""
+    for part in path.split("/"):
+        if WINDOWS_CHARS.search(part):
+            return 'Windows can\'t save names with < > : " | ? or *. Rename it and check it in again.'
+        if part.endswith((".", " ")):
+            return "Windows can't save names ending in a dot or a space. Rename it and check it in again."
+        if WINDOWS_RESERVED.match(part):
+            return f"Windows reserves the name {part.split('.')[0].upper()}, so it can't be saved there. Rename it and check it in again."
+    return None
 
 
 def is_ignored(path):
@@ -82,6 +98,10 @@ class Intake:
             return False
         if is_ignored(path):
             self.ignored += 1
+            return False
+        problem = windows_problem(path)
+        if problem:
+            self.refuse(path, problem)
             return False
         ext = os.path.splitext(path)[1].lower()
         if ext in BLOCKED_EXTENSIONS:

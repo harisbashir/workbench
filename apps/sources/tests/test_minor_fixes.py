@@ -143,3 +143,30 @@ class SourcesQueryTests(TestCase):
             commit(self.f.repo, self.f.eng, **{f"f{i}.c": "1" for i in range(10)})
             commit(self.f.repo, self.f.eng, **{f"f{i}.c": "2" for i in range(10)})
         self.steady(url, grow)
+
+
+class WindowsNameTests(TestCase):
+    """Names Windows can't save are refused, so a version can always be downloaded and opened there."""
+    def test_names_windows_cannot_save_are_refused(self):
+        bad = ["src/a<b>.c", 'q"uote.txt', "pipe|.txt", "what?.txt", "star*.txt", "colon:.txt", "dot.",
+               "con.txt", "NUL", "dir/aux.h", "lpt1.c", "COM9.txt", "trail./x.c"]
+        result = intake.take([(name, SimpleUploadedFile("x", b"1")) for name in bad])
+        self.assertEqual(result.files, {})
+        self.assertEqual(len(result.refused), len(bad))
+        self.assertTrue(all("Windows" in reason for _, reason in result.refused), result.refused)
+
+    def test_ordinary_names_still_allowed(self):
+        good = ["console.c", "nul_driver.h", "a.b.c", "x-y_z (1).txt", "Ünïcode.md", "com10.txt"]
+        result = intake.take([(name, SimpleUploadedFile("x", name.encode())) for name in good])
+        self.assertEqual(sorted(result.files), sorted(good))
+
+    def test_stale_message_does_not_blame_someone_else(self):
+        f = make_repo()
+        commit(f.repo, f.eng, **{"a.c": "1"})
+        commit(f.repo, f.eng, **{"a.c": "2"})
+        from apps.sources import checkin
+        from .helpers import files
+        plan = checkin.plan(f.repo, files(**{"a.c": "3"}), "update", 1, f.eng)
+        reason = dict(plan.refused)["a.c"]
+        self.assertNotIn("someone else", reason)
+        self.assertIn("v1", reason)

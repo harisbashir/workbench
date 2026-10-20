@@ -23,7 +23,7 @@
 
 <h2>When two people work on the same files</h2>
 <ul>
-  <li><strong>Changed by someone else:</strong> Workbench remembers which version you started from. If someone else changed the same file since then, that file is refused instead of overwriting their work. Download the latest version, merge your changes, and check in again. Files nobody else touched can still go in.</li>
+  <li><strong>Changed since you started:</strong> Workbench remembers which version you started from. If the same file changed since then (by someone else, or by you in another check-in), that file is refused instead of overwriting their work. Download the latest version, merge your changes, and check in again. Files nobody else touched can still go in.</li>
   <li><strong>Checking out KiCad files:</strong> schematics (<code>.kicad_sch</code>) and PCBs (<code>.kicad_pcb</code>) don't merge well, so you <em>check out</em> a file before changing it. While it's checked out to you, nobody else can check in a change to it. Checking in your change releases it. You can check out any other file too.</li>
   <li>A lead or administrator can release someone else's check-out, for example when they're away. The person is told.</li>
 </ul>
@@ -51,5 +51,5 @@
 </ul>
 
 <h2>Limits</h2>
-<p>A check-in can have up to 5,000 files, and up to 1,000 when you choose a folder (use a zip for more). Choosing a folder needs JavaScript in your browser; without it, zip the folder and upload the zip. A zip can hold up to 20,000 entries. The size limits are the same as for file uploads. Windows program files (<code>.exe</code>, <code>.msi</code>, <code>.dll</code>…) are refused; zip them and tick “Keep zip files as zips” if you need to keep one. Scripts and web files are fine, and are only ever downloaded, never run.</p>
+<p>A check-in can have up to 5,000 files, and up to 1,000 when you choose a folder (use a zip for more). Choosing a folder needs JavaScript in your browser; without it, zip the folder and upload the zip. A zip can hold up to 20,000 entries. The size limits are the same as for file uploads. Windows program files (<code>.exe</code>, <code>.msi</code>, <code>.dll</code>…) are refused; zip them and tick “Keep zip files as zips” if you need to keep one. Scripts and web files are fine, and are only ever downloaded, never run. Names Windows can't save (with <code>&lt; &gt; : " | ? *</code>, ending in a dot, or reserved names such as <code>CON</code> and <code>NUL</code>) are refused, so every version can be downloaded and opened on Windows.</p>
 {% endblock %}

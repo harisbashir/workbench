@@ -21,7 +21,7 @@ from . import pcb, schematic
 from .sexpr import MAX_BYTES, KicadError
 
 log = logging.getLogger("workbench")
-RENDER_VERSION = "3"
+RENDER_VERSION = "4"
 MAX_CACHE_BYTES = 2 * 1024 ** 3   # previews kept on disk; the least recently used go first
 KINDS = {".kicad_sch": "sch", ".kicad_pcb": "pcb"}
 

@@ -115,6 +115,28 @@ class Board(models.Model):
         return self.revisions.order_by("-created_at").first()
 
 
+class Controller(models.Model):
+    """A microcontroller or processor on a board that runs firmware, e.g. U1 main MCU, U7 radio."""
+
+    board = models.ForeignKey(Board, on_delete=models.CASCADE, related_name="controllers")
+    designator = models.CharField(max_length=20, help_text="Reference on the schematic, e.g. U1")
+    name = models.CharField(max_length=80, help_text="e.g. Main MCU, Radio, Motor driver")
+    part = models.CharField(max_length=80, blank=True, help_text="e.g. STM32G474RE, ESP32-S3")
+    notes = models.CharField(max_length=200, blank=True)
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["board", "order", "designator"]
+        unique_together = [("board", "designator")]
+
+    def __str__(self):
+        return f"{self.designator} {self.name}"
+
+    @property
+    def project(self):
+        return self.board.project
+
+
 def default_board(project):
     """The project's board, creating a 'Main board' for projects that have none yet."""
     board = project.boards.order_by("order", "id").first()
@@ -138,6 +160,7 @@ class Revision(models.Model):
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.DESIGN)
     target_date = models.DateField(null=True, blank=True)
     git_ref = models.CharField(max_length=100, blank=True, help_text="Optional git tag or commit this revision was released from.")
+    firmware_set_locked = models.BooleanField(default=False, help_text="The firmware chosen for each controller can't change until a lead unlocks it.")
     notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

@@ -15,6 +15,7 @@ import os
 import re
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.urls import reverse
 from django.utils import timezone
@@ -196,6 +197,41 @@ class FirmwareRelease(models.Model):
             self.released_at = timezone.now()
             self.released_by = user
         self.save()
+
+
+class ControllerSlot(models.Model):
+    """A firmware that runs on a controller. A controller can run several (bootloader + application)."""
+
+    controller = models.ForeignKey("projects.Controller", on_delete=models.CASCADE, related_name="slots")
+    firmware = models.ForeignKey(Firmware, on_delete=models.CASCADE, related_name="slots")
+    flash_order = models.PositiveIntegerField(default=1, help_text="Lower numbers are flashed first, e.g. the bootloader.")
+
+    class Meta:
+        ordering = ["controller__order", "controller__designator", "flash_order", "firmware__name"]
+        unique_together = [("controller", "firmware")]
+
+    def __str__(self):
+        return f"{self.controller} · {self.firmware.name}"
+
+    def clean(self):
+        if self.firmware.project_id != self.controller.board.project_id:
+            raise ValidationError("The firmware belongs to a different project.")
+
+
+class FirmwareSetEntry(models.Model):
+    """The released version a controller's firmware ships with on one board revision."""
+
+    revision = models.ForeignKey("projects.Revision", on_delete=models.CASCADE, related_name="firmware_set")
+    slot = models.ForeignKey(ControllerSlot, on_delete=models.CASCADE, related_name="entries")
+    release = models.ForeignKey(FirmwareRelease, on_delete=models.PROTECT, related_name="set_entries")
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = [("revision", "slot")]
+
+    def __str__(self):
+        return f"{self.revision} · {self.slot} → {self.release.version}"
 
 
 def artifact_path(instance, filename):

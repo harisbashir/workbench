@@ -22,4 +22,6 @@ urlpatterns = [
     path("projects/<str:key>/boards/<int:board>/controllers/<int:pk>/delete/", board_views.controller_delete, name="controller_delete"),
     path("projects/<str:key>/revisions/<int:pk>/firmware/", board_views.revision_set, name="revision_set"),
     path("projects/<str:key>/revisions/<int:pk>/firmware/lock/", board_views.revision_set_lock, name="revision_set_lock"),
+    path("projects/<str:key>/revisions/<int:pk>/firmware/bundle/", board_views.revision_bundle, name="revision_bundle"),
+    path("production/builds/<int:pk>/firmware-bundle/", board_views.build_bundle, name="build_bundle"),
 ]

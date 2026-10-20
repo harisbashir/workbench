@@ -268,10 +268,10 @@ class FirmwareArtifact(models.Model):
     def guess_kind(name):
         n = name.lower()
         ext = os.path.splitext(n)[1]
-        if "boot" in n:
-            return FirmwareArtifact.Kind.BOOTLOADER
         if ext in (".elf", ".map", ".axf", ".out", ".lst", ".sym"):
             return FirmwareArtifact.Kind.DEBUG
+        if "boot" in n:
+            return FirmwareArtifact.Kind.BOOTLOADER
         if ext in (".zip", ".tar", ".gz", ".dfu", ".ota", ".pkg"):
             return FirmwareArtifact.Kind.PACKAGE
         if ext in (".bin", ".hex", ".uf2", ".srec", ".s19", ".img", ".ihex"):

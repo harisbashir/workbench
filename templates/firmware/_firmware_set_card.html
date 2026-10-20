@@ -13,6 +13,7 @@
     <div class="small">{% for lvl, t in row.issues %}<span class="{% if lvl == 'bad' %}overdue{% else %}warn-text{% endif %}">{{ t }}</span><br>{% empty %}<span class="ok-text">✓ Released and compatible</span>{% endfor %}</div>
   </div>{% endfor %}
   {% if can_edit and not rev.firmware_set_locked %}<button class="btn btn-sm btn-primary">Save firmware</button></form>{% endif %}
+  {% if firmware_missing < firmware_rows|length %}<p><a class="btn btn-sm" href="{% url 'firmware:revision_bundle' project.key rev.pk %}">{% icon 'download' 14 %} Download flashing bundle</a></p>{% endif %}
   {% if rev.firmware_set_locked %}<p class="muted small">Locked by a lead. The versions can't change until it's unlocked.</p>{% endif %}
   {% if can_lock_firmware %}<form method="post" action="{% url 'firmware:revision_set_lock' project.key rev.pk %}">{% csrf_token %}
     <input type="hidden" name="action" value="{% if rev.firmware_set_locked %}unlock{% else %}lock{% endif %}">

@@ -1,16 +1,22 @@
 """Controllers on boards and the firmware each board revision ships with."""
+import tempfile
+
 from django import forms
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
+from django.http import FileResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils.text import slugify
 from django.views.decorators.http import require_POST
 
 from apps.core.utils import audit
 from apps.projects.models import Board, Controller, Revision, log_activity
 
 from . import sets
+from .bundle import BundleError, BundleRow, write_bundle
 from .models import ControllerSlot, Firmware
 from .views import _project
 
@@ -133,3 +139,40 @@ def revision_set_lock(request, key, pk):
         audit(request, "revision.firmware_set_lock" if locking else "revision.firmware_set_unlock", rev)
         messages.success(request, f"Firmware for {rev.title} {'locked' if locking else 'unlocked'}.")
     return redirect(rev)
+
+
+# --- Flashing bundle -----------------------------------------------------------------
+
+def _bundle_response(request, rows, title, filename, back):
+    fh = tempfile.TemporaryFile(dir=settings.DATA_DIR)
+    try:
+        write_bundle(rows, fh, title=title)
+    except BundleError as exc:
+        fh.close()
+        messages.error(request, str(exc))
+        return redirect(back)
+    fh.seek(0)
+    resp = FileResponse(fh, as_attachment=True, filename=filename, content_type="application/zip")
+    resp["X-Content-Type-Options"] = "nosniff"
+    return resp
+
+
+@login_required
+def revision_bundle(request, key, pk):
+    project, rev = _revision(request, key, pk)
+    rows = [BundleRow(str(e.slot.controller), e.slot.controller.designator, e.release, e.slot.flash_order)
+            for e in rev.firmware_set.select_related("slot__controller", "release__firmware").prefetch_related("release__artifacts")]
+    audit(request, "revision.firmware_bundle", rev)
+    return _bundle_response(request, rows, f"{project.key} {rev.title}", f"{project.key}-{slugify(rev.title)}-firmware.zip", rev)
+
+
+@login_required
+def build_bundle(request, pk):
+    from apps.production.models import BuildOrder
+    b = get_object_or_404(BuildOrder.objects.select_related("revision__project"), pk=pk)
+    if not b.revision.project.can_view(request.user):
+        raise PermissionDenied
+    rows = [BundleRow(row.controller_label, row.slot.controller.designator if row.slot else "", row.release, row.flash_order)
+            for row in b.firmware_rows()]
+    audit(request, "build.firmware_bundle", b)
+    return _bundle_response(request, rows, f"{b.number} {b.revision.title}", f"{b.number}-firmware.zip", b)

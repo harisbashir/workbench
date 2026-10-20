@@ -1,0 +1,21 @@
+{% extends "base.html" %}{% load workbench humanize %}
+{% block title %}{{ name }} · {{ repo.name }}{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles">
+  <div class="crumbs"><a href="{% url 'sources:project' project.key %}">Sources</a> / <a href="{{ repo.get_absolute_url }}?v={{ version.number }}">{{ repo.name }}</a>{% for c in crumbs %} / <a href="{{ repo.get_absolute_url }}?v={{ version.number }}&amp;path={{ c.path|urlencode }}">{{ c.name }}</a>{% endfor %} /</div>
+  <h1>{{ name }}</h1>
+  <p class="intro">v{{ version.number }}{% if not is_latest %} (older version){% endif %} · {{ blob.size|filesizeformat }}{% if language %} · {{ language }}{% endif %}
+    {% if lock %} · <span class="badge lock-badge">{% icon 'lock' 12 %} checked out by {{ lock.user }}</span>{% endif %}</p>
+</div>
+<div class="actions">
+  <a class="btn" href="{% url 'sources:file' project.key repo.slug version.number path %}?raw=1">{% icon 'download' 16 %} Download</a>
+  {% block file_page_actions %}{% endblock %}
+</div></div>
+<div class="card">
+  {% if lines is not None %}<div class="code-view"><table class="code"><tbody>
+    {% for line in lines %}<tr id="L{{ forloop.counter }}"><td class="ln"><a href="#L{{ forloop.counter }}">{{ forloop.counter }}</a></td><td class="src">{{ line }}</td></tr>{% endfor %}
+  </tbody></table></div>
+  {% elif is_image %}<div class="card-body image-view"><img src="{% url 'sources:file' project.key repo.slug version.number path %}?raw=1&amp;inline=1" alt="{{ name }}"></div>
+  {% else %}<div class="card-body muted">This is a binary file, so it can't be shown here. <a href="{% url 'sources:file' project.key repo.slug version.number path %}?raw=1">Download it</a> to open it.</div>{% endif %}
+</div>
+{% endblock %}

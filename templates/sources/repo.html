@@ -1,0 +1,45 @@
+{% extends "base.html" %}{% load workbench humanize %}
+{% block title %}{{ repo.name }} · Sources{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles">
+  <div class="crumbs"><a href="{{ project.get_absolute_url }}">{{ project.name }}</a> / <a href="{% url 'sources:project' project.key %}">Sources</a> /{% if repo.board %} <a href="{{ repo.board.get_absolute_url }}">{{ repo.board.name }}</a> /{% endif %}</div>
+  <h1>{% if repo.kind == 'kicad' %}{% icon 'pcb' 22 %}{% elif repo.kind == 'firmware' %}{% icon 'cpu' 22 %}{% else %}{% icon 'code' 22 %}{% endif %} {{ repo.name }}</h1>
+  <p class="intro">{{ repo.get_kind_display }}{% if repo.controller %} · runs on {{ repo.controller }}{% endif %}{% if repo.firmware %} · releases as <a href="{{ repo.firmware.get_absolute_url }}">{{ repo.firmware.name }}</a>{% endif %}{% if repo.description %} · {{ repo.description }}{% endif %}</p>
+</div>
+<div class="actions">
+  {% if version %}<a class="btn" href="{% url 'sources:version_zip' project.key repo.slug version.number %}">{% icon 'download' 16 %} Download v{{ version.number }}</a>{% endif %}
+  {% if can_edit %}<a class="btn" href="{% url 'sources:repo_edit' project.key repo.slug %}">{% icon 'edit' 16 %} Edit</a>{% endif %}
+  {% block repo_actions %}{% endblock %}
+</div></div>
+
+<div class="grid grid-main">
+<div class="stack">
+  <div class="card">
+    <div class="card-head"><h2>{% if version %}v{{ version.number }}{% if not is_latest %} <span class="badge">older version</span>{% endif %}{% else %}Files{% endif %}</h2>
+      {% if version %}<span class="small muted">{{ version.message }} · {{ version.author|default:"—" }} · {{ version.created_at|naturaltime }}</span>{% endif %}</div>
+    {% if version %}
+    {% if crumbs %}<div class="card-body small path-crumbs"><a href="{{ repo.get_absolute_url }}?v={{ version.number }}">{{ repo.name }}</a>{% for c in crumbs %} / <a href="{{ repo.get_absolute_url }}?v={{ version.number }}&amp;path={{ c.path|urlencode }}">{{ c.name }}</a>{% endfor %}</div>{% endif %}
+    <div class="table-wrap"><table class="table file-tree"><tbody>
+      {% for d in dirs %}<tr><td>{% icon 'folder' 16 %} <a href="{{ repo.get_absolute_url }}?v={{ version.number }}&amp;path={{ d.path|urlencode }}"><strong>{{ d.name }}</strong></a></td><td class="small muted">{{ d.count }} file{{ d.count|pluralize }}</td><td></td></tr>{% endfor %}
+      {% for f in files %}<tr><td>{% icon 'file' 16 %} <a href="{% url 'sources:file' project.key repo.slug version.number f.path %}">{{ f.name }}</a>
+          {% if f.lock %}<span class="badge lock-badge" title="Checked out by {{ f.lock.user }}">{% icon 'lock' 12 %} {{ f.lock.user }}</span>{% endif %}</td>
+        <td class="small muted nowrap">{{ f.blob.size|filesizeformat }}</td>
+        <td class="right nowrap">{% block file_actions %}{% endblock %}</td></tr>{% endfor %}
+    </tbody></table></div>
+    {% else %}<div class="card-body muted">Nothing checked in yet.{% if can_edit %} Check in the files to make version 1.{% endif %}</div>{% endif %}
+  </div>
+  {% if readme %}<div class="card"><div class="card-head"><h3>{% icon 'file' 16 %} README</h3></div><div class="card-body readme">{% if readme_is_html %}{{ readme }}{% else %}<pre>{{ readme }}</pre>{% endif %}</div></div>{% endif %}
+</div>
+<div class="stack">
+  <div class="card"><div class="card-head"><h3>History</h3></div><div class="card-body">
+    {% for h in history %}<div class="history-row{% if version and h.number == version.number %} current{% endif %}">
+      <div><a href="{{ h.get_absolute_url }}"><strong>v{{ h.number }}</strong></a> {{ h.message }}</div>
+      <div class="small muted">{{ h.author|default:"—" }} · {{ h.created_at|naturaltime }} · <span class="ok-text">+{{ h.lines_added }}</span> <span class="overdue">−{{ h.lines_removed }}</span>{% block history_actions %}{% endblock %}</div>
+    </div>{% empty %}<p class="muted small">No versions yet.</p>{% endfor %}
+  </div></div>
+  {% if locks %}<div class="card"><div class="card-head"><h3>{% icon 'lock' 16 %} Checked out</h3></div><div class="card-body">
+    {% for lk in locks %}<div class="kv"><span class="mono small">{{ lk.path }}</span><span class="small">{{ lk.user }} · {{ lk.created_at|naturaltime }}</span></div>{% endfor %}
+  </div></div>{% endif %}
+</div>
+</div>
+{% endblock %}

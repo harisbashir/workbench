@@ -1,0 +1,15 @@
+{% extends "base.html" %}{% load workbench %}
+{% block title %}Sources · {{ project.name }}{% endblock %}
+{% block content %}
+{% include "projects/_head.html" %}
+<div class="page-head"><div class="titles">
+  <p class="intro">Work-in-progress code and design files for this project, with every version kept. Final Gerbers and released firmware stay under Hardware and Firmware. <a href="{% url 'core:help_topic' 'sources' %}">How Sources works →</a></p></div>
+  {% if can_edit %}<div class="actions"><a class="btn btn-primary" href="{% url 'sources:repo_create' project.key %}">{% icon 'plus' 16 %} Add repository</a></div>{% endif %}</div>
+{% for board, repos in groups %}
+  <div class="section-title"><h2>{% if board %}<a href="{{ board.get_absolute_url }}">{{ board.name }}</a>{% else %}Shared by the whole project{% endif %}</h2></div>
+  <div class="grid grid-3">{% for r in repos %}{% include "sources/_repo_card.html" %}{% endfor %}</div>
+{% endfor %}
+{% if not has_repos %}<div class="card"><div class="card-body muted">
+  No repositories yet. Add one for each set of files you keep together: the firmware for a controller, a board's KiCad project, test scripts…
+</div></div>{% endif %}
+{% endblock %}

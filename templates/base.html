@@ -22,6 +22,7 @@
       <a href="{% url 'chat:index' %}" class="{% if section == 'chat' %}active{% endif %}">{% icon 'chat' %} Chat
         <span class="count {% if not unread_chat %}hidden{% endif %}" data-chat-badge data-url="{% url 'chat:unread' %}">{{ unread_chat }}</span></a>
       <a href="{% url 'firmware:overview' %}" class="{% if section == 'firmware' %}active{% endif %}">{% icon 'cpu' %} Firmware</a>
+      <a href="{% url 'sources:overview' %}" class="{% if section == 'sources' %}active{% endif %}">{% icon 'code' %} Sources</a>
       <a href="{% url 'files:index' %}" class="{% if section == 'files' %}active{% endif %}">{% icon 'file' %} Files</a>
       <a href="{% url 'integrations:overview' %}" class="{% if section == 'integrations' %}active{% endif %}">{% icon 'git' %} GitHub</a>
       <div class="nav-label">Operations</div>

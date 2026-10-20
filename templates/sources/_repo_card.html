@@ -1,0 +1,6 @@
+{% load workbench humanize %}<a class="card space-card" href="{{ r.get_absolute_url }}"><div class="card-body">
+  <div class="btn-row">{% if r.kind == 'kicad' %}{% icon 'pcb' 20 %}{% elif r.kind == 'firmware' %}{% icon 'cpu' 20 %}{% else %}{% icon 'code' 20 %}{% endif %}<strong>{{ r.name }}</strong></div>
+  <p class="small muted">{{ r.get_kind_display }}{% if r.board %} · {{ r.board.name }}{% endif %}{% if r.controller %} · {{ r.controller }}{% endif %}</p>
+  {% if r.description %}<p class="small">{{ r.description|truncatewords:16 }}</p>{% endif %}
+  <div class="kv"><span>Latest</span><span>{% if r.latest_number %}<strong>v{{ r.latest_number }}</strong> <span class="small faint">{{ r.updated_at|naturaltime }}</span>{% else %}<span class="faint">nothing checked in</span>{% endif %}</span></div>
+</div></a>

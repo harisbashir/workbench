@@ -1,0 +1,14 @@
+{% extends "base.html" %}{% load workbench humanize %}
+{% block title %}Sources{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles">
+  <h1>{% icon 'code' 22 %} Sources</h1>
+  <p class="intro">Code and design files under version control: every check-in is kept, you can compare any two versions, and KiCad files are checked out so two people don't change them at once. <a href="{% url 'core:help_topic' 'sources' %}">How Sources works →</a></p>
+</div></div>
+{% for p in projects %}
+  <div class="section-title"><h2><a href="{% url 'sources:project' p.key %}"><span class="key">{{ p.key }}</span> {{ p.name }}</a></h2></div>
+  <div class="grid grid-3">{% for r in p.repositories.all %}{% include "sources/_repo_card.html" %}{% endfor %}</div>
+{% empty %}
+  <div class="card"><div class="card-body muted">No repositories yet. Open a project and choose <em>Sources</em> to add one.</div></div>
+{% endfor %}
+{% endblock %}

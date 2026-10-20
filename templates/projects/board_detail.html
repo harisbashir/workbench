@@ -64,6 +64,10 @@
   {% endif %}
 
   {% include "firmware/_controllers_card.html" %}
+  <div class="card"><div class="card-head"><h2>{% icon 'code' 18 %} Sources</h2>{% if can_edit %}<a class="btn btn-sm" href="{% url 'sources:repo_create' project.key %}?board={{ b.pk }}">{% icon 'plus' 14 %} Add</a>{% endif %}</div><div class="card-body">
+    {% for r in b.repositories.all %}<div class="kv"><a href="{{ r.get_absolute_url }}">{{ r.name }}</a><span class="small muted">{% if r.latest_number %}v{{ r.latest_number }}{% else %}empty{% endif %}</span></div>
+    {% empty %}<p class="muted small">Keep this board's KiCad project and firmware code here, with every version saved.</p>{% endfor %}
+  </div></div>
 
   {% if housings is not None %}<div class="card"><div class="card-head"><h2>{% icon 'cube' 18 %} Housed in</h2></div><div class="card-body">
     {% if housings %}<ul class="list-plain">{% for m in housings %}<li><a href="{{ m.get_absolute_url }}">{{ m.name }}</a><span class="right small muted">{{ m.get_kind_display }}</span></li>{% endfor %}</ul>

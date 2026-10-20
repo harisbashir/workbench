@@ -1,0 +1,18 @@
+{% extends "base.html" %}{% load workbench %}
+{% block title %}{% if repo %}Edit {{ repo.name }}{% else %}Add repository{% endif %}{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles">
+  <div class="crumbs"><a href="{{ project.get_absolute_url }}">{{ project.name }}</a> / <a href="{% url 'sources:project' project.key %}">Sources</a> /</div>
+  <h1>{% if repo %}Edit {{ repo.name }}{% else %}Add repository{% endif %}</h1>
+  {% if not repo %}<p class="intro">A repository keeps a set of files together with all their versions. Choose a board for its KiCad project or firmware, or leave it shared for code the whole project uses.</p>{% endif %}
+</div></div>
+<div class="card form-card"><div class="card-body">
+  <form method="post" novalidate>{% csrf_token %}
+    {% include "partials/form.html" with grid=True %}
+    <div class="form-actions"><button class="btn btn-primary">Save</button>
+      <a class="btn btn-ghost" href="{% if repo %}{{ repo.get_absolute_url }}{% else %}{% url 'sources:project' project.key %}{% endif %}">Cancel</a></div>
+  </form>
+  {% if repo and user.can_manage_projects %}<form method="post" action="{% url 'sources:repo_delete' project.key repo.slug %}" data-confirm="Delete {{ repo.name }} and all {{ repo.latest_number }} of its versions? This can't be undone.">{% csrf_token %}
+    <button class="btn btn-ghost btn-danger">Delete this repository</button></form>{% endif %}
+</div></div>
+{% endblock %}

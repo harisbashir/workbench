@@ -694,3 +694,28 @@ details.menu > summary::-webkit-details-marker { display: none; }
 .cancel-return input { margin-top: 3px; flex: none; }
 .fw-slot { padding: 8px 0; border-bottom: 1px solid var(--border); display: grid; gap: 4px; }
 .fw-slot:last-of-type { border-bottom: 0; margin-bottom: 8px; }
+
+/* Sources: file tree, code viewer and syntax colours (Pygments token classes) */
+.file-tree td:first-child { width: 70%; }
+.lock-badge { background: var(--warning-soft); color: var(--warning); margin-left: 6px; }
+.path-crumbs { border-bottom: 1px solid var(--border); }
+.history-row { padding: 6px 0; border-bottom: 1px solid var(--border); }
+.history-row:last-child { border-bottom: 0; }
+.history-row.current { font-weight: 600; }
+.readme pre, .code-view { overflow-x: auto; }
+.code-view { font-family: var(--mono); font-size: .82rem; }
+table.code { border-collapse: collapse; width: 100%; }
+table.code td { padding: 0 10px; vertical-align: top; white-space: pre; line-height: 1.5; }
+table.code td.ln { text-align: right; color: var(--text-3); user-select: none; width: 1%; border-right: 1px solid var(--border); }
+table.code td.ln a { color: inherit; text-decoration: none; }
+table.code tr:target td { background: var(--warning-soft); }
+.image-view img { max-width: 100%; height: auto; }
+:root { --hl-kw: #8839ef; --hl-str: #2e7d32; --hl-com: #6b7280; --hl-num: #b45309; --hl-fn: #1d4ed8; --hl-type: #0f766e; --hl-pre: #9d174d; }
+@media (prefers-color-scheme: dark) { :root { --hl-kw: #c4a7ff; --hl-str: #8fd694; --hl-com: #9aa1ab; --hl-num: #f5b971; --hl-fn: #8ab4ff; --hl-type: #6fd3c4; --hl-pre: #f5a3c7; } }
+.code .k, .code .kd, .code .kn, .code .kr, .code .kc, .code .ow { color: var(--hl-kw); }
+.code .kt, .code .nc, .code .nn { color: var(--hl-type); }
+.code .s, .code .s1, .code .s2, .code .sb, .code .sc, .code .sd, .code .se, .code .si, .code .sa { color: var(--hl-str); }
+.code .c, .code .c1, .code .cm, .code .cs, .code .ch { color: var(--hl-com); font-style: italic; }
+.code .cp, .code .cpf { color: var(--hl-pre); }
+.code .m, .code .mi, .code .mf, .code .mh, .code .mo, .code .mb, .code .il { color: var(--hl-num); }
+.code .nf, .code .fm, .code .nb, .code .bp { color: var(--hl-fn); }

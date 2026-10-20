@@ -73,6 +73,13 @@ Each product has a **Hardware** tab that holds everything physical about it.
 - CI results (e.g. KiBot ERC/DRC for hardware repositories, firmware builds) are shown on the task, and failures are announced in chat.
 - Publishing a GitHub release (e.g. tag `v1.5.0`) creates a firmware release in *Testing* automatically.
 
+### Sources: code and design files
+- A **Sources** section, organised like the hardware (project → board), for work in progress: firmware code, KiCad projects, scripts. No GitHub needed, and it works with local or S3 storage.
+- **Check in** files, a folder or a zip from the browser, with a preview of what changes. Every version is kept (v1, v2…) with a message and author.
+- **Compare** any two versions with coloured line-by-line differences (one column or side by side), view code with syntax colours and line links, and download any version as a zip.
+- **Safe teamwork:** a check-in can't overwrite a file someone else changed meanwhile, and KiCad schematics and PCBs are **checked out** before editing so only one person changes them at a time.
+- **Into production:** turn a firmware version into a draft firmware release with its source attached, or record which KiCad version a board revision was built from.
+
 ### Firmware management
 - Per project: firmware components (main application, bootloader…) with **semantic versions** (`1.4.0`, `1.4.0-rc.1`).
 - Each release has notes, files (`.bin`, `.hex`, `.elf`…) with **SHA-256 checksums**, and the **board revisions it's compatible with** — so Rev A and Rev B can run different firmware.
@@ -296,6 +303,10 @@ If `git pull` complains about local changes, run `git stash` and try again.
 ### Upgrading to 1.4
 
 Version 1.4 adds boards to products. Existing revisions are moved onto a board called **Main board** in each project automatically; rename it, or add more boards, under the project's **Hardware** tab. Updating takes a little longer than usual the first time, because the container installs the 3D converter.
+
+### Upgrading to 1.6
+
+Version 1.6 adds **Sources**. Nothing to do on upgrade. Sources stores files the same way as the rest of Workbench (the data folder or your S3 bucket), so backups and *Download everything* treat them like any other file.
 
 ### Upgrading to 1.5
 

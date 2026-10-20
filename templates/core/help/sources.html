@@ -1,0 +1,46 @@
+{% extends "core/help/_layout.html" %}
+{% block help_title %}Sources: code and design files{% endblock %}
+{% block help %}
+<h1>Sources: code and design files</h1>
+<p><em>Sources</em> keeps the files you're working on — firmware code, KiCad projects, scripts — with every version saved. You can see what changed between any two versions, go back to an old one, and stop two people changing the same KiCad file at once. It needs no GitHub account and works the same whether files are stored on the server or in Amazon S3.</p>
+<p>Sources is for work in progress. Final Gerbers stay on each board revision under <em>Hardware</em>, and released firmware stays under <em>Firmware</em>.</p>
+
+<h2>Repositories</h2>
+<p>A <strong>repository</strong> is a set of files kept together, for example <em>Main MCU firmware</em> or <em>Power board KiCad</em>. Add them under the project's <em>Sources</em> tab, or from a board's page. Give each one:</p>
+<ul>
+  <li>a <strong>board</strong>, or none for files the whole project shares,</li>
+  <li>a <strong>kind</strong>: firmware code, KiCad design or other,</li>
+  <li>for firmware, the <strong>controller</strong> it runs on and the <strong>firmware</strong> its versions are released as.</li>
+</ul>
+
+<h2>Checking in a new version</h2>
+<ol>
+  <li>Open the repository and choose <em>Check in new version</em>.</li>
+  <li>Choose changed files, a whole folder, or a zip (a zip is unpacked, keeping its folders). Choose whether files you don't upload are <em>kept</em> or <em>deleted</em> — use "deleted" when your upload is the whole project.</li>
+  <li>Workbench shows what will change: new, changed, deleted and unchanged files. Backups, caches and <code>.git</code> folders are left out automatically.</li>
+  <li>Write a short message saying what changed — mention task IDs like <code>PWR-12</code> — and press <em>Check in</em>. It becomes the next version: v1, v2, v3…</li>
+</ol>
+
+<h2>When two people work on the same files</h2>
+<ul>
+  <li><strong>Changed by someone else:</strong> Workbench remembers which version you started from. If someone else changed the same file since then, that file is refused instead of overwriting their work. Download the latest version, merge your changes, and check in again. Files nobody else touched can still go in.</li>
+  <li><strong>Checking out KiCad files:</strong> schematics (<code>.kicad_sch</code>) and PCBs (<code>.kicad_pcb</code>) don't merge well, so you <em>check out</em> a file before changing it. While it's checked out to you, nobody else can check in a change to it. Checking in your change releases it. You can check out any other file too.</li>
+  <li>A lead or administrator can release someone else's check-out, for example when they're away. The person is told.</li>
+</ul>
+
+<h2>Looking at files and changes</h2>
+<ul>
+  <li>Code is shown with colours for the language, line numbers, and a link to each line (click the number).</li>
+  <li><em>Changes</em> next to each version shows what changed in it, line by line. <em>Compare</em> any two versions, one column or side by side.</li>
+  <li>Download any version as a zip, or a single file.</li>
+</ul>
+
+<h2>From Sources to production</h2>
+<ul>
+  <li><strong>Firmware:</strong> on a firmware repository, <em>Make a firmware release</em> creates a draft release of the linked firmware with that version's source attached. Upload the built <code>.bin</code>/<code>.hex</code> to the release and take it through testing as usual.</li>
+  <li><strong>KiCad:</strong> on a KiCad repository, <em>Mark as built from</em> records which design version a board revision's Gerbers came from. The revision page then shows "Built from Power board KiCad v22".</li>
+</ul>
+
+<h2>Limits</h2>
+<p>A check-in can have up to 5,000 files, and up to 1,000 when you choose a folder (use a zip for more). The size limits are the same as for file uploads. Files that could run in a browser (<code>.html</code>, <code>.js</code>, <code>.exe</code>…) are refused; zip them first.</p>
+{% endblock %}

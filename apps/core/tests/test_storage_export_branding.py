@@ -232,6 +232,10 @@ class ExportTests(TransactionTestCase):
         rel = FirmwareRelease.objects.create(firmware=fw, version="1.2.0", status="released", notes="Notes here")
         rel.revisions.add(rev)
         FirmwareArtifact.store(rel, SimpleUploadedFile("app.bin", b"\x01\x02"), admin)
+        from apps.sources import blobs, checkin
+        from apps.sources.models import Repository
+        repo = Repository.objects.create(project=p, name="Main code")
+        checkin.commit(repo, {"src/main.c": blobs.store_bytes(b"int main;\n")}, "update", 0, "First code", admin)
 
         c.post(reverse("core:system_action"), {"action": "request_export", "include_versions": "1"})
         job = ExportJob.objects.get()
@@ -249,6 +253,8 @@ class ExportTests(TransactionTestCase):
             self.assertIn("Rev B", notes)
             self.assertIn("Notes here", notes)
             self.assertTrue(has("Projects/PWR - Power board/Hardware/Main board/Rev B/BOM.csv"), names)
+            self.assertEqual(z.read(f"{root}/Projects/PWR - Power board/Sources/Main code/src/main.c"), b"int main;\n")
+            self.assertIn("First code", z.read(f"{root}/Projects/PWR - Power board/Sources/Main code/HISTORY.csv").decode())
             self.assertTrue(has("Parts/Parts.csv") and has("People.csv") and has("README.txt"))
             self.assertEqual(z.read(f"{root}/Projects/PWR - Power board/Files/Test reports/thermal.csv"), b"v2")
         r = c.post(reverse("core:system_action"), {"action": "download_export", "name": job.file_name})

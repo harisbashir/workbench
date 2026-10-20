@@ -280,6 +280,44 @@ class Command(BaseCommand):
         rev_a.firmware_set_locked = True
         rev_a.save(update_fields=["firmware_set_locked"])
 
+        # Sources: the application's code (three check-ins) and the power board's KiCad project.
+        from apps.sources import blobs, checkin
+        from apps.sources.models import Repository, Version
+
+        def put(repo, user, message, days_ago, mode="update", **contents):
+            staged = {path: blobs.store_bytes(text.encode()) for path, text in contents.items()}
+            v, _ = checkin.commit(repo, staged, mode, repo.latest_number, message, user)
+            Version.objects.filter(pk=v.pk).update(created_at=now - timedelta(days=days_ago))
+            repo.refresh_from_db()
+            return v
+
+        app_repo = Repository.objects.create(project=pwr, board=rev_b.board, name="Main MCU firmware", kind=Repository.Kind.FIRMWARE,
+                                             controller=mcu, firmware=app_fw, created_by=u["bilal"],
+                                             description="STM32G031 application: power path control, fuel gauge, UART log.")
+        main_c = ("#include \"board.h\"\n#include \"fuel_gauge.h\"\n\n"
+                  "int main(void)\n{\n    board_init();\n    fuel_gauge_init();\n    for (;;) {\n"
+                  "        fuel_gauge_poll();\n        watchdog_kick();\n    }\n}\n")
+        put(app_repo, u["bilal"], "Initial import of the 1.2 code base", 30,
+            **{"README.md": "# PWR main application\n\nBuild with `make` (arm-none-eabi-gcc 13). Flash with `make flash`.\n",
+               "Makefile": "TARGET = pwr-app\nMCU = cortex-m0plus\n\nall:\n\t$(CC) -mcpu=$(MCU) -Os src/*.c -o $(TARGET).elf\n",
+               "src/main.c": main_c.replace("        fuel_gauge_poll();\n", ""),
+               "src/board.h": "#pragma once\nvoid board_init(void);\nvoid watchdog_kick(void);\n",
+               "src/fuel_gauge.h": "#pragma once\nvoid fuel_gauge_init(void);\nvoid fuel_gauge_poll(void);\n"})
+        put(app_repo, u["bilal"], "Poll the fuel gauge every 5 s (PWR-2)", 20, **{"src/main.c": main_c,
+            "src/fuel_gauge.c": "#include \"fuel_gauge.h\"\n\n#define POLL_MS 5000\n\nvoid fuel_gauge_init(void) { }\n\n"
+                                "void fuel_gauge_poll(void)\n{\n    /* read SOC over I2C every POLL_MS */\n}\n"})
+        put(app_repo, u["usman"], "Brown-out detection and safe shutdown (PWR-4)", 3,
+            **{"src/main.c": main_c.replace("    board_init();\n", "    board_init();\n    brownout_enable(2700); /* mV */\n")})
+        kicad_repo = Repository.objects.create(project=pwr, board=rev_b.board, name="Power board KiCad", kind=Repository.Kind.KICAD,
+                                               created_by=u["sana"], description="KiCad 8 project for the power board.")
+        put(kicad_repo, u["sana"], "Rev B schematic: USB ESD protection and load switch", 6,
+            **{"pwr-board.kicad_pro": '{\n  "meta": {"filename": "pwr-board.kicad_pro", "version": 1}\n}\n',
+               "pwr-board.kicad_sch": '(kicad_sch (version 20231120) (generator "eeschema")\n  (paper "A4")\n)\n',
+               "pwr-board.kicad_pcb": '(kicad_pcb (version 20240108) (generator "pcbnew")\n  (general (thickness 1.6))\n)\n'})
+        checkin.lock(kicad_repo, "pwr-board.kicad_pcb", u["sana"])
+        rev_b.source_version = kicad_repo.latest()
+        rev_b.save(update_fields=["source_version"])
+
         # Purchasing and production
         po = PurchaseOrder.objects.create(supplier=s["LCSC"], created_by=u["fatima"], reference="LC-20260918-7731",
                                           expected_date=(now + timedelta(days=5)).date(), shipping_cost=Decimal("18.00"))

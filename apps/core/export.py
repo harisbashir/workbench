@@ -199,6 +199,17 @@ def build_export(include_versions=False, user=None):
                         counts["files"] += 1
                     elif include_versions:
                         w.stored(rb + ["Design files", df.get_category_display(), "_older versions", f"v{df.version} - {df.name}"], df.file)
+            # Sources: the latest version of each repository, plus its history
+            for repo in p.repositories.all():
+                sb = pbase + ["Sources", repo.name]
+                latest = repo.latest()
+                if latest is not None:
+                    for f in latest.files.select_related("blob"):
+                        w.stored(sb + f.path.split("/"), f.blob.file)
+                        counts["files"] += 1
+                w.csv(sb + ["HISTORY.csv"], ["Version", "When", "Who", "Message", "Added", "Changed", "Deleted"],
+                      [[f"v{v.number}", fmt(v.created_at), v.author or "", v.message, v.added, v.changed, v.deleted]
+                       for v in repo.versions.select_related("author")])
             # Tasks, comments, time
             tasks = p.tasks.select_related("assignee", "reviewer", "revision", "created_by").order_by("number")
             w.csv(pbase + ["Tasks.csv"], ["ID", "Title", "Type", "Status", "Priority", "Assignee", "Reviewer", "Revision",

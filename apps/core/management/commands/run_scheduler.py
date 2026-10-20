@@ -72,6 +72,8 @@ def tick(now=None, beat=lambda: None):
         SiteSettings.objects.filter(pk=site.pk).update(last_housekeeping_on=local.date())
         step("trash", lambda: system.purge_trash(site.trash_days))
         step("cleanup", lambda: (system.prune_partials(), export.prune_exports()) and False)
+        from apps.sources import jobs as sources_jobs
+        step("sources cleanup", sources_jobs.gc)
     return done
 
 

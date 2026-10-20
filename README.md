@@ -78,6 +78,7 @@ Each product has a **Hardware** tab that holds everything physical about it.
 - **Check in** files, a folder or a zip from the browser, with a preview of what changes. Every version is kept (v1, v2…) with a message and author.
 - **Compare** any two versions with coloured line-by-line differences (one column or side by side), view code with syntax colours and line links, and download any version as a zip.
 - **Safe teamwork:** a check-in can't overwrite a file someone else changed meanwhile, and KiCad schematics and PCBs are **checked out** before editing so only one person changes them at a time.
+- **KiCad previews:** KiCad 6–9 schematics open as drawings (click a part for its details, click a sheet to open it) and PCBs open in the board viewer. Compare two versions to see which parts, values, footprints, positions and nets changed, side by side with the changes coloured. Drawn by Workbench itself — no KiCad needed on the server.
 - **Into production:** turn a firmware version into a draft firmware release with its source attached, or record which KiCad version a board revision was built from.
 
 ### Firmware management
@@ -303,6 +304,10 @@ If `git pull` complains about local changes, run `git stash` and try again.
 ### Upgrading to 1.4
 
 Version 1.4 adds boards to products. Existing revisions are moved onto a board called **Main board** in each project automatically; rename it, or add more boards, under the project's **Hardware** tab. Updating takes a little longer than usual the first time, because the container installs the 3D converter.
+
+### Upgrading to 1.7
+
+Version 1.7 adds KiCad previews to Sources. Nothing to do on upgrade: previews are drawn when someone opens a file, or in the background after a check-in, and kept in `data/cache/kicad` (safe to delete).
 
 ### Upgrading to 1.6
 

@@ -47,6 +47,8 @@ def tick(now=None, beat=lambda: None):
     from apps.cad import jobs as cad_jobs
     step("3d previews", cad_jobs.tick)
     step("export", export.run_pending)
+    from apps.sources.kicad import render as kicad_render
+    step("kicad previews", kicad_render.prerender)
 
     # Nightly backup: once a day, at or after the chosen hour (so a missed hour — a restart,
     # daylight-saving change or long job — is caught up later that day). A failed attempt is
@@ -74,6 +76,7 @@ def tick(now=None, beat=lambda: None):
         step("cleanup", lambda: (system.prune_partials(), export.prune_exports()) and False)
         from apps.sources import jobs as sources_jobs
         step("sources cleanup", sources_jobs.gc)
+        step("kicad cache", lambda: kicad_render.prune() and False)
     return done
 
 

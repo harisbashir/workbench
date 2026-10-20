@@ -310,10 +310,16 @@ class Command(BaseCommand):
             **{"src/main.c": main_c.replace("    board_init();\n", "    board_init();\n    brownout_enable(2700); /* mV */\n")})
         kicad_repo = Repository.objects.create(project=pwr, board=rev_b.board, name="Power board KiCad", kind=Repository.Kind.KICAD,
                                                created_by=u["sana"], description="KiCad 8 project for the power board.")
+        kicad_dir = Path(__file__).resolve().parents[3] / "sources" / "tests" / "fixtures" / "kicad"
+        sch, buck, board = ((kicad_dir / n).read_text() for n in ("v8_hier.kicad_sch", "v8_buck.kicad_sch", "v8_board.kicad_pcb"))
         put(kicad_repo, u["sana"], "Rev B schematic: USB ESD protection and load switch", 6,
             **{"pwr-board.kicad_pro": '{\n  "meta": {"filename": "pwr-board.kicad_pro", "version": 1}\n}\n',
-               "pwr-board.kicad_sch": '(kicad_sch (version 20231120) (generator "eeschema")\n  (paper "A4")\n)\n',
-               "pwr-board.kicad_pcb": '(kicad_pcb (version 20240108) (generator "pcbnew")\n  (general (thickness 1.6))\n)\n'})
+               "pwr-board.kicad_sch": sch, "buck.kicad_sch": buck, "pwr-board.kicad_pcb": board})
+        for path in ("pwr-board.kicad_sch", "pwr-board.kicad_pcb"):
+            checkin.lock(kicad_repo, path, u["sana"])
+        put(kicad_repo, u["sana"], "R7 to 12k for the new feedback divider, moved closer to U3 (PWR-2)", 2,
+            **{"pwr-board.kicad_sch": sch.replace('"Value" "4.7k"', '"Value" "12k"'),
+               "pwr-board.kicad_pcb": board.replace("(at 10 15 90)", "(at 12 15 90)").replace('"Value" "4.7k"', '"Value" "12k"')})
         checkin.lock(kicad_repo, "pwr-board.kicad_pcb", u["sana"])
         rev_b.source_version = kicad_repo.latest()
         rev_b.save(update_fields=["source_version"])

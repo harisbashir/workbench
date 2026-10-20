@@ -9,7 +9,7 @@
 <div class="actions">
   {% if version %}<a class="btn" href="{% url 'sources:version_zip' project.key repo.slug version.number %}">{% icon 'download' 16 %} Download v{{ version.number }}</a>{% endif %}
   {% if can_edit %}<a class="btn" href="{% url 'sources:repo_edit' project.key repo.slug %}">{% icon 'edit' 16 %} Edit</a>{% endif %}
-  {% block repo_actions %}{% endblock %}
+  {% if can_edit %}<a class="btn btn-primary" href="{% url 'sources:checkin' project.key repo.slug %}{% if version %}?base={{ version.number }}{% endif %}">{% icon 'upload' 16 %} Check in new version</a>{% endif %}
 </div></div>
 
 <div class="grid grid-main">
@@ -24,7 +24,7 @@
       {% for f in files %}<tr><td>{% icon 'file' 16 %} <a href="{% url 'sources:file' project.key repo.slug version.number f.path %}">{{ f.name }}</a>
           {% if f.lock %}<span class="badge lock-badge" title="Checked out by {{ f.lock.user }}">{% icon 'lock' 12 %} {{ f.lock.user }}</span>{% endif %}</td>
         <td class="small muted nowrap">{{ f.blob.size|filesizeformat }}</td>
-        <td class="right nowrap">{% block file_actions %}{% endblock %}</td></tr>{% endfor %}
+        <td class="right nowrap">{% if can_edit and is_latest %}{% if f.lock %}{% if f.lock.user_id == user.pk or can_manage %}<form class="inline" method="post" action="{% url 'sources:lock' project.key repo.slug %}">{% csrf_token %}<input type="hidden" name="path" value="{{ f.path }}"><input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="btn btn-sm btn-ghost" name="action" value="{% if f.lock.user_id == user.pk %}unlock{% else %}break{% endif %}"{% if f.lock.user_id != user.pk %} data-confirm="Release {{ f.lock.user }}'s check-out of {{ f.name }}? They'll be told."{% endif %}>{% icon 'lock-open' 14 %} Release</button></form>{% endif %}{% elif f.lockable %}<form class="inline" method="post" action="{% url 'sources:lock' project.key repo.slug %}">{% csrf_token %}<input type="hidden" name="path" value="{{ f.path }}"><input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="btn btn-sm" name="action" value="lock">{% icon 'lock' 14 %} Check out</button></form>{% endif %}{% endif %}</td></tr>{% endfor %}
     </tbody></table></div>
     {% else %}<div class="card-body muted">Nothing checked in yet.{% if can_edit %} Check in the files to make version 1.{% endif %}</div>{% endif %}
   </div>
@@ -34,7 +34,7 @@
   <div class="card"><div class="card-head"><h3>History</h3></div><div class="card-body">
     {% for h in history %}<div class="history-row{% if version and h.number == version.number %} current{% endif %}">
       <div><a href="{{ h.get_absolute_url }}"><strong>v{{ h.number }}</strong></a> {{ h.message }}</div>
-      <div class="small muted">{{ h.author|default:"—" }} · {{ h.created_at|naturaltime }} · <span class="ok-text">+{{ h.lines_added }}</span> <span class="overdue">−{{ h.lines_removed }}</span>{% if h.number > 1 %} · <a href="{% url 'sources:compare' project.key repo.slug %}?a={{ h.number|add:'-1' }}&amp;b={{ h.number }}">Changes</a>{% endif %}{% block history_actions %}{% endblock %}</div>
+      <div class="small muted">{{ h.author|default:"—" }} · {{ h.created_at|naturaltime }} · <span class="ok-text">+{{ h.lines_added }}</span> <span class="overdue">−{{ h.lines_removed }}</span>{% if h.number > 1 %} · <a href="{% url 'sources:compare' project.key repo.slug %}?a={{ h.number|add:'-1' }}&amp;b={{ h.number }}">Changes</a>{% endif %}</div>
     </div>{% empty %}<p class="muted small">No versions yet.</p>{% endfor %}
   </div></div>
   {% if locks %}<div class="card"><div class="card-head"><h3>{% icon 'lock' 16 %} Checked out</h3></div><div class="card-body">

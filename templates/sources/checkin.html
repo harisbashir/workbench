@@ -1,0 +1,31 @@
+{% extends "base.html" %}{% load workbench static %}
+{% block title %}Check in · {{ repo.name }}{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles">
+  <div class="crumbs"><a href="{% url 'sources:project' project.key %}">Sources</a> / <a href="{{ repo.get_absolute_url }}">{{ repo.name }}</a> /</div>
+  <h1>{% icon 'upload' 22 %} Check in a new version</h1>
+  <p class="intro">Upload changed files, a whole folder, or a zip. You'll see what changes before anything is saved.</p>
+</div></div>
+<div class="card form-card"><div class="card-body">
+  <form method="post" enctype="multipart/form-data" data-checkin-form>{% csrf_token %}
+    <input type="hidden" name="base" value="{{ base }}">
+    <div class="field"><label class="field-label" for="ci-files">Files or zips</label>
+      <input id="ci-files" type="file" name="files" multiple>
+      <p class="help">A zip is unpacked, keeping its folders. Tick below to keep it as one file instead.</p></div>
+    <div class="field"><label class="field-label" for="ci-folder">Or a whole folder</label>
+      <input id="ci-folder" type="file" name="files" multiple webkitdirectory data-folder-input>
+      <p class="help">Keeps the folder structure. Up to 1,000 files at a time; use a zip for more.</p></div>
+    <div class="field"><label class="field-label" for="ci-into">Put loose files in this folder</label>
+      <input id="ci-into" type="text" name="into" placeholder="e.g. src/drivers (leave empty for the top level)"></div>
+    <div class="field"><span class="field-label">What should happen to files you don't upload?</span>
+      <label class="check-label"><input type="radio" name="mode" value="update" checked> Keep them — I'm only adding or changing these files</label>
+      <label class="check-label"><input type="radio" name="mode" value="replace"> Delete them — this upload is the whole repository</label></div>
+    <label class="check-label"><input type="checkbox" name="keep_zips" value="1"> Keep zip files as zips</label>
+    <p class="help">You're checking in on top of {% if base %}v{{ base }}{% else %}an empty repository{% endif %}. If someone changed the same files since then, Workbench will tell you instead of overwriting their work. The limit is {{ max_mb }} MB per check-in.</p>
+    <div class="upload-progress hidden" data-progress><div class="progress"><span class="w-0" data-bar></span></div><span class="small" data-status></span></div>
+    <div class="form-actions"><button class="btn btn-primary">Upload and preview</button>
+      <a class="btn btn-ghost" href="{{ repo.get_absolute_url }}">Cancel</a></div>
+  </form>
+</div></div>
+<script src="{% static 'js/sources.js' %}" defer></script>
+{% endblock %}

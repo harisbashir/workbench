@@ -1,0 +1,32 @@
+{% extends "base.html" %}{% load workbench %}
+{% block title %}Preview check-in · {{ repo.name }}{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles">
+  <div class="crumbs"><a href="{% url 'sources:project' project.key %}">Sources</a> / <a href="{{ repo.get_absolute_url }}">{{ repo.name }}</a> /</div>
+  <h1>Check in v{{ plan.latest|add:1 }}?</h1>
+  <p class="intro"><span class="ok-text">{{ plan.added|length }} new</span> · {{ plan.changed|length }} changed · <span class="overdue">{{ plan.deleted|length }} deleted</span> · {{ plan.unchanged|length }} unchanged{% if draft.ignored %} · {{ draft.ignored }} ignored (backups, caches, .git){% endif %}</p>
+</div></div>
+{% if error %}<div class="alert alert-warning">{{ error }}</div>{% endif %}
+{% if plan.refused or intake_refused %}<div class="card"><div class="card-head"><h3>{% icon 'alert' 16 %} Can't be checked in</h3></div><div class="table-wrap"><table class="table"><tbody>
+  {% for path, reason in plan.refused %}<tr class="row-bad"><td class="mono small">{{ path }}</td><td class="small">{{ reason }}</td></tr>{% endfor %}
+  {% for path, reason in intake_refused %}<tr><td class="mono small">{{ path }}</td><td class="small">{{ reason }}</td></tr>{% endfor %}
+</tbody></table></div></div>{% endif %}
+<div class="grid grid-main">
+  <div class="card"><div class="card-head"><h3>Changes</h3></div><div class="table-wrap"><table class="table"><tbody>
+    {% for p in plan.added %}<tr><td><span class="badge badge-success">new</span></td><td class="mono small">{{ p }}</td></tr>{% endfor %}
+    {% for p in plan.changed %}<tr><td><span class="badge badge-review">changed</span></td><td class="mono small">{{ p }}</td></tr>{% endfor %}
+    {% for p in plan.deleted %}<tr><td><span class="badge badge-failure">deleted</span></td><td class="mono small">{{ p }}</td></tr>{% endfor %}
+    {% if not plan.has_changes %}<tr><td colspan="2" class="muted">Nothing would change.</td></tr>{% endif %}
+  </tbody></table></div></div>
+  <div class="card"><div class="card-body">
+    <form method="post">{% csrf_token %}
+      <div class="field"><label class="field-label" for="ci-msg">What changed?</label>
+        <input id="ci-msg" type="text" name="message" maxlength="300" value="{{ message }}" placeholder="e.g. Fix ADC calibration (PWR-12)" required></div>
+      {% if plan.refused %}<label class="check-label"><input type="checkbox" name="allow_partial" value="1"> Check in the other files without these</label>{% endif %}
+      <label class="check-label"><input type="checkbox" name="release_locks" value="1" checked> Release my check-outs of these files</label>
+      <div class="form-actions"><button class="btn btn-primary"{% if not plan.has_changes %} disabled{% endif %}>Check in</button>
+        <a class="btn btn-ghost" href="{{ repo.get_absolute_url }}">Cancel</a></div>
+    </form>
+  </div></div>
+</div>
+{% endblock %}

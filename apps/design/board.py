@@ -244,6 +244,21 @@ def render_board(entries, prefix="g", budget=None):
             warnings.append("The board outline isn't a closed shape, so the board is drawn as a rectangle.")
         shape = (f"M{f(frame.minx)} {f(frame.miny)}H{f(frame.maxx)}V{f(frame.maxy)}H{f(frame.minx)}Z")
 
+    result = assemble(layers, shape, frame, warnings, job, prefix=prefix, has_outline=bool(outline))
+    result["unused"] = [n for n, d in files if looks_like(n, d) is None]
+    return result
+
+
+
+def assemble(layers, shape, frame, warnings, job=None, prefix="g", has_outline=True, overlay=""):
+    """Build the board picture (top, bottom and layer views) and its facts from drawn layers.
+
+    Shared by the Gerber viewer and the KiCad PCB preview in Sources. `layers` are LayerData
+    objects with kind/side/n/label/index set; `shape` is the board outline as SVG path data and
+    `frame` its BBox (Y up, millimetres)."""
+    def pick(kind, side=None):
+        return [L for L in layers if L.kind == kind and (side is None or L.side == side)]
+
     view = BBox()
     view.merge(frame)
     for L in layers:
@@ -314,6 +329,8 @@ def render_board(entries, prefix="g", budget=None):
         layer_rows.insert(0, {"id": L.index, "file": L.filename, "label": L.label, "kind": L.kind, "side": L.side,
                            "colour": colour, "shown": L.kind not in ("paste", "other")})
     views["layers"] = f'<g data-view="layers">{"".join(layer_uses)}</g>'
+    if overlay:  # drawn in every view, inside the bottom view's mirror so it lines up there too
+        views = {k: v[:-4] + overlay + "</g>" for k, v in views.items()}
 
     # --- facts -------------------------------------------------------------
     copper = pick("copper")
@@ -334,7 +351,7 @@ def render_board(entries, prefix="g", budget=None):
         "min_trace": round(min(traces), 3) if traces else None,
         "pads_top": sum(L.stats["flashes"] for L in pick("copper", "top")),
         "pads_bottom": sum(L.stats["flashes"] for L in pick("copper", "bottom")),
-        "has_outline": bool(outline),
+        "has_outline": has_outline,
         "sides": [s for s in ("top", "bottom") if pick("copper", s) or pick("silk", s)],
     }
     specs = (job or {}).get("GeneralSpecs", {})
@@ -362,7 +379,6 @@ def render_board(entries, prefix="g", budget=None):
         "info": info,
         "warnings": warnings[:30],
         "files": [{"file": L.filename, "label": L.label} for L in layers],
-        "unused": [n for n, d in files if looks_like(n, d) is None],
     }
 
 

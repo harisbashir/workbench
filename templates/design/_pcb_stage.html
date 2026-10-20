@@ -1,0 +1,26 @@
+{% load workbench %}  <div class="card pcb-stage">
+    <div class="pcb-toolbar">
+      <div class="seg" role="group" aria-label="View">
+        <button type="button" class="active" data-set-view="top">Top</button>
+        <button type="button" data-set-view="bottom">Bottom</button>
+        <button type="button" data-set-view="layers">{% icon 'layers' 14 %} Layers</button>
+      </div>
+      <div class="seg" role="group" aria-label="Zoom">
+        <button type="button" data-zoom="out" aria-label="Zoom out">−</button>
+        <button type="button" data-zoom="fit">Fit</button>
+        <button type="button" data-zoom="in" aria-label="Zoom in">+</button>
+      </div>
+      <button type="button" class="btn btn-sm" data-measure aria-pressed="false">Measure</button>
+      <span class="pcb-coords mono small" data-coords aria-live="off"></span>
+    </div>
+    <div class="pcb-canvas" data-pcb-canvas data-src="{{ src }}">
+      <div class="pcb-loading">Drawing the board…</div>
+    </div>
+    <div class="pcb-foot">
+      <span class="small muted">Solder mask</span>
+      <span class="swatches">{% for name, colour in masks %}<button type="button" class="swatch swatch-{{ name }}{% if forloop.first %} active{% endif %}" data-mask="{{ name }}" aria-label="{{ name|capfirst }} solder mask" title="{{ name|capfirst }}"></button>{% endfor %}</span>
+      <span class="small muted">Finish</span>
+      <span class="seg seg-sm"><button type="button" class="active" data-finish="hasl">HASL</button><button type="button" data-finish="enig">ENIG</button></span>
+    </div>
+  </div>
+

@@ -305,6 +305,10 @@ If `git pull` complains about local changes, run `git stash` and try again.
 
 Version 1.4 adds boards to products. Existing revisions are moved onto a board called **Main board** in each project automatically; rename it, or add more boards, under the project's **Hardware** tab. Updating takes a little longer than usual the first time, because the container installs the 3D converter.
 
+### Upgrading to 1.8
+
+Version 1.8 draws KiCad files over 50 MB in the background (in a separate process with the limits above) and stops pre-release firmware (`1.2.0-rc.1`) from being released for production. Nothing to do on upgrade; previews are drawn again once. Pre-releases that were already released keep their status.
+
 ### Upgrading to 1.7
 
 Version 1.7 adds KiCad previews to Sources. Nothing to do on upgrade: previews are drawn when someone opens a file, or in the background after a check-in, and kept in `data/cache/kicad` (safe to delete). Version 1.7.1 stores previews in a new layout, so they're drawn again once after updating.
@@ -335,6 +339,7 @@ Most settings are made in the app (**System & backups**). A few server settings 
 | `WORKBENCH_CURRENCY` | `USD` | Currency for part costs, BOM costs and stock value (suppliers can be in other currencies) |
 | `WORKBENCH_MAX_UPLOAD_MB` | `2000` | Ceiling for *Largest upload* in System & backups (the HTTPS proxy accepts up to 2 GB) |
 | `WORKBENCH_CAD_TIMEOUT` / `WORKBENCH_CAD_MEMORY_MB` / `WORKBENCH_CAD_WORKERS` | `300` / `2048` / `2` | Limits for converting 3D files: seconds and memory per file, conversions at once |
+| `WORKBENCH_KICAD_TIMEOUT` / `WORKBENCH_KICAD_MEMORY_MB` | `600` / `3072` | Limits for drawing large KiCad files (50–200 MB) in the background: seconds and memory per file. An 85 MB board needs about 20 s and 1.3 GB |
 | `WORKBENCH_WORKERS` | `3` | Web server processes (each runs 4 threads) |
 | `WORKBENCH_TIME_ZONE` | `UTC` | Server default time zone (the company time zone is set in the app) |
 | `WORKBENCH_SESSION_HOURS` | `12` | How long people stay signed in |

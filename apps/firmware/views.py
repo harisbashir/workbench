@@ -296,6 +296,9 @@ def release_status(request, key, slug, version):
     if rel.status not in allowed_from:
         messages.error(request, f"A {rel.get_status_display().lower()} release can't be moved to {action}.")
         return redirect(rel)
+    if action == "released" and rel.is_prerelease:
+        messages.error(request, rel.PRERELEASE_MESSAGE.format(version=rel.version, final=rel.final_version))
+        return redirect(rel)
     if action == "released":
         problems = []
         if not rel.artifacts.exists():

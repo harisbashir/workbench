@@ -14,7 +14,10 @@
   <a class="btn" href="{% url 'sources:file' project.key repo.slug version.number path %}?raw=1">{% icon 'download' 16 %} Download</a>
 </div></div>
 
-{% if not result.ok %}
+{% if result.pending %}
+<div class="card"><div class="empty">{% icon 'clock' 36 %}<h3>Drawing in the background</h3><p>{{ result.error }}</p>
+  <p class="small">Meanwhile you can <a href="{% url 'sources:file' project.key repo.slug version.number path %}?text=1">view it as text</a> or download it.</p></div></div>
+{% elif not result.ok %}
 <div class="card"><div class="empty">{% icon 'alert' 36 %}<h3>This file can't be drawn</h3><p>{{ result.error }}</p>
   <p class="small">The file can't be read as a KiCad 6–9 {% if kind == 'pcb' %}PCB{% else %}schematic{% endif %}. You can still <a href="{% url 'sources:file' project.key repo.slug version.number path %}?text=1">view it as text</a>.</p></div></div>
 {% elif kind == 'pcb' %}

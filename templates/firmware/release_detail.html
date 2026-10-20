@@ -47,7 +47,9 @@
       {% if rel.status == 'draft' and can_edit %}<form method="post" action="{% url 'firmware:release_status' project.key fw.slug rel.version %}">{% csrf_token %}<button class="btn btn-primary" name="action" value="testing">Send to testing</button></form><p></p>{% endif %}
       {% if rel.status == 'testing' and can_edit %}<form method="post" action="{% url 'firmware:release_status' project.key fw.slug rel.version %}">{% csrf_token %}<button class="btn btn-sm btn-ghost" name="action" value="draft">Back to draft</button></form>{% endif %}
       {% if can_approve %}
-        {% if rel.status == 'draft' or rel.status == 'testing' %}
+        {% if rel.is_prerelease and rel.status == 'draft' or rel.is_prerelease and rel.status == 'testing' %}
+          <p class="small muted">This is a pre-release, for testing only, so it can't be released for production. When it's ready, make release <span class="mono">{{ rel.final_version }}</span> with the same files and release that.</p>
+        {% elif rel.status == 'draft' or rel.status == 'testing' %}
           <form method="post" action="{% url 'firmware:release_status' project.key fw.slug rel.version %}" data-confirm="Release {{ fw.name }} {{ rel.version }} for production? Its files will be locked.">{% csrf_token %}
             <input type="text" name="note" maxlength="300" placeholder="Approval note, e.g. passed 48 h soak test" aria-label="Approval note"><p></p>
             <button class="btn btn-primary" name="action" value="released">{% icon 'check' 16 %} Approve and release</button></form>

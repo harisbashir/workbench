@@ -183,3 +183,15 @@ class UprightTextTests(SimpleTestCase):
     def test_sideways_reference_keeps_its_angle(self):
         angles = [float(a) % 360 for a, _ in self.rotations(pcb.render_pcb(PCB)["svg"], "R7")]
         self.assertEqual(angles, [270.0])
+
+
+class PcbFactsTests(TempCache, TestCase):
+    def test_pcb_facts_do_not_carry_a_second_drawing(self):
+        f = make_repo(kind="kicad")
+        commit(f.repo, f.eng, **{"pwr.kicad_pcb": PCB})
+        blob = f.repo.latest().files.get(path="pwr.kicad_pcb").blob
+        meta = render.render_blob(blob, "pwr.kicad_pcb", svg=False)
+        self.assertTrue(meta["ok"])
+        self.assertNotIn("thumb_top", meta)
+        for p in render.cache_dir().glob("*.json"):
+            self.assertNotIn("<svg", p.read_text())

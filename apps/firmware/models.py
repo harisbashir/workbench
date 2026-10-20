@@ -174,6 +174,15 @@ class FirmwareRelease(models.Model):
         return bool(parse_version(self.version)[3])
 
     @property
+    def final_version(self):
+        """The version this pre-release leads to: 1.2.0 for 1.2.0-rc.1."""
+        major, minor, patch, _ = parse_version(self.version)
+        return f"{major}.{minor}.{patch}"
+
+    PRERELEASE_MESSAGE = ("{version} is a pre-release, for testing only, so it can't be released for production. "
+                          "When it's ready, make release {final} with the same files and release that.")
+
+    @property
     def status_help(self):
         return self.STATUS_HELP.get(self.status, "")
 

@@ -1,0 +1,167 @@
+"""Turning an upload (loose files, a folder or zips) into checked file paths and stored contents.
+
+Everything here treats the upload as hostile: paths can't leave the repository, zips can't
+unpack into something enormous, and file types that could run in a browser are refused.
+"""
+import os
+import re
+import stat
+import zipfile
+from dataclasses import dataclass, field
+
+from django.conf import settings
+
+from apps.core.models import SiteSettings
+from apps.files.models import BLOCKED_EXTENSIONS
+
+from . import blobs
+
+MAX_FILES = 5000
+MAX_PATH = 400
+MAX_RATIO = 100              # unpacked size / compressed size, for entries over 1 MB
+MB = 1024 * 1024
+
+IGNORED_DIRS = {".git", "__pycache__", "__MACOSX", ".svn", ".hg"}
+IGNORED_NAMES = {".DS_Store", "Thumbs.db", "desktop.ini", "fp-info-cache"}
+IGNORED_RE = re.compile(r"(^_autosave-|^~.*\.lck$|\.kicad_prl$|^#auto_saved_files#$)")
+
+
+def normalise_path(raw):
+    """A clean relative path ("src/main.c"), or None if it could escape the repository or is unusable."""
+    if not raw or "\x00" in raw or len(raw) > MAX_PATH or raw.endswith(("/", "\\")):
+        return None
+    p = raw.replace("\\", "/")
+    while p.startswith("./"):
+        p = p[2:]
+    parts = [s for s in p.split("/") if s]
+    if not parts or re.match(r"^[A-Za-z]:", parts[0]):
+        return None
+    if any(s in (".", "..") or s != s.strip() for s in parts):
+        return None
+    return "/".join(parts)
+
+
+def is_ignored(path):
+    parts = path.split("/")
+    if any(p in IGNORED_DIRS or p.endswith("-backups") for p in parts[:-1]):
+        return True
+    name = parts[-1]
+    return name in IGNORED_NAMES or bool(IGNORED_RE.search(name)) or name.startswith("._")
+
+
+def file_limit():
+    return SiteSettings.load().max_upload_mb * MB
+
+
+def total_limit():
+    return settings.MAX_UPLOAD_MB * MB
+
+
+@dataclass
+class Intake:
+    files: dict = field(default_factory=dict)      # path -> Blob
+    refused: list = field(default_factory=list)    # [(path, reason)]
+    ignored: int = 0
+    total: int = 0
+    _lower: dict = field(default_factory=dict)
+    _full: bool = False
+
+    def refuse(self, path, reason):
+        self.refused.append((path, reason))
+
+    def check(self, path, size):
+        """Whether a file at `path` of `size` bytes may be added. Records refusals."""
+        if path is None:
+            return False
+        if is_ignored(path):
+            self.ignored += 1
+            return False
+        ext = os.path.splitext(path)[1].lower()
+        if ext in BLOCKED_EXTENSIONS:
+            self.refuse(path, f"Files of type {ext} can't be checked in for security reasons. Zip them first.")
+            return False
+        if len(self.files) >= MAX_FILES:
+            if not self._full:
+                self.refuse(path, f"A check-in can have at most {MAX_FILES:,} files. Check the rest in separately.")
+                self._full = True
+            return False
+        if self.total + size > total_limit():
+            self.refuse(path, f"The check-in is too large (over {settings.MAX_UPLOAD_MB} MB). Check it in in parts.")
+            return False
+        return True
+
+    def add(self, path, blob):
+        key = path.lower()
+        earlier = self._lower.get(key)
+        if earlier is not None:
+            self.total -= self.files.pop(earlier).size
+            self.refuse(earlier, "Listed twice in this upload (names differing only in capitals count as the same); the later one is kept.")
+        self._lower[key] = path
+        self.files[path] = blob
+        self.total += blob.size
+
+
+def _join(into, name):
+    return normalise_path(f"{into}/{name}" if into else name)
+
+
+def _take_zip(result, upload, into):
+    try:
+        z = zipfile.ZipFile(upload)
+    except zipfile.BadZipFile:
+        result.refuse(upload.name, "This zip can't be read.")
+        return
+    with z:
+        for info in z.infolist():
+            if info.is_dir():
+                continue
+            raw = info.filename
+            mode = info.external_attr >> 16
+            if stat.S_ISLNK(mode):
+                result.refuse(raw, "Links inside zips aren't allowed.")
+                continue
+            path = _join(into, raw)
+            if path is None:
+                result.refuse(raw, "This path isn't allowed (it could point outside the repository).")
+                continue
+            if info.file_size > MB and info.file_size > MAX_RATIO * max(info.compress_size, 1):
+                result.refuse(path, "This file unpacks to far more than its compressed size, so it was left out.")
+                continue
+            if not result.check(path, info.file_size):
+                continue
+            if info.file_size > file_limit():
+                result.refuse(path, f"Larger than the {file_limit() // MB} MB limit for one file.")
+                continue
+            try:
+                with z.open(info) as fh:
+                    blob = blobs.store(fh, min(file_limit(), total_limit() - result.total), name=path)
+            except ValueError as exc:
+                result.refuse(path, str(exc))
+                continue
+            except (zipfile.BadZipFile, NotImplementedError, RuntimeError, EOFError, OSError) as exc:
+                result.refuse(path, f"Couldn't be read from the zip ({exc}).")
+                continue
+            result.add(path, blob)
+
+
+def take(uploads, into="", keep_zips=False):
+    """uploads: [(relative path or file name, UploadedFile)]. Returns an Intake."""
+    result = Intake()
+    into = (normalise_path(into) or "") if into else ""
+    for name, upload in uploads:
+        if name.lower().endswith(".zip") and not keep_zips:
+            _take_zip(result, upload, into)
+            continue
+        path = _join(into, name)
+        if path is None:
+            result.refuse(name, "This path isn't allowed (it could point outside the repository).")
+            continue
+        if not result.check(path, upload.size):
+            continue
+        try:
+            blob = blobs.store(upload, file_limit(), name=path)
+        except ValueError as exc:
+            result.refuse(path, str(exc))
+            continue
+        result.add(path, blob)
+    return result

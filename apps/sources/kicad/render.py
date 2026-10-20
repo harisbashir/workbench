@@ -3,6 +3,7 @@
 The cache lives in <data>/cache/kicad and can be deleted at any time; it's rebuilt as needed.
 The scheduler pre-draws files from recent check-ins so pages open quickly.
 """
+import gzip
 import hashlib
 import json
 import logging
@@ -73,13 +74,33 @@ def _cache_file(sha, kind, extra=""):
 
 
 def _read(target, svg=True):
+    """Cached facts, with the drawing (svg=True), or just where the drawing is (svg="path": "svg_path";
+    a compressed copy may be beside it at svg_path + ".gz")."""
     try:
         data = json.loads(target.read_text())
-        if svg and data.get("ok"):
+        if svg == "path" and data.get("ok"):
+            drawing = target.with_suffix(".svg")
+            if not drawing.exists():
+                return None
+            data["svg_path"] = str(drawing)
+        elif svg and data.get("ok"):
             data["svg"] = target.with_suffix(".svg").read_text()
         return data
     except (OSError, ValueError):
         return None
+
+
+def _compress(drawing):
+    """Keep a compressed copy beside a cached drawing; browsers get it instead (often 10–20 times smaller)."""
+    gz = drawing.with_name(drawing.name + ".gz")
+    tmp = gz.with_name(f"{gz.name}.{os.getpid()}.{time.monotonic_ns()}.partial")
+    try:
+        with open(drawing, "rb") as src, gzip.open(tmp, "wb", compresslevel=6) as dst:
+            shutil.copyfileobj(src, dst, MB)
+        os.replace(tmp, gz)
+    except OSError:
+        tmp.unlink(missing_ok=True)
+        log.warning("Couldn't compress KiCad preview %s", drawing)
 
 
 def _load(blob):
@@ -140,9 +161,12 @@ def render_blob(blob, path, highlight=None, extra="", use_cache=True, model=None
     if use_cache and lasting:
         if result.get("ok"):
             _write(target.with_suffix(".svg"), result["svg"])
+            _compress(target.with_suffix(".svg"))
         _write(target, {k: v for k, v in result.items() if k != "svg"})
     log.debug("Drew %s in %.2f s", path, time.monotonic() - started)
-    if not svg:
+    if svg == "path" and use_cache and lasting and result.get("ok") and target.with_suffix(".svg").exists():
+        result = {**{k: v for k, v in result.items() if k != "svg"}, "svg_path": str(target.with_suffix(".svg"))}
+    elif not svg:
         result = {k: v for k, v in result.items() if k != "svg"}
     return result
 
@@ -171,13 +195,13 @@ def compare_blobs(old, new, path):
     return summary
 
 
-def highlighted(blob, other, path, older):
+def highlighted(blob, other, path, older, svg=True):
     """`blob` drawn with what changed against `other` highlighted. `older`: `other` is the earlier version."""
     kind = kind_of(path)
     if blob.size > MAX_BYTES or other.size > MAX_BYTES:
-        return render_blob(blob, path)  # large files are shown without highlights
+        return render_blob(blob, path, svg=svg)  # large files are shown without highlights
     extra = f"vs-{other.sha256[:16]}-{'new' if older else 'old'}"
-    cached = _read(_cache_file(blob.sha256, kind, extra))
+    cached = _read(_cache_file(blob.sha256, kind, extra), svg)
     if cached is not None:
         return cached
     try:
@@ -185,7 +209,7 @@ def highlighted(blob, other, path, older):
     except KicadError as exc:
         return {"ok": False, "error": str(exc)}
     highlight = summary["highlight_b"] if older else summary["highlight_a"]
-    return render_blob(blob, path, highlight=highlight, extra=extra)
+    return render_blob(blob, path, highlight=highlight, extra=extra, svg=svg)
 
 
 # --- large files -----------------------------------------------------------------------
@@ -250,6 +274,7 @@ def draw_large(blob, path):
             if result.get("ok"):
                 try:
                     os.replace(os.path.join(tmp, "drawing.svg"), target.with_suffix(".svg"))
+                    _compress(target.with_suffix(".svg"))
                 except OSError:
                     result = {"ok": False, "error": "Something in this file couldn't be drawn. You can still view it as text."}
     _write(target, result)
@@ -368,10 +393,10 @@ def prune(days=30):
                     shutil.rmtree(p, ignore_errors=True)
                 continue
             last = max(st.st_atime, st.st_mtime)
-            if (p.suffix == ".partial" and st.st_mtime < now - 3600) or (p.suffix in (".json", ".svg") and last < cutoff):
+            if (p.suffix == ".partial" and st.st_mtime < now - 3600) or (p.suffix in (".json", ".svg", ".gz") and last < cutoff):
                 p.unlink()
                 removed += 1
-            elif p.suffix in (".json", ".svg") and not p.name.startswith("want-"):
+            elif p.suffix in (".json", ".svg", ".gz") and not p.name.startswith("want-"):
                 kept.append((last, st.st_size, p))
         except OSError:
             pass

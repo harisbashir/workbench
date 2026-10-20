@@ -13,9 +13,10 @@ from django.core.exceptions import PermissionDenied
 from django.core.files import File
 from django.db import IntegrityError, transaction
 from django.db.models import Prefetch
-from django.http import Http404, HttpResponse, JsonResponse
+from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils.cache import patch_vary_headers
 from django.utils.http import url_has_allowed_host_and_scheme
 from urllib.parse import quote as urlquote
 from django.views.decorators.http import require_POST
@@ -536,21 +537,44 @@ def kicad_svg(request, key, slug, v, path):
         if other_vf is None:
             raise Http404("That file isn't in the other version.")
         try:
-            result = kicad_render.highlighted(vf.blob, other_vf.blob, path, older=int(other) < version.number)
+            result = kicad_render.highlighted(vf.blob, other_vf.blob, path, older=int(other) < version.number, svg="path")
         except Exception:
             log.exception("Couldn't compare %s", path)
-            result = kicad_render.render_blob(vf.blob, path)
+            result = kicad_render.render_blob(vf.blob, path, svg="path")
     else:
         tree = checkin.tree(version)
         trail = [p for p in request.GET.get("trail", "").split(",") if p and p in tree][:20]
         _, options = _instance(request, tree, path, trail, kicad_render.render_blob(vf.blob, path, svg=False))
-        result = kicad_render.render_blob(vf.blob, path, **options)
+        result = kicad_render.render_blob(vf.blob, path, svg="path", **options)
     if not result.get("ok"):
         raise Http404(result.get("error", ""))
-    resp = HttpResponse(result["svg"], content_type="image/svg+xml; charset=utf-8")
+    resp = _svg_response(request, result) or _svg_response(request, kicad_render.render_blob(vf.blob, path, use_cache=False))
     resp["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
     resp["X-Content-Type-Options"] = "nosniff"
     return resp
+
+
+def _svg_response(request, result):
+    """The drawing from the cache (compressed when the browser accepts it) or from memory; None if the cached
+    file went missing meanwhile."""
+    ctype = "image/svg+xml; charset=utf-8"
+    if "svg" in result:
+        return HttpResponse(result["svg"], content_type=ctype)
+    drawing = result.get("svg_path", "")
+    gz = drawing + ".gz"
+    wants_gzip = "gzip" in request.headers.get("Accept-Encoding", "")
+    for name, encoded in ((gz, True), (drawing, False)) if wants_gzip else ((drawing, False),):
+        try:
+            fh = open(name, "rb")
+        except OSError:
+            continue
+        resp = FileResponse(fh, content_type=ctype)
+        resp.headers.pop("Content-Disposition", None)
+        if encoded:
+            resp["Content-Encoding"] = "gzip"
+        patch_vary_headers(resp, ["Accept-Encoding"])
+        return resp
+    return None
 
 
 def _compare_models(repo, path, a_num, b_num):

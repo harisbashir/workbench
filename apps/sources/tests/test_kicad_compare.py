@@ -93,9 +93,9 @@ class CompareViewTests(TestCase):
     def test_highlighted_svg(self):
         svg = reverse("sources:kicad_svg", args=["PWR", self.f.repo.slug, 2, "pwr.kicad_sch"])
         r = self.c.get(svg + "?compare=1")
-        self.assertIn(b"hl-changed", r.content)
+        self.assertIn(b"hl-changed", r.getvalue())
         r = self.c.get(reverse("sources:kicad_svg", args=["PWR", self.f.repo.slug, 2, "pwr.kicad_pcb"]) + "?compare=1")
-        self.assertIn(b"hl-changed", r.content)
+        self.assertIn(b"hl-changed", r.getvalue())
 
     def test_compare_links(self):
         page = self.c.get(reverse("sources:kicad", args=["PWR", self.f.repo.slug, 2, "pwr.kicad_sch"])).content.decode()

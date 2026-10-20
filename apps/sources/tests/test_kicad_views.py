@@ -57,9 +57,9 @@ class KicadViewTests(TestCase):
         r = self.c.get(self.url("kicad_svg", "pwr.kicad_sch"))
         self.assertEqual(r["Content-Type"], "image/svg+xml; charset=utf-8")
         self.assertIn("sandbox", r["Content-Security-Policy"])
-        self.assertIn(b'data-ref="R1"', r.content)
+        self.assertIn(b'data-ref="R1"', r.getvalue())
         r = self.c.get(self.url("kicad_svg", "pwr.kicad_pcb"))
-        self.assertIn(b'data-view="top"', r.content)
+        self.assertIn(b'data-view="top"', r.getvalue())
 
     def test_render_is_cached(self):
         self.c.get(self.url("kicad_svg", "pwr.kicad_sch"))

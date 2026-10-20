@@ -66,8 +66,8 @@ class RenderSafetyTests(TestCase):
         return reverse("sources:kicad_svg", args=["PWR", self.f.repo.slug, v, path])
 
     def test_compare_panes_use_different_ids(self):
-        a = self.c.get(self.svg_url(1, "pwr.kicad_pcb") + "?compare=2").content
-        b = self.c.get(self.svg_url(2, "pwr.kicad_pcb") + "?compare=1").content
+        a = self.c.get(self.svg_url(1, "pwr.kicad_pcb") + "?compare=2").getvalue()
+        b = self.c.get(self.svg_url(2, "pwr.kicad_pcb") + "?compare=1").getvalue()
         ids = lambda s: {x.split(b'"')[0] for x in s.split(b' id="')[1:]}  # noqa: E731
         self.assertFalse(ids(a) & ids(b))
 

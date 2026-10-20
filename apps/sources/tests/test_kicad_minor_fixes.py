@@ -54,7 +54,7 @@ class CacheSplitTests(TempCache, TestCase):
         self.assertNotIn("svg", meta)
         self.assertIn("R7", [p["ref"] for p in meta["parts"]])
         files = {p.suffix for p in render.cache_dir().iterdir()}
-        self.assertEqual(files, {".json", ".svg"})
+        self.assertEqual(files, {".json", ".svg", ".gz"})
         for p in render.cache_dir().glob("*.json"):
             self.assertNotIn("<svg", p.read_text())
         self.assertIn("<svg", render.render_blob(self.vf.blob, "pwr.kicad_sch")["svg"])
@@ -69,7 +69,7 @@ class CacheSplitTests(TempCache, TestCase):
         c = signed_in(self.f.eng)
         self.assertContains(c.get(reverse("sources:kicad", args=["PWR", self.f.repo.slug, 1, "pwr.kicad_sch"])), "R7")
         r = c.get(reverse("sources:kicad_svg", args=["PWR", self.f.repo.slug, 1, "pwr.kicad_sch"]))
-        self.assertIn(b"<svg", r.content)
+        self.assertIn(b"<svg", r.getvalue())
 
     def test_prune_removes_drawings_too(self):
         render.render_blob(self.vf.blob, "pwr.kicad_sch")
@@ -158,7 +158,7 @@ class InstanceViewTests(TempCache, TestCase):
         self.assertIn("U13", child)
         self.assertNotIn(">U3<", child)
         svg_url = unquote(re.search(r'data-svg-url="([^"]+)"|src="([^"]*svg[^"]*)"', child).group(0).split('"')[1]).replace("&amp;", "&")
-        self.assertIn(b"U13", self.c.get(svg_url).content)
+        self.assertIn(b"U13", self.c.get(svg_url).getvalue())
 
     def test_crumbs_keep_the_copy(self):
         child = self.page("buck.kicad_sch", f"?trail=pwr.kicad_sch&inst={ROOT}/{SHEET2}")

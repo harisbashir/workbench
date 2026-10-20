@@ -6,6 +6,7 @@ its top/bottom/layer views, solder-mask colours and measuring tool. Coordinates 
 to Y-up like Gerbers. Fonts, pad shapes like trapezoids and custom pads are simplified.
 """
 import math
+import re
 from dataclasses import dataclass, field
 
 from apps.design.board import assemble, label_for
@@ -171,8 +172,8 @@ def _footprint(node):
     return fp
 
 
-def load_pcb(text):
-    tree = parse(text)
+def load_pcb(text, budget=None):
+    tree = parse(text, budget)
     if head(tree) != "kicad_pcb":
         raise KicadError("This isn't a KiCad PCB.")
     version = file_version(tree)
@@ -219,6 +220,7 @@ def load_pcb(text):
 
 # ------------------------------------------------------------------ drawing --
 
+CONTROL = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f]")  # not allowed in XML
 LAYER_KIND = {"Cu": "copper", "Mask": "mask", "Paste": "paste", "SilkS": "silk"}
 
 
@@ -330,19 +332,22 @@ def _shape_el(kind, data, width, filled):
 
 
 def _text_el(text, x, y, angle, size):
+    text = CONTROL.sub("", text)
     x, y = _xyup(x, y)
     return (f'<text transform="translate({f(x)} {f(y)}) scale(1 -1) rotate({f(-angle)})" font-size="{f(size)}" '
             f'font-family="Liberation Sans, Arial, sans-serif" text-anchor="middle" dominant-baseline="central" '
             f'fill="currentColor">{escape(text)}</text>')
 
 
-def _outline(board):
+def _outline(board, budget=None):
     """Board shape as an SVG path (Y up) from Edge.Cuts, and its BBox. Loose lines and arcs are joined into loops."""
     frame, closed, pieces = BBox(), [], []
     items = [(k, d) for layer, k, d, w, fl in board.graphics if layer == "Edge.Cuts"]
     for fp in board.footprints:
         items += [(k, d) for layer, k, d, w, fl in fp.graphics if layer == "Edge.Cuts"]
     for kind, data in items:
+        if budget is not None:
+            budget.add()
         if kind == "circle":
             (cx, cy), r = _xyup(*data[0]), data[1]
             closed.append(f"M{f(cx - r)} {f(cy)}A{f(r)} {f(r)} 0 1 0 {f(cx + r)} {f(cy)}A{f(r)} {f(r)} 0 1 0 {f(cx - r)} {f(cy)}Z")
@@ -358,26 +363,43 @@ def _outline(board):
             pieces.append((kind, pts))
             for p in pts:
                 frame.add(*p)
-    # join loose pieces end to end
+    # join loose pieces end to end, finding neighbours through an index of rounded end points
+    def key(p):
+        return (round(p[0] / tol), round(p[1] / tol))
+
     tol = 0.01
-    while pieces:
-        kind, pts = pieces.pop(0)
-        chain = [(kind, pts)]
-        start, end = pts[0], pts[-1]
-        grown = True
-        while grown and math.hypot(end[0] - start[0], end[1] - start[1]) > tol:
-            grown = False
-            for i, (k2, p2) in enumerate(pieces):
-                if math.hypot(p2[0][0] - end[0], p2[0][1] - end[1]) <= tol:
-                    chain.append((k2, p2))
-                elif math.hypot(p2[-1][0] - end[0], p2[-1][1] - end[1]) <= tol:
-                    chain.append((k2, list(reversed(p2))))
-                else:
+    ends = {}
+    for idx, (kind, pts) in enumerate(pieces):
+        for p in (pts[0], pts[-1]):
+            k = key(p)
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    ends.setdefault((k[0] + dx, k[1] + dy), []).append(idx)
+    used = set()
+    for idx, (kind, pts) in enumerate(pieces):
+        if idx in used:
+            continue
+        used.add(idx)
+        chain, start, end = [(kind, pts)], pts[0], pts[-1]
+        while math.hypot(end[0] - start[0], end[1] - start[1]) > tol:
+            if budget is not None:
+                budget.add()
+            nxt = None
+            for j in ends.get(key(end), ()):
+                if j in used:
                     continue
-                end = chain[-1][1][-1]
-                pieces.pop(i)
-                grown = True
+                k2, p2 = pieces[j]
+                if math.hypot(p2[0][0] - end[0], p2[0][1] - end[1]) <= tol:
+                    nxt = (k2, p2)
+                elif math.hypot(p2[-1][0] - end[0], p2[-1][1] - end[1]) <= tol:
+                    nxt = (k2, list(reversed(p2)))
+                if nxt:
+                    used.add(j)
+                    break
+            if nxt is None:
                 break
+            chain.append(nxt)
+            end = nxt[1][-1]
         if math.hypot(end[0] - start[0], end[1] - start[1]) > tol:
             continue  # not a closed loop
         d = f"M{f(start[0])} {f(start[1])}"
@@ -436,6 +458,7 @@ def pcb_layers(board, budget=None):
         if el:
             L(layer).add(el, *pts, r=w / 2)
     for layer, text, x, y, a, size in board.texts:
+        budget.add()
         L(layer).add(_text_el(text, x, y, a, size), _xyup(x, y))
     for fp in board.footprints:
         for layer, kind, data, w, filled in fp.graphics:
@@ -444,6 +467,7 @@ def pcb_layers(board, budget=None):
             if el:
                 L(layer).add(el, *pts, r=w / 2)
         for layer, text, x, y, a, size in fp.texts:
+            budget.add()
             if layer:
                 L(layer).add(_text_el(text, x, y, a, size), _xyup(x, y))
         for pad in fp.pads:
@@ -485,7 +509,7 @@ def pcb_layers(board, budget=None):
         out.append(d)
     for i, d in enumerate(out):
         d.index = i
-    shape, frame = _outline(board)
+    shape, frame = _outline(board, budget)
     if not shape or frame.empty:
         frame = BBox()
         for d in out:
@@ -528,10 +552,11 @@ def _overlay(board, highlight):
     return "".join(out)
 
 
-def render_pcb(text, prefix="k", highlight=None, board=None):
-    """The board picture and facts, with the same keys as design.board.render_board."""
-    board = board or load_pcb(text)
-    budget = Budget()
+def render_pcb(text, prefix="k", highlight=None, board=None, budget=None):
+    """The board picture and facts, with the same keys as design.board.render_board.
+    `prefix` starts every id in the SVG; drawings shown on the same page need different prefixes."""
+    budget = budget or Budget()
+    board = board or load_pcb(text, budget)
     layers, shape, frame, warnings = pcb_layers(board, budget)
     if not layers:
         raise KicadError("The PCB has nothing to draw yet.")

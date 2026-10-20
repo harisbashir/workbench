@@ -1,3 +1,4 @@
+import logging
 import os
 import posixpath
 import tempfile
@@ -15,6 +16,7 @@ from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
+from urllib.parse import quote as urlquote
 from django.views.decorators.http import require_POST
 
 from apps.chat.formatting import render as render_text
@@ -26,11 +28,11 @@ from apps.firmware.models import FirmwareArtifact, FirmwareRelease, parse_versio
 from apps.projects.models import Project, Revision, log_activity
 
 from . import checkin, diff, highlight, intake
-from .kicad import compare as kicad_compare_mod
 from .kicad import render as kicad_render
 from .kicad.sexpr import KicadError
 from .models import Blob, Draft, Repository, Version, VersionFile
 
+log = logging.getLogger("workbench")
 IMAGE_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp"}
 README_NAMES = ("readme.md", "readme.txt", "readme")
 
@@ -460,7 +462,7 @@ def kicad_view(request, key, slug, v, path):
     result = kicad_render.render_blob(vf.blob, path)
     tree = checkin.tree(version)
     trail = [p for p in request.GET.get("trail", "").split(",") if p and p in tree][:20]
-    trail_q = ",".join(trail + [path])
+    trail_q = urlquote(",".join(trail + [path]), safe=",/")
     sheets = []
     for s in result.get("sheets", []) if result.get("ok") else []:
         child = _child_sheet(path, s["file"])
@@ -472,7 +474,7 @@ def kicad_view(request, key, slug, v, path):
     for i, p in enumerate(trail):
         q = ",".join(trail[:i])
         crumbs.append({"name": posixpath.basename(p), "url": reverse("sources:kicad", args=[project.key, repo.slug, version.number, p])
-                       + (f"?trail={q}" if q else "")})
+                       + (f"?trail={urlquote(q, safe=',/')}" if q else "")})
     previous = version.number - 1 if version.number > 1 and version.parent and version.parent.files.filter(path=path).exists() else None
     svg_url = reverse("sources:kicad_svg", args=[project.key, repo.slug, version.number, path])
     return render(request, "sources/kicad.html", {
@@ -488,20 +490,16 @@ def kicad_view(request, key, slug, v, path):
 def kicad_svg(request, key, slug, v, path):
     project, repo, version, vf = _kicad_file(request, key, slug, v, path)
     other = request.GET.get("compare", "")
-    if other.isdigit() and int(other) != version.number:
+    if other.isascii() and other.isdecimal() and len(other) < 10 and int(other) != version.number:
         # the same drawing with what changed against another version highlighted
         other_vf = VersionFile.objects.select_related("blob").filter(version__repository=repo, version__number=int(other), path=path).first()
         if other_vf is None:
             raise Http404("That file isn't in the other version.")
-        older = int(other) < version.number
         try:
-            mine, theirs = kicad_render.parse_blob(vf.blob, path), kicad_render.parse_blob(other_vf.blob, path)
-        except KicadError as exc:
-            raise Http404(str(exc))
-        summary = kicad_compare_mod.compare(kicad_render.kind_of(path), theirs if older else mine, mine if older else theirs)
-        highlight = summary["highlight_b"] if older else summary["highlight_a"]
-        result = kicad_render.render_blob(vf.blob, path, highlight=highlight, model=mine,
-                                          extra=f"vs-{other_vf.blob.sha256[:16]}-{'new' if older else 'old'}")
+            result = kicad_render.highlighted(vf.blob, other_vf.blob, path, older=int(other) < version.number)
+        except Exception:
+            log.exception("Couldn't compare %s", path)
+            result = kicad_render.render_blob(vf.blob, path)
     else:
         result = kicad_render.render_blob(vf.blob, path)
     if not result.get("ok"):
@@ -513,7 +511,7 @@ def kicad_svg(request, key, slug, v, path):
 
 
 def _compare_models(repo, path, a_num, b_num):
-    """Parsed (old, new) models of `path` in two versions, plus their VersionFiles. Raises Http404 if missing."""
+    """The VersionFiles of `path` in two versions. Raises Http404 if either is missing."""
     out = []
     for n in (a_num, b_num):
         vf = VersionFile.objects.select_related("blob").filter(version__repository=repo, version__number=n, path=path).first()
@@ -533,9 +531,14 @@ def kicad_compare(request, key, slug, a, b, path):
     kind = kicad_render.kind_of(path)
     error, summary = None, None
     try:
-        summary = kicad_compare_mod.compare(kind, kicad_render.parse_blob(fa.blob, path), kicad_render.parse_blob(fb.blob, path))
-    except (KicadError, MemoryError, RecursionError) as exc:
-        error = str(exc) if isinstance(exc, KicadError) else "The file is too complex to compare."
+        summary = kicad_render.compare_blobs(fa.blob, fb.blob, path)
+    except KicadError as exc:
+        error = str(exc)
+    except (MemoryError, RecursionError):
+        error = "The file is too complex to compare."
+    except Exception:
+        log.exception("Couldn't compare %s", path)
+        error = "Something in these files couldn't be compared. You can still compare them as text."
     svg = lambda v, other: reverse("sources:kicad_svg", args=[project.key, repo.slug, v, path]) + f"?compare={other}"  # noqa: E731
     return render(request, "sources/kicad_compare.html", {
         "project": project, "repo": repo, "a": va, "b": vb, "path": path, "name": posixpath.basename(path), "kind": kind,

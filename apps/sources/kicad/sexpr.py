@@ -18,16 +18,29 @@ class Str(str):
     """A quoted string in the file (as opposed to a bare word like `yes` or a number)."""
 
 
-def parse(text):
+CHECK_EVERY = 65536  # characters between time checks
+
+
+def parse(text, budget=None):
+    """Nested lists from s-expression text. `budget` (gerber.Budget) limits the time spent."""
     if len(text) > MAX_BYTES:
         raise KicadError(f"The file is larger than {MAX_BYTES // (1024 * 1024)} MB, so it isn't drawn.")
     stack, root, nodes = [], None, 0
     i, n = 0, len(text)
+    next_check = CHECK_EVERY
     while i < n:
+        if budget is not None and i >= next_check:
+            next_check = i + CHECK_EVERY
+            if budget._clock() > budget.deadline:
+                raise KicadError("The file took too long to read, so it isn't drawn.")
         c = text[i]
         if c in " \t\r\n":
             i += 1
-        elif c == "(":
+            continue
+        nodes += 1
+        if nodes > MAX_NODES:
+            raise KicadError("The file is too large to draw.")
+        if c == "(":
             if root is not None and not stack:
                 raise KicadError("The file has extra content after the end.")
             if len(stack) >= MAX_DEPTH:
@@ -48,7 +61,7 @@ def parse(text):
             j, out = i + 1, []
             while True:
                 k = text.find('"', j)
-                b = text.find("\\", j)
+                b = text.find("\\", j, k) if k != -1 else -1
                 if k == -1:
                     raise KicadError("The file has a text value that never ends, so it can't be read.")
                 if b != -1 and b < k:
@@ -72,9 +85,6 @@ def parse(text):
                 raise KicadError("This doesn't look like a KiCad file.")
             stack[-1].append(text[i:j])
             i = j
-        nodes += 1
-        if nodes > MAX_NODES:
-            raise KicadError("The file is too large to draw.")
     if stack or root is None:
         raise KicadError("The file ends unexpectedly, so it can't be read.")
     return root
@@ -144,4 +154,4 @@ def has_flag(node, flag):
 
 def file_version(tree):
     v = value(tree, "version", "")
-    return int(v) if isinstance(v, str) and v.isdigit() and len(v) <= 10 else 0
+    return int(v) if isinstance(v, str) and v.isascii() and v.isdecimal() and len(v) <= 10 else 0

@@ -56,7 +56,7 @@
     svg.addEventListener("click", (e) => {
       if (moved) return;
       const sheet = e.target.closest("g.sheet");
-      if (sheet && sheetUrls[sheet.dataset.sheet]) { window.location.href = sheetUrls[sheet.dataset.sheet]; return; }
+      if (sheet && Object.prototype.hasOwnProperty.call(sheetUrls, sheet.dataset.sheet)) { window.location.href = sheetUrls[sheet.dataset.sheet]; return; }
       const sym = e.target.closest("g.sym");
       svg.querySelectorAll("g.sym.selected").forEach((g) => g.classList.remove("selected"));
       document.querySelectorAll("[data-part-row].selected").forEach((r) => r.classList.remove("selected"));

@@ -25,8 +25,11 @@ FIELD, LABEL, GLOBAL, SHEET, NOTE, FRAME = "#006464", "#0f0f0f", "#840000", "#84
 FONT = "Liberation Sans, Arial, Helvetica, sans-serif"
 
 
+CONTROL = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f]")  # not allowed in XML
+
+
 def esc(text):
-    return _xml_escape(str(text), {'"': "&quot;"})
+    return _xml_escape(CONTROL.sub("", str(text)), {'"': "&quot;"})
 
 
 def fmt(v):
@@ -97,13 +100,18 @@ class Schematic:
         return names
 
     def parts(self):
-        return sorted(({"ref": s.ref, "value": s.value, "footprint": s.footprint, "uuid": s.uuid, "dnp": s.dnp, "lib": s.lib_id}
-                       for s in self.symbols if not s.power and not s.ref.startswith("#")),
-                      key=lambda p: _ref_key(p["ref"]))
+        """One entry per part; a part drawn as several units (U5A, U5B…) is listed once."""
+        seen, out = set(), []
+        for s in self.symbols:
+            if s.power or s.ref.startswith("#") or s.ref in seen:
+                continue
+            seen.add(s.ref)
+            out.append({"ref": s.ref, "value": s.value, "footprint": s.footprint, "uuid": s.uuid, "dnp": s.dnp, "lib": s.lib_id})
+        return sorted(out, key=lambda p: _ref_key(p["ref"]))
 
 
 def _ref_key(ref):
-    m = re.match(r"([A-Za-z_#]*)(\d*)", ref)
+    m = re.match(r"([A-Za-z_#]*)(\d{0,9})", ref)
     return (m.group(1), int(m.group(2)) if m.group(2) else 0, ref)
 
 
@@ -146,11 +154,11 @@ def _lib_symbol(node):
     return ls
 
 
-def load_schematic(text):
+def load_schematic(text, budget=None):
     stripped = text.lstrip()
     if stripped.startswith("EESchema"):
         raise KicadError("This KiCad version isn't supported for previews. Open and save it in KiCad 6 or newer.")
-    tree = parse(text)
+    tree = parse(text, budget)
     if head(tree) != "kicad_sch":
         raise KicadError("This isn't a KiCad schematic.")
     version = file_version(tree)
@@ -227,16 +235,17 @@ def load_schematic(text):
 # ---------------------------------------------------------------- geometry --
 
 def place(pt, x, y, angle, mirror):
-    """A library point (Y up) placed on the sheet (Y down) for a symbol at (x, y), rotated and mirrored."""
-    px, py = pt[0], -pt[1]
-    r = math.radians(angle)
-    c, s = round(math.cos(r), 12), round(math.sin(r), 12)
-    px, py = px * c + py * s, -px * s + py * c
+    """A library point (Y up) placed on the sheet (Y down) for a symbol at (x, y), rotated and mirrored.
+    Like KiCad: mirror in the library, then rotate counter-clockwise, then flip Y for the sheet."""
+    px, py = pt
     if mirror == "x":
         py = -py
     elif mirror == "y":
         px = -px
-    return x + px, y + py
+    r = math.radians(angle)
+    c, s = round(math.cos(r), 12), round(math.sin(r), 12)
+    px, py = px * c - py * s, px * s + py * c
+    return x + px, y - py
 
 
 def _arc_path(p1, p2, p3):
@@ -380,6 +389,18 @@ def _frame(sch, out):
     out.append(_text(bx + 2, by + 26, tb.get("company", ""), 1.5, LABEL, 0, ("left",)))
 
 
+def _field_orientation(angle, justify, sym):
+    """How KiCad shows a symbol's field: its angle turns with the symbol (0 and 90 swap when the symbol is
+    rotated by 90 or 270), text is never upside down, and mirroring flips the justification."""
+    a = int(round(angle)) % 180
+    if int(round(sym.angle)) % 180 == 90:
+        a = 90 - a
+    just = list(justify)
+    swap = {"left": "right", "right": "left"} if sym.mirror == "y" else {"top": "bottom", "bottom": "top"} if sym.mirror == "x" else {}
+    just = [swap.get(j, j) for j in just]
+    return (90.0 if a == 90 else 0.0), tuple(just)
+
+
 def draw_schematic(sch, highlight=None, budget=None, sheet_links=None):
     """SVG of one sheet. highlight: {uuid: "added"|"removed"|"changed"}. sheet_links: {file: True if it exists}."""
     budget = budget or Budget()
@@ -387,6 +408,7 @@ def draw_schematic(sch, highlight=None, budget=None, sheet_links=None):
     out = []
     _frame(sch, out)
     for kind, pts in sch.graphics:
+        budget.add()
         if len(pts) >= 2:
             out.append(f'<polyline points="{" ".join(f"{fmt(a)},{fmt(b)}" for a, b in pts)}" fill="none" stroke="{NOTE}" stroke-width="0.15"/>')
     for pts in sch.wires:
@@ -400,8 +422,10 @@ def draw_schematic(sch, highlight=None, budget=None, sheet_links=None):
             out.append(f'<polyline points="{" ".join(f"{fmt(a)},{fmt(b)}" for a, b in pts)}" fill="none" stroke="{BUS}" '
                        'stroke-width="0.3" stroke-linecap="round"/>')
     for x, y in sch.junctions:
+        budget.add()
         out.append(f'<circle cx="{fmt(x)}" cy="{fmt(y)}" r="0.45" fill="{WIRE}"/>')
     for x, y in sch.no_connects:
+        budget.add()
         d = 0.635
         out.append(f'<path d="M{fmt(x - d)} {fmt(y - d)}L{fmt(x + d)} {fmt(y + d)}M{fmt(x - d)} {fmt(y + d)}L{fmt(x + d)} {fmt(y - d)}" '
                    f'stroke="{BUS}" stroke-width="0.15"/>')
@@ -409,6 +433,7 @@ def draw_schematic(sch, highlight=None, budget=None, sheet_links=None):
         budget.add()
         out.append(_label(*label))
     for text, x, y, a, size, justify in sch.texts:
+        budget.add()
         out.append(_text(x, y, text, size, NOTE, a, justify or ("left", "bottom")))
     for sh in sch.sheets:
         budget.add()
@@ -443,7 +468,7 @@ def draw_schematic(sch, highlight=None, budget=None, sheet_links=None):
                 continue
             shown = text if name != "Reference" or not sym.ref.startswith("#") else ""
             if shown:
-                g.append(_text(x, y, shown, size, FIELD, a, justify))
+                g.append(_text(x, y, shown, size, FIELD, *_field_orientation(a, justify, sym)))
         if sym.dnp:
             g.append(f'<path d="M{fmt(sym.x - 3)} {fmt(sym.y - 3)}L{fmt(sym.x + 3)} {fmt(sym.y + 3)}M{fmt(sym.x - 3)} {fmt(sym.y + 3)}'
                      f'L{fmt(sym.x + 3)} {fmt(sym.y - 3)}" stroke="#d00000" stroke-width="0.3"/>')

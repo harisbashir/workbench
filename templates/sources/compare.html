@@ -18,7 +18,8 @@
 <div class="card diff-file">
   <div class="card-head"><h3 class="mono"><span class="badge badge-{% if f.status == 'added' %}success{% elif f.status == 'deleted' %}failure{% else %}review{% endif %}">{{ f.status }}</span> {{ f.path }}</h3>
     {% if f.diff and f.diff.kind == 'text' %}<span class="small"><span class="ok-text">+{{ f.diff.added }}</span> <span class="overdue">−{{ f.diff.removed }}</span></span>{% endif %}
-    {% if f.new %}<a class="btn btn-sm btn-ghost" href="{% url 'sources:file' project.key repo.slug b.number f.path %}">View</a>{% endif %}</div>
+    {% if f.new %}<a class="btn btn-sm btn-ghost" href="{% url 'sources:file' project.key repo.slug b.number f.path %}">View</a>{% endif %}
+    {% if f.kicad and a %}<a class="btn btn-sm" href="{% url 'sources:kicad_compare' project.key repo.slug a.number b.number f.path %}">{% icon 'compare' 14 %} Visual compare</a>{% endif %}</div>
   {% if not f.diff %}<div class="card-body small muted">Not shown.</div>
   {% elif f.diff.kind == 'binary' %}<div class="card-body small muted">Binary file{% if f.old and f.new %}: {{ f.old.size|filesizeformat }} → {{ f.new.size|filesizeformat }}{% endif %}.</div>
   {% elif f.diff.kind == 'too_large' %}<div class="card-body small muted">Too large to compare here. Download both versions to compare them.

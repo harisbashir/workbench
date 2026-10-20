@@ -1,0 +1,33 @@
+{% extends "base.html" %}{% load static workbench %}
+{% block title %}Compare {{ name }}{% endblock %}
+{% block extra_head %}<script src="{% static 'js/kicad_compare.js' %}" defer></script>{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles">
+  <div class="crumbs"><a href="{% url 'sources:project' project.key %}">Sources</a> / <a href="{{ repo.get_absolute_url }}">{{ repo.name }}</a> / <a href="{% url 'sources:kicad' project.key repo.slug b.number path %}">{{ name }}</a> /</div>
+  <h1>{% icon 'compare' 22 %} {{ name }}: v{{ a.number }} → v{{ b.number }}</h1>
+  <p class="intro"><span class="ok-text">Green</span> = added, <span class="overdue">red</span> = removed, <span class="warn-text">amber</span> = changed.</p>
+</div>
+<div class="actions"><label class="check-label"><input type="checkbox" data-only-changes> Show only changes</label></div></div>
+{% if error %}<div class="card"><div class="empty">{% icon 'alert' 36 %}<h3>These versions can't be compared</h3><p>{{ error }}</p></div></div>
+{% else %}
+<div class="grid grid-main">
+  <div class="card"><div class="card-head"><h3>What changed</h3></div><div class="card-body">
+    {% if same %}<p class="muted">The file is the same in both versions.</p>{% endif %}
+    {% if summary.added %}<div class="kv"><span>Added</span><span class="ok-text">{{ summary.added|join:", " }}</span></div>{% endif %}
+    {% if summary.removed %}<div class="kv"><span>Removed</span><span class="overdue">{{ summary.removed|join:", " }}</span></div>{% endif %}
+    {% for c in summary.changed %}<div class="kv"><span><strong>{{ c.ref }}</strong></span><span class="warn-text">{{ c.what|join:"; " }}</span></div>{% endfor %}
+    {% if summary.nets_added %}<div class="kv"><span>New nets</span><span>{{ summary.nets_added|join:", " }}</span></div>{% endif %}
+    {% if summary.nets_removed %}<div class="kv"><span>Removed nets</span><span>{{ summary.nets_removed|join:", " }}</span></div>{% endif %}
+    {% if kind == 'pcb' %}<div class="kv"><span>Tracks</span><span>{{ summary.tracks.0 }} → {{ summary.tracks.1 }} ({{ summary.length.0 }} → {{ summary.length.1 }} mm)</span></div>
+    <div class="kv"><span>Vias</span><span>{{ summary.vias.0 }} → {{ summary.vias.1 }}</span></div>{% endif %}
+    {% if not same and not summary.added and not summary.removed and not summary.changed and not summary.nets_added and not summary.nets_removed %}<p class="muted small">No parts or nets changed — the change is in wiring, graphics or settings. Compare the text to see it.</p>{% endif %}
+    <p class="small"><a href="{% url 'sources:compare' project.key repo.slug %}?a={{ a.number }}&amp;b={{ b.number }}">Compare as text →</a></p>
+  </div></div>
+  <div></div>
+</div>
+<div class="grid grid-2 compare-views">
+  <div class="card"><div class="card-head"><h3>v{{ a.number }} (before)</h3></div><div class="compare-canvas" data-compare-svg data-src="{{ old_svg }}"><div class="pcb-loading">Drawing…</div></div></div>
+  <div class="card"><div class="card-head"><h3>v{{ b.number }} (after)</h3></div><div class="compare-canvas" data-compare-svg data-src="{{ new_svg }}"><div class="pcb-loading">Drawing…</div></div></div>
+</div>
+{% endif %}
+{% endblock %}

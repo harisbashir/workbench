@@ -725,3 +725,16 @@ table.code tr:target td { background: var(--warning-soft); }
 .diff td.src.empty { background: var(--surface-2); }
 .diff tr.fold td { background: var(--surface-2); color: var(--text-3); text-align: center; font-style: italic; }
 .diff.split td.src { width: 50%; }
+.sch-canvas svg { background: #fff; cursor: grab; }
+.sch-canvas g.sym, .sch-canvas g.sheet { cursor: pointer; }
+.sch-canvas g.sym.selected polygon, .sch-canvas g.sym.selected polyline, .sch-canvas g.sym.selected circle { stroke: #1d4ed8; }
+.sch-canvas g.hl-added polygon, .sch-canvas g.hl-added polyline, .sch-canvas g.hl-added line { stroke: #2e9e44; stroke-width: 0.4; }
+.sch-canvas g.hl-removed polygon, .sch-canvas g.hl-removed polyline, .sch-canvas g.hl-removed line { stroke: #d23c3c; stroke-width: 0.4; }
+.sch-canvas g.hl-changed polygon, .sch-canvas g.hl-changed polyline, .sch-canvas g.hl-changed line { stroke: #e09a1f; stroke-width: 0.4; }
+.only-changes g.sym:not([class*="hl-"]), .only-changes polyline, .only-changes g.sheet { opacity: 0.25; }
+.only-changes g.sym[class*="hl-"] polyline { opacity: 1; }
+.parts-scroll { max-height: 360px; overflow-y: auto; }
+tr.selected td { background: var(--info-soft); }
+.compare-canvas { background: #fff; min-height: 320px; padding: 6px; }
+.compare-canvas svg { width: 100%; height: auto; display: block; }
+.compare-canvas.only-changes g.sym:not([class*="hl-"]) { opacity: 0.2; }

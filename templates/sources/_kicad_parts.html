@@ -1,0 +1,4 @@
+{% if result.parts %}<div class="card"><div class="card-head"><h3>Parts</h3><span class="small faint">{{ result.parts|length }}</span></div>
+  <div class="table-wrap parts-scroll"><table class="table"><tbody>
+  {% for p in result.parts %}<tr data-part-row="{{ p.ref }}"><td><strong>{{ p.ref }}</strong></td><td>{{ p.value }}</td><td class="small muted">{{ p.footprint }}{% if p.side == 'bottom' %} · bottom{% endif %}{% if p.dnp %} · not fitted{% endif %}</td></tr>{% endfor %}
+  </tbody></table></div></div>{% endif %}

@@ -1,0 +1,71 @@
+{% extends "base.html" %}{% load static workbench humanize %}
+{% block title %}{{ name }} · {{ repo.name }}{% endblock %}
+{% block extra_head %}{% if kind == 'pcb' %}<script src="{% static 'js/pcb.js' %}" defer></script>{% else %}<script src="{% static 'js/kicad_sch.js' %}" defer></script>{% endif %}{% endblock %}
+{% block content %}
+<div class="page-head"><div class="titles">
+  <div class="crumbs"><a href="{% url 'sources:project' project.key %}">Sources</a> / <a href="{{ repo.get_absolute_url }}?v={{ version.number }}">{{ repo.name }}</a> /{% for c in crumbs %} <a href="{{ c.url }}">{{ c.name }}</a> ▸{% endfor %}</div>
+  <h1>{% if kind == 'pcb' %}{% icon 'pcb' 22 %}{% else %}{% icon 'diagram' 22 %}{% endif %} {{ name }}</h1>
+  <p class="intro">v{{ version.number }}{% if not is_latest %} (older version){% endif %} · {% if kind == 'pcb' %}PCB{% else %}schematic{% endif %}{% if result.title %} · {{ result.title }}{% endif %}
+    · <span class="muted">A preview drawn by Workbench — close to KiCad, but fonts and some details are simplified.</span></p>
+</div>
+<div class="actions">
+  {% if previous %}<a class="btn" href="{% url 'sources:kicad_compare' project.key repo.slug previous version.number path %}">{% icon 'compare' 16 %} Compare with v{{ previous }}</a>{% endif %}
+  <a class="btn" href="{% url 'sources:file' project.key repo.slug version.number path %}?text=1">{% icon 'file' 16 %} View as text</a>
+  <a class="btn" href="{% url 'sources:file' project.key repo.slug version.number path %}?raw=1">{% icon 'download' 16 %} Download</a>
+</div></div>
+
+{% if not result.ok %}
+<div class="card"><div class="empty">{% icon 'alert' 36 %}<h3>This file can't be drawn</h3><p>{{ result.error }}</p>
+  <p class="small">The file can't be read as a KiCad 6–9 {% if kind == 'pcb' %}PCB{% else %}schematic{% endif %}. You can still <a href="{% url 'sources:file' project.key repo.slug version.number path %}?text=1">view it as text</a>.</p></div></div>
+{% elif kind == 'pcb' %}
+{% if result.newer %}<div class="alert alert-warning small">Made with a newer KiCad than Workbench knows; some details may be missing.</div>{% endif %}
+<div class="pcb-layout">
+  {% with src=svg_url %}{% include "design/_pcb_stage.html" %}{% endwith %}
+  <aside class="stack">
+    <div class="card"><div class="card-head"><h3>Board</h3></div><div class="card-body board-facts">
+      {% with i=result.info %}
+      <div><span>Size</span><strong>{{ i.width|floatformat:2 }} × {{ i.height|floatformat:2 }} mm</strong></div>
+      <div><span>Copper layers</span><strong>{{ i.copper_layers|default:"—" }}</strong></div>
+      <div><span>Thickness</span><strong>{{ i.thickness }} mm</strong></div>
+      <div><span>Parts</span><strong>{{ i.parts_top }} top · {{ i.parts_bottom }} bottom</strong></div>
+      <div><span>Vias</span><strong>{{ i.vias }}</strong></div>
+      <div><span>Holes</span><strong>{{ i.holes }}{% if i.slots %} ({{ i.slots }} slots){% endif %}</strong></div>
+      <div><span>Thinnest track</span><strong>{% if i.min_trace %}{{ i.min_trace|floatformat:3 }} mm{% else %}—{% endif %}</strong></div>
+      {% endwith %}
+    </div></div>
+    <div class="card"><div class="card-head"><h3>{% icon 'layers' 16 %} Layers</h3><span class="small faint">for the Layers view</span></div><div class="card-body layer-list">
+      {% for l in result.layers %}<label class="layer-row"><input type="checkbox" data-layer-toggle="{{ l.id }}" {% if l.shown %}checked{% endif %}>
+        <span class="layer-dot" data-colour="{{ l.colour }}"></span><span><span class="layer-name">{{ l.label }}</span><span class="small faint mono">{{ l.file }}</span></span></label>{% endfor %}
+    </div></div>
+    {% include "sources/_kicad_parts.html" %}
+    {% if result.warnings %}<div class="card"><div class="card-head"><h3>Notes</h3></div><div class="card-body small"><ul class="bullets">{% for w in result.warnings %}<li>{{ w }}</li>{% endfor %}</ul></div></div>{% endif %}
+  </aside>
+</div>
+{{ masks_json|json_script:"pcb-colours" }}
+{% else %}
+{% if result.newer %}<div class="alert alert-warning small">Made with a newer KiCad than Workbench knows; some details may be missing.</div>{% endif %}
+<div class="pcb-layout">
+  <div class="card pcb-stage">
+    <div class="pcb-toolbar">
+      <div class="seg" role="group" aria-label="Zoom">
+        <button type="button" data-zoom="out" aria-label="Zoom out">−</button>
+        <button type="button" data-zoom="fit">Fit</button>
+        <button type="button" data-zoom="in" aria-label="Zoom in">+</button>
+      </div>
+      <span class="small muted">Scroll to zoom, drag to move. Click a part for its details; click a sheet to open it.</span>
+    </div>
+    <div class="pcb-canvas sch-canvas" data-sch-canvas data-src="{{ svg_url }}"><div class="pcb-loading">Drawing the schematic…</div></div>
+  </div>
+  <aside class="stack">
+    <div class="card"><div class="card-head"><h3>Selected part</h3></div><div class="card-body small" data-part-info><p class="muted">Click a part on the sheet.</p></div></div>
+    {% if sheets %}<div class="card"><div class="card-head"><h3>Sheets</h3></div><div class="card-body">
+      {% for s in sheets %}<div class="kv">{% if s.url %}<a href="{{ s.url }}">{{ s.name }}</a>{% else %}<span>{{ s.name }}</span>{% endif %}
+        <span class="small {% if not s.url %}warn-text{% else %}muted{% endif %}">{% if s.url %}{{ s.file }}{% elif s.loop %}refers back to itself — not in this version{% else %}{{ s.file }} — not in this version{% endif %}</span></div>{% endfor %}
+    </div></div>{% endif %}
+    {% include "sources/_kicad_parts.html" %}
+    {% if result.nets %}<div class="card"><div class="card-head"><h3>Named nets</h3></div><div class="card-body small">{{ result.nets|join:", " }}</div></div>{% endif %}
+  </aside>
+</div>
+{{ sheet_urls|json_script:"sheet-urls" }}
+{% endif %}
+{% endblock %}

@@ -18,4 +18,7 @@ urlpatterns = [
     path("projects/<str:key>/sources/<slug:slug>/checkin/<int:draft>/", views.checkin_preview, name="checkin_preview"),
     path("projects/<str:key>/sources/<slug:slug>/lock/", views.lock_action, name="lock"),
     path("projects/<str:key>/sources/<slug:slug>/promote/<int:v>/", views.promote, name="promote"),
+    path("projects/<str:key>/sources/<slug:slug>/kicad/<int:v>/<path:path>", views.kicad_view, name="kicad"),
+    path("projects/<str:key>/sources/<slug:slug>/kicad-svg/<int:v>/<path:path>", views.kicad_svg, name="kicad_svg"),
+    path("projects/<str:key>/sources/<slug:slug>/kicad-compare/<int:a>/<int:b>/<path:path>", views.kicad_compare, name="kicad_compare"),
 ]

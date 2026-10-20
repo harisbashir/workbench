@@ -2,13 +2,46 @@
 import difflib
 import time
 
+from django.utils.html import escape
 from django.utils.safestring import mark_safe
 
 from . import highlight
 
 DIFF_BYTES = 1024 * 1024
 DIFF_LINES = 20_000
-DIFF_SECONDS = 2.0
+DIFF_SECONDS = 2.0      # one file
+PAGE_SECONDS = 15.0     # all files on one compare page
+
+
+class DiffTimeout(Exception):
+    pass
+
+
+class Budget:
+    """Time allowance shared by several diffs (a compare page or a check-in)."""
+
+    def __init__(self, seconds=PAGE_SECONDS):
+        self.deadline = time.monotonic() + seconds
+
+    @property
+    def left(self):
+        return self.deadline - time.monotonic()
+
+
+class _Matcher(difflib.SequenceMatcher):
+    """SequenceMatcher that gives up at a deadline instead of running for minutes on hostile input."""
+
+    def __init__(self, a, b, deadline):
+        self._deadline = deadline
+        self._calls = 0
+        super().__init__(None, a, b, autojunk=len(a) + len(b) > 4000)
+
+    def find_longest_match(self, *args, **kwargs):
+        self._calls += 1
+        if self._calls & 63 == 0 or self._calls == 1:
+            if time.monotonic() > self._deadline:
+                raise DiffTimeout
+        return super().find_longest_match(*args, **kwargs)
 
 
 def split_lines(text):
@@ -28,17 +61,27 @@ def text_of(blob):
     return text.replace("\r\n", "\n").replace("\r", "\n")
 
 
-def _opcodes(a, b):
-    return difflib.SequenceMatcher(None, a, b, autojunk=len(a) + len(b) > 4000).get_opcodes()
+def _opcodes(a, b, budget=None):
+    """Raises DiffTimeout past DIFF_SECONDS (or what's left of `budget`)."""
+    seconds = DIFF_SECONDS if budget is None else min(DIFF_SECONDS, budget.left)
+    if seconds <= 0:
+        raise DiffTimeout
+    if not a or not b:  # nothing to match: all added or all removed
+        return [("insert", 0, 0, 0, len(b))] if b else ([("delete", 0, len(a), 0, 0)] if a else [])
+    return _Matcher(a, b, time.monotonic() + seconds).get_opcodes()
 
 
-def count_lines(old, new):
-    """(lines added, lines removed) between two blobs; (0, 0) when either is binary or too large."""
+def count_lines(old, new, budget=None):
+    """(lines added, lines removed) between two blobs; (0, 0) when either is binary, too large or too slow to compare."""
     a, b = text_of(old), text_of(new)
     if a is None or b is None:
         return 0, 0
+    try:
+        ops = _opcodes(split_lines(a), split_lines(b), budget)
+    except DiffTimeout:
+        return 0, 0
     added = removed = 0
-    for tag, i1, i2, j1, j2 in _opcodes(split_lines(a), split_lines(b)):
+    for tag, i1, i2, j1, j2 in ops:
         if tag in ("replace", "delete"):
             removed += i2 - i1
         if tag in ("replace", "insert"):
@@ -61,7 +104,7 @@ def _fold(n):
     return ("fold", None, None, mark_safe(f"{n} unchanged line{'s' if n != 1 else ''}"))
 
 
-def file_diff(path, old, new, context=3):
+def file_diff(path, old, new, context=3, budget=None):
     """Rows for showing a file's changes.
 
     rows:  unified, [(tag, old line no, new line no, html)] with tag same/add/del/fold
@@ -73,12 +116,15 @@ def file_diff(path, old, new, context=3):
     if a_text is None or b_text is None or a_text.count("\n") > DIFF_LINES or b_text.count("\n") > DIFF_LINES:
         return {"kind": "too_large", "rows": [], "split": [], "added": 0, "removed": 0}
     a, b = split_lines(a_text), split_lines(b_text)
-    started = time.monotonic()
-    ops = _opcodes(a, b)
-    if time.monotonic() - started > DIFF_SECONDS:
+    try:
+        ops = _opcodes(a, b, budget)
+    except DiffTimeout:
         return {"kind": "too_large", "rows": [], "split": [], "added": 0, "removed": 0}
-    ha = highlight.render(path, a_text)[0] if a else []
-    hb = highlight.render(path, b_text)[0] if b else []
+    if budget is not None and budget.left < 3:  # running out of time: skip the colours
+        ha, hb = [escape(x) for x in a], [escape(x) for x in b]
+    else:
+        ha = highlight.render(path, a_text)[0] if a else []
+        hb = highlight.render(path, b_text)[0] if b else []
     rows, split, added, removed = [], [], 0, 0
     last = len(ops) - 1
     for n, (tag, i1, i2, j1, j2) in enumerate(ops):

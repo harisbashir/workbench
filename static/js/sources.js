@@ -16,8 +16,12 @@
     return m ? decodeURIComponent(m[1]) : (field ? field.value : "");
   }
 
+  const button = form.querySelector("button");
+  let sending = false;
+
   form.addEventListener("submit", (e) => {
     e.preventDefault();
+    if (sending) return;  // a double click must not upload twice
     const fd = new FormData();
     form.querySelectorAll("input:not([type=file])").forEach((el) => {
       if ((el.type === "radio" || el.type === "checkbox") && !el.checked) return;
@@ -32,6 +36,9 @@
       }
     });
     if (!count) { form.submit(); return; }
+    sending = true;
+    if (button) button.disabled = true;
+    const done = () => { sending = false; if (button) button.disabled = false; };
     const xhr = new XMLHttpRequest();
     xhr.open("POST", form.action || window.location.href);
     xhr.setRequestHeader("X-CSRFToken", csrf());
@@ -48,11 +55,12 @@
       let data = {};
       try { data = JSON.parse(xhr.responseText); } catch (err) { /* not JSON */ }
       if (xhr.status < 400 && data.redirect) { window.location.href = data.redirect; return; }
+      done();
       status.textContent = xhr.status === 413 || xhr.status === 400
         ? "That's too many files or too large for one upload. Try a zip instead."
         : "The upload didn't work. Please try again.";
     };
-    xhr.onerror = () => { status.textContent = "The upload didn't work. Check your connection and try again."; };
+    xhr.onerror = () => { done(); status.textContent = "The upload didn't work. Check your connection and try again."; };
     xhr.send(fd);
   });
 })();

@@ -9,7 +9,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.core.files import File
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Prefetch
 from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -206,13 +206,17 @@ def file_view(request, key, slug, v, path):
             return file_response(vf.blob.file, filename=name, inline=True, content_type=IMAGE_TYPES[ext])
         return file_response(vf.blob.file, filename=name, content_type="application/octet-stream")
     lines = language = None
-    text = vf.blob.text(limit=highlight.HIGHLIGHT_BYTES * 4)
-    if text is not None:
-        lines, language = highlight.render(path, text)
+    too_large = False
+    if vf.blob.is_text:
+        text = vf.blob.text(limit=highlight.HIGHLIGHT_BYTES)
+        if text is None or text.count("\n") > highlight.HIGHLIGHT_LINES:
+            too_large = True
+        else:
+            lines, language = highlight.render(path, text)
     lock = repo.locks.select_related("user").filter(path=path).first()
     return render(request, "sources/file.html", {
         "project": project, "repo": repo, "version": version, "path": path, "name": name, "blob": vf.blob,
-        "lines": lines, "language": language, "is_image": ext in IMAGE_TYPES, "lock": lock,
+        "lines": lines, "language": language, "is_image": ext in IMAGE_TYPES, "lock": lock, "too_large": too_large,
         "lockable": checkin.needs_lock(path), "folder": posixpath.dirname(path) + "/" if "/" in path else "",
         "crumbs": breadcrumbs(posixpath.dirname(path)), "is_latest": version.number == repo.latest_number,
         "can_edit": project.can_edit(request.user), "can_manage": request.user.can_manage_projects, "tab": "sources",
@@ -283,8 +287,12 @@ def checkin_start(request, key, slug):
         if not uploads:
             messages.error(request, "Choose the files, a folder or a zip to check in.")
             return redirect("sources:checkin", project.key, repo.slug)
+        into = request.POST.get("into", "").strip()
+        if into and intake.normalise_path(into) is None:
+            messages.error(request, "That folder name can't be used. Use a path inside the repository, like src/drivers.")
+            return redirect("sources:checkin", project.key, repo.slug)
         names = [paths[i] if i < len(paths) and paths[i] else u.name for i, u in enumerate(uploads)]
-        result = intake.take(list(zip(names, uploads)), into=request.POST.get("into", ""),
+        result = intake.take(list(zip(names, uploads)), into=into,
                              keep_zips=bool(request.POST.get("keep_zips")))
         mode = "replace" if request.POST.get("mode") == "replace" else "update"
         draft = Draft.objects.create(repository=repo, user=request.user, base_number=min(base, repo.latest_number), mode=mode,
@@ -303,6 +311,8 @@ def checkin_preview(request, key, slug, draft):
     draft = get_object_or_404(Draft, pk=draft, repository=repo, user=request.user)
     blobs_by_id = Blob.objects.in_bulk(set(draft.files.values()))
     staged = {p: blobs_by_id[i] for p, i in draft.files.items() if i in blobs_by_id}
+    gone = [(p, "The uploaded copy of this file is gone (uploads are kept for a day). Please upload it again.")
+            for p, i in draft.files.items() if i not in blobs_by_id]
     message = request.POST.get("message", "").strip()
     error = None
     if request.method == "POST":
@@ -311,7 +321,7 @@ def checkin_preview(request, key, slug, draft):
         else:
             version, p = checkin.commit(repo, staged, draft.mode, draft.base_number, message, request.user,
                                         allow_partial=bool(request.POST.get("allow_partial")),
-                                        release_locks=bool(request.POST.get("release_locks")))
+                                        release_locks=bool(request.POST.get("release_locks")), refuse=gone)
             if version is not None:
                 draft.delete()
                 audit(request, "sources.checkin", repo, version=version.number, added=version.added,
@@ -322,7 +332,7 @@ def checkin_preview(request, key, slug, draft):
                 return redirect(repo)
             error = ("Nothing changed compared with the latest version." if not p.has_changes else
                      "Some files can't be checked in (see below). Tick “Check in the other files” to continue without them.")
-    plan = checkin.plan(repo, staged, draft.mode, draft.base_number, request.user)
+    plan = checkin.plan(repo, staged, draft.mode, draft.base_number, request.user, refuse=gone)
     return render(request, "sources/preview.html", {
         "project": project, "repo": repo, "draft": draft, "plan": plan, "message": message, "error": error,
         "intake_refused": draft.refused, "tab": "sources",
@@ -395,14 +405,19 @@ def promote(request, key, slug, v):
     if sum(f.blob.size for f in files) > settings.MAX_UPLOAD_MB * 1024 * 1024:
         messages.error(request, f"This version is larger than {settings.MAX_UPLOAD_MB} MB, so it can't be attached as source.")
         return redirect(version)
-    with transaction.atomic():
-        rel = FirmwareRelease.objects.create(firmware=fw, version=number, status=FirmwareRelease.Status.DRAFT,
-                                             git_ref=f"sources v{version.number}", notes=version.message, created_by=request.user)
-        with tempfile.TemporaryFile(dir=settings.DATA_DIR) as fh:
-            write_zip(files, fh)
-            art = FirmwareArtifact.store(rel, File(fh, name=f"{repo.slug}-v{version.number}-source.zip"), request.user)
-        art.kind = FirmwareArtifact.Kind.OTHER
-        art.save(update_fields=["kind"])
+    with tempfile.TemporaryFile(dir=settings.DATA_DIR) as fh:
+        write_zip(files, fh)
+        try:
+            with transaction.atomic():
+                rel = FirmwareRelease.objects.create(firmware=fw, version=number, status=FirmwareRelease.Status.DRAFT,
+                                                     git_ref=f"sources v{version.number}", notes=version.message,
+                                                     created_by=request.user)
+        except IntegrityError:  # two clicks at once
+            messages.error(request, f"{fw.name} {number} already exists. Choose a new version number.")
+            return redirect(version)
+        art = FirmwareArtifact.store(rel, File(fh, name=f"{repo.slug}-v{version.number}-source.zip"), request.user)
+    art.kind = FirmwareArtifact.Kind.OTHER
+    art.save(update_fields=["kind"])
     audit(request, "sources.promote", repo, version=version.number, release=f"{fw.name} {rel.version}")
     log_activity(project, f"made {fw.name} {rel.version} (draft) from {repo.name} v{version.number}", actor=request.user, url=rel.get_absolute_url())
     messages.success(request, f"Draft release {fw.name} {rel.version} created with the source attached. Upload the built files next.")

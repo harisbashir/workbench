@@ -16,6 +16,7 @@
   {% if lines is not None %}<div class="code-view"><table class="code"><tbody>
     {% for line in lines %}<tr id="L{{ forloop.counter }}"><td class="ln"><a href="#L{{ forloop.counter }}">{{ forloop.counter }}</a></td><td class="src">{{ line }}</td></tr>{% endfor %}
   </tbody></table></div>
+  {% elif too_large %}<div class="card-body muted">This file is too large to show here. <a href="{% url 'sources:file' project.key repo.slug version.number path %}?raw=1">Download it</a> to open it.</div>
   {% elif is_image %}<div class="card-body image-view"><img src="{% url 'sources:file' project.key repo.slug version.number path %}?raw=1&amp;inline=1" alt="{{ name }}"></div>
   {% else %}<div class="card-body muted">This is a binary file, so it can't be shown here. <a href="{% url 'sources:file' project.key repo.slug version.number path %}?raw=1">Download it</a> to open it.</div>{% endif %}
 </div>

@@ -72,7 +72,7 @@ class TakeTests(TestCase):
         self.assertEqual(len(r.refused), 1)
 
     def test_blocked_extension_refused(self):
-        r = intake.take([("tool.exe", up("tool.exe", b"MZ")), ("page.html", up("page.html", b"<p>"))])
+        r = intake.take([("tool.exe", up("tool.exe", b"MZ")), ("setup.msi", up("setup.msi", b"MZ"))])
         self.assertEqual(r.files, {})
         self.assertEqual(len(r.refused), 2)
 

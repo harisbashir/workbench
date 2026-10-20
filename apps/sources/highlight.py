@@ -35,7 +35,10 @@ def _css_class(ttype):
 def render(path, text):
     """(list of safe HTML strings, one per line; language name)."""
     if len(text) > HIGHLIGHT_BYTES or text.count("\n") > HIGHLIGHT_LINES:
-        return [mark_safe(escape(line)) for line in text.split("\n")], "Plain text"
+        lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")[:HIGHLIGHT_LINES + 1]
+        if lines and lines[-1] == "":
+            lines.pop()
+        return [mark_safe(escape(line)) for line in lines], "Plain text"
     lexer = lexer_for(path)
     lines, current = [], []
     for ttype, value in lexer.get_tokens(text):

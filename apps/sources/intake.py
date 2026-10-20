@@ -12,7 +12,6 @@ from dataclasses import dataclass, field
 from django.conf import settings
 
 from apps.core.models import SiteSettings
-from apps.files.models import BLOCKED_EXTENSIONS
 
 from . import blobs
 
@@ -21,6 +20,12 @@ MAX_PATH = 400
 MAX_RATIO = 100              # unpacked size / compressed size, for entries over 1 MB
 MB = 1024 * 1024
 
+# Program files for Windows are refused. Scripts and web files (.sh, .js, .html…) are allowed: firmware
+# projects need them, and Sources never runs or serves them as web pages (downloads are plain files).
+BLOCKED_EXTENSIONS = {".exe", ".msi", ".scr", ".com", ".dll", ".hta", ".vbs", ".vbe", ".jse", ".wsf", ".wsh", ".lnk", ".pif", ".cpl"}
+# Control characters and the characters that reverse text direction (used to disguise file names).
+BAD_CHARS = re.compile("[\x00-\x1f\x7f\u200e\u200f\u202a-\u202e\u2066-\u2069]")
+
 IGNORED_DIRS = {".git", "__pycache__", "__MACOSX", ".svn", ".hg"}
 IGNORED_NAMES = {".DS_Store", "Thumbs.db", "desktop.ini", "fp-info-cache"}
 IGNORED_RE = re.compile(r"(^_autosave-|^~.*\.lck$|\.kicad_prl$|^#auto_saved_files#$)")
@@ -28,7 +33,7 @@ IGNORED_RE = re.compile(r"(^_autosave-|^~.*\.lck$|\.kicad_prl$|^#auto_saved_file
 
 def normalise_path(raw):
     """A clean relative path ("src/main.c"), or None if it could escape the repository or is unusable."""
-    if not raw or "\x00" in raw or len(raw) > MAX_PATH or raw.endswith(("/", "\\")):
+    if not raw or BAD_CHARS.search(raw) or len(raw) > MAX_PATH or raw.endswith(("/", "\\")):
         return None
     p = raw.replace("\\", "/")
     while p.startswith("./"):
@@ -78,7 +83,7 @@ class Intake:
             return False
         ext = os.path.splitext(path)[1].lower()
         if ext in BLOCKED_EXTENSIONS:
-            self.refuse(path, f"Files of type {ext} can't be checked in for security reasons. Zip them first.")
+            self.refuse(path, f"Program files ({ext}) can't be checked in for security reasons. Zip them and tick “Keep zip files as zips”.")
             return False
         if len(self.files) >= MAX_FILES:
             if not self._full:

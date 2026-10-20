@@ -282,7 +282,7 @@ def board_detail(request, key, pk):
     ctx = {"project": project, "b": b, "revisions": revs, "latest": latest,
            "summary": board_summary(latest) if latest else None,
            "can_edit": project.can_edit(request.user),
-           "firmware": [(fw, [(r, fw.recommended_for(r)) for r in revs]) for fw in project.firmwares.all()]}
+           "controllers": b.controllers.prefetch_related("slots__firmware")}
     from django.apps import apps
     if apps.is_installed("apps.diagrams"):
         ds = list(b.diagrams.select_related("updated_by", "project"))

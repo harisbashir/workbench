@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views
+from . import board_views, views
 
 app_name = "firmware"
 
@@ -17,4 +17,7 @@ urlpatterns = [
     path("projects/<str:key>/firmware/<slug:slug>/releases/<str:version>/upload/", views.release_upload, name="release_upload"),
     path("projects/<str:key>/firmware/<slug:slug>/releases/<str:version>/status/", views.release_status, name="release_status"),
     path("projects/<str:key>/firmware/<slug:slug>/releases/<str:version>/files/<int:pk>/delete/", views.artifact_delete, name="artifact_delete"),
+    path("projects/<str:key>/boards/<int:board>/controllers/new/", board_views.controller_edit, name="controller_create"),
+    path("projects/<str:key>/boards/<int:board>/controllers/<int:pk>/edit/", board_views.controller_edit, name="controller_edit"),
+    path("projects/<str:key>/boards/<int:board>/controllers/<int:pk>/delete/", board_views.controller_delete, name="controller_delete"),
 ]

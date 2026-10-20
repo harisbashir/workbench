@@ -1,0 +1,7 @@
+{% load workbench humanize %}
+<div class="card"><div class="card-head"><h2>{% icon 'cpu' 18 %} Controllers</h2>{% if can_edit %}<a class="btn btn-sm" href="{% url 'firmware:controller_create' project.key b.pk %}">{% icon 'plus' 14 %} Add controller</a>{% endif %}</div><div class="card-body">
+  {% for c in controllers %}<div class="kv"><span><strong>{{ c.designator }}</strong> {{ c.name }}{% if c.part %} <span class="faint">· {{ c.part }}</span>{% endif %}</span>
+    <span>{% for s in c.slots.all %}<a href="{{ s.firmware.get_absolute_url }}">{{ s.firmware.name }}</a>{% if not forloop.last %}, {% endif %}{% empty %}<span class="faint">no firmware</span>{% endfor %}
+    {% if can_edit %} <a class="btn btn-sm btn-ghost" href="{% url 'firmware:controller_edit' project.key b.pk c.pk %}" aria-label="Edit {{ c }}">{% icon 'edit' 14 %}</a>{% endif %}</span></div>
+  {% empty %}<p class="muted small">List the microcontrollers on this board and the firmware each one runs. Then each revision can say which version it ships with.</p>{% endfor %}
+</div></div>

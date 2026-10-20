@@ -63,10 +63,7 @@
     </div></div>
   {% endif %}
 
-  {% if firmware %}<div class="card"><div class="card-head"><h2>{% icon 'cpu' 18 %} Firmware</h2></div><div class="card-body">
-    {% for fw, rows in firmware %}<p class="small"><a href="{{ fw.get_absolute_url }}"><strong>{{ fw.name }}</strong></a></p>
-      {% for r, rel in rows %}<div class="kv"><span>{{ r.name }}</span><span>{% if rel %}<a href="{{ rel.get_absolute_url }}">{{ rel.version }}</a>{% else %}<span class="faint">none released</span>{% endif %}</span></div>{% endfor %}
-    {% endfor %}</div></div>{% endif %}
+  {% include "firmware/_controllers_card.html" %}
 
   {% if housings is not None %}<div class="card"><div class="card-head"><h2>{% icon 'cube' 18 %} Housed in</h2></div><div class="card-body">
     {% if housings %}<ul class="list-plain">{% for m in housings %}<li><a href="{{ m.get_absolute_url }}">{{ m.name }}</a><span class="right small muted">{{ m.get_kind_display }}</span></li>{% endfor %}</ul>

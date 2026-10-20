@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}{% if c %}Edit {{ c }}{% else %}Add controller{% endif %}{% endblock %}
+{% load workbench humanize %}
+{% block content %}
+<div class="page-head"><div class="titles">
+  <div class="crumbs"><a href="{{ project.get_absolute_url }}">{{ project.name }}</a> / <a href="{{ b.get_absolute_url }}">{{ b.name }}</a> /</div>
+  <h1>{% if c %}Edit {{ c }}{% else %}Add controller{% endif %}</h1>
+  {% if not c %}<p class="intro">A controller is a chip on this board that runs firmware, like the main MCU or a radio module. Tick the firmware it runs; a bootloader is flashed first.</p>{% endif %}
+</div></div>
+<div class="card form-card"><div class="card-body">
+  <form method="post" novalidate>{% csrf_token %}
+    {% include "partials/form.html" with grid=True %}
+    <div class="form-actions"><button class="btn btn-primary">Save</button>
+      <a class="btn btn-ghost" href="{{ b.get_absolute_url }}">Cancel</a></div>
+  </form>
+  {% if c %}<form method="post" action="{% url 'firmware:controller_delete' project.key b.pk c.pk %}" data-confirm="Remove {{ c }}? The firmware versions chosen for it on each revision are removed too.">{% csrf_token %}
+    <button class="btn btn-ghost btn-danger">Remove this controller</button></form>{% endif %}
+</div></div>
+{% endblock %}

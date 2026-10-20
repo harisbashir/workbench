@@ -1,0 +1,53 @@
+(kicad_sch (version 20231120) (generator "eeschema") (generator_version "8.0")
+  (uuid "22222222-0000-0000-0000-000000000001")
+  (paper "A4")
+  (lib_symbols
+    (symbol "Device:R" (pin_numbers hide) (pin_names (offset 0)) (exclude_from_sim no) (in_bom yes) (on_board yes)
+      (property "Reference" "R" (at 2.032 0 90) (effects (font (size 1.27 1.27))))
+      (property "Value" "R" (at 0 0 90) (effects (font (size 1.27 1.27))))
+      (property "Footprint" "" (at -1.778 0 90) (effects (font (size 1.27 1.27)) hide))
+      (symbol "R_0_1"
+        (rectangle (start -1.016 -2.54) (end 1.016 2.54) (stroke (width 0.254) (type default)) (fill (type none))))
+      (symbol "R_1_1"
+        (pin passive line (at 0 3.81 270) (length 1.27) (name "~" (effects (font (size 1.27 1.27)))) (number "1" (effects (font (size 1.27 1.27)))))
+        (pin passive line (at 0 -3.81 90) (length 1.27) (name "~" (effects (font (size 1.27 1.27)))) (number "2" (effects (font (size 1.27 1.27)))))))
+    (symbol "Device:C" (pin_numbers hide) (pin_names (offset 0.254)) (exclude_from_sim no) (in_bom yes) (on_board yes)
+      (property "Reference" "C" (at 0.635 2.54 0) (effects (font (size 1.27 1.27)) (justify left)))
+      (property "Value" "C" (at 0.635 -2.54 0) (effects (font (size 1.27 1.27)) (justify left)))
+      (symbol "C_0_1"
+        (polyline (pts (xy -2.032 -0.762) (xy 2.032 -0.762)) (stroke (width 0.508) (type default)) (fill (type none)))
+        (polyline (pts (xy -2.032 0.762) (xy 2.032 0.762)) (stroke (width 0.508) (type default)) (fill (type none))))
+      (symbol "C_1_1"
+        (pin passive line (at 0 3.81 270) (length 2.794) (name "~" (effects (font (size 1.27 1.27)))) (number "1" (effects (font (size 1.27 1.27)))))
+        (pin passive line (at 0 -3.81 90) (length 2.794) (name "~" (effects (font (size 1.27 1.27)))) (number "2" (effects (font (size 1.27 1.27)))))))
+    (symbol "power:GND" (power) (pin_names (offset 0)) (exclude_from_sim no) (in_bom yes) (on_board yes)
+      (property "Reference" "#PWR" (at 0 -6.35 0) (effects (font (size 1.27 1.27)) hide))
+      (property "Value" "GND" (at 0 -3.81 0) (effects (font (size 1.27 1.27))))
+      (symbol "GND_0_1"
+        (polyline (pts (xy 0 0) (xy 0 -1.27) (xy 1.27 -1.27) (xy 0 -2.54) (xy -1.27 -1.27) (xy 0 -1.27)) (stroke (width 0) (type default)) (fill (type none))))
+      (symbol "GND_1_1"
+        (pin power_in line (at 0 0 270) (length 0) hide (name "GND" (effects (font (size 1.27 1.27)))) (number "1" (effects (font (size 1.27 1.27)))))))
+    (symbol "Regulator:TPS5430" (pin_names (offset 1.016)) (exclude_from_sim no) (in_bom yes) (on_board yes)
+      (property "Reference" "U" (at -7.62 8.89 0) (effects (font (size 1.27 1.27))))
+      (property "Value" "TPS5430" (at 0 8.89 0) (effects (font (size 1.27 1.27))))
+      (symbol "TPS5430_0_1"
+        (rectangle (start -7.62 7.62) (end 7.62 -7.62) (stroke (width 0.254) (type default)) (fill (type background)))
+        (circle (center 0 0) (radius 1) (stroke (width 0.2) (type default)) (fill (type none)))
+        (arc (start -2 0) (mid 0 2) (end 2 0) (stroke (width 0.2) (type default)) (fill (type none)))
+        (text "SW" (at 0 -3 0) (effects (font (size 1 1)))))
+      (symbol "TPS5430_1_1"
+        (pin power_in line (at -10.16 5.08 0) (length 2.54) (name "VIN" (effects (font (size 1.27 1.27)))) (number "7" (effects (font (size 1.27 1.27)))))
+        (pin input line (at -10.16 0 0) (length 2.54) (name "EN" (effects (font (size 1.27 1.27)))) (number "5" (effects (font (size 1.27 1.27)))))
+        (pin output line (at 10.16 5.08 180) (length 2.54) (name "PH" (effects (font (size 1.27 1.27)))) (number "8" (effects (font (size 1.27 1.27)))))
+        (pin power_in line (at 0 -10.16 90) (length 2.54) (name "GND" (effects (font (size 1.27 1.27)))) (number "9" (effects (font (size 1.27 1.27))))))))
+
+  (wire (pts (xy 80 50) (xy 89.84 50)) (stroke (width 0) (type default)) (uuid "dddd0000-0000-0000-0000-000000000001"))
+  (hierarchical_label "EN" (shape input) (at 80 50 180) (effects (font (size 1.27 1.27)) (justify right)) (uuid "dddd0000-0000-0000-0000-000000000002"))
+  (global_label "VBUS" (shape input) (at 80 45.08 180) (effects (font (size 1.27 1.27)) (justify right)) (uuid "dddd0000-0000-0000-0000-000000000003"))
+  (symbol (lib_id "Regulator:TPS5430") (at 100 50 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no)
+    (uuid "eeee0000-0000-0000-0000-000000000001")
+    (property "Reference" "U3" (at 92.38 58.89 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "TPS5430" (at 100 58.89 0) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "Package_SO:TI_SO-PowerPAD-8" (at 100 50 0) (effects (font (size 1.27 1.27)) hide))
+    (instances (project "pwr" (path "/11111111-0000-0000-0000-000000000001/cccc0000-0000-0000-0000-000000000001" (reference "U3") (unit 1)))))
+)

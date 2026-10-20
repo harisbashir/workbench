@@ -178,7 +178,7 @@ def build_stage(request, pk):
         if b.status != S.PLANNED:
             messages.info(request, f"{b.number} is {b.get_status_display().lower()}, so it can't be started.")
             return redirect(b)
-        if b.firmware_releases.filter(status="recalled").exists():
+        if b.has_recalled_firmware():
             messages.error(request, "This build uses recalled firmware. Choose a different firmware version first.")
             return redirect(b)
     elif b.status != S.IN_PROGRESS:
@@ -363,4 +363,4 @@ def build_context(b, user):
         m["n"] = step_index.get(m["step"])
     return {"b": b, "steps": steps, "board": board if board and board.get("ok") else None, "markers": markers,
             "off_board": off_board, "can_finish": can_finish(user, b), "viewbox": board.get("viewbox") if board else "",
-            "firmware": b.firmware_releases.select_related("firmware").prefetch_related("artifacts")}
+            "firmware": b.firmware_rows()}

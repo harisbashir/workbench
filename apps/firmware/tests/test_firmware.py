@@ -12,7 +12,7 @@ from apps.accounts.models import User
 from apps.core.models import Notification
 from apps.core.testing import make_user, signed_in
 from apps.firmware.models import Firmware, FirmwareRelease, parse_version, sort_key
-from apps.production.models import BuildOrder
+from apps.production.models import BuildFirmware, BuildOrder
 from apps.projects.models import Project, Revision
 
 
@@ -124,7 +124,7 @@ class FirmwareFlowTests(TestCase):
         rel = FirmwareRelease.objects.get()
         self.status(lead, rel, "released")
         b = BuildOrder.objects.create(revision=self.rev_a, quantity=1)
-        b.firmware_releases.add(rel)
+        BuildFirmware.objects.create(build=b, release=rel)
         self.status(lead, rel, "recalled")
         rel.refresh_from_db()
         self.assertEqual(rel.status, "released", "a reason is required")
@@ -133,7 +133,7 @@ class FirmwareFlowTests(TestCase):
         self.assertEqual(rel.status, "recalled")
         self.assertTrue(Notification.objects.filter(user=self.eng, text__contains="recalled").exists())
         buyer = signed_in(make_user("buyer", role=User.Role.PROCUREMENT))
-        self.assertContains(buyer.get(b.get_absolute_url()), "RECALLED")
+        self.assertContains(buyer.get(b.get_absolute_url()), "Recalled — do not flash")
         buyer.post(reverse("production:build_action", args=[b.pk]), {"action": "start", "force": "1"})
         b.refresh_from_db()
         self.assertEqual(b.status, "planned")
@@ -145,9 +145,9 @@ class FirmwareFlowTests(TestCase):
         self.status(lead, rel, "released")
         b = BuildOrder.objects.create(revision=self.rev_b, quantity=5)
         buyer = signed_in(make_user("buyer", role=User.Role.PROCUREMENT))
-        buyer.post(reverse("production:build_action", args=[b.pk]), {"action": "set_firmware", "firmware": [rel.pk]})
-        self.assertEqual(list(b.firmware_releases.all()), [rel])
-        self.assertContains(buyer.get(b.get_absolute_url()), "not marked compatible with Rev B")
+        buyer.post(reverse("production:build_action", args=[b.pk]), {"action": "set_firmware", "add": rel.pk})
+        self.assertEqual(list(b.build_firmware.values_list("release", flat=True)), [rel.pk])
+        self.assertContains(buyer.get(b.get_absolute_url()), "Not marked compatible with Rev B")
 
     def test_viewer_and_outsider(self):
         viewer = make_user("viewer", role=User.Role.VIEWER)

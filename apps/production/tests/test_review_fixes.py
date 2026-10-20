@@ -9,7 +9,7 @@ from apps.core.testing import make_user, signed_in
 from apps.firmware.models import Firmware, FirmwareRelease
 from apps.inventory.models import BomLine, Part, StockMovement, Supplier
 from apps.production.fab import _num, parse_placements
-from apps.production.models import BuildOrder, BuildStep, PurchaseOrder
+from apps.production.models import BuildFirmware, BuildOrder, BuildStep, PurchaseOrder
 from apps.projects.models import Project, Revision
 
 
@@ -129,7 +129,7 @@ class CompleteTests(Base):
         fw = Firmware.objects.create(project=self.project, name="App")
         rel = FirmwareRelease.objects.create(firmware=fw, version="1.0.0", status="released")
         b = self.build(qty=2)
-        b.firmware_releases.set([rel])
+        BuildFirmware.objects.create(build=b, release=rel)
         self.stage(b, action="start_house")
         rel.status = "recalled"
         rel.save()
@@ -147,9 +147,10 @@ class CompleteTests(Base):
         draft = FirmwareRelease.objects.create(firmware=fw, version="1.1.0", status="draft")
         b = self.build()
         self.stage(b, action="start_house")
-        r = self.act(b, action="set_firmware", firmware=[ok.pk, bad.pk, draft.pk, "abc"])
-        self.assertEqual(r.status_code, 302)
-        self.assertEqual(list(b.firmware_releases.all()), [ok])
+        for choice in (bad.pk, draft.pk, "abc", ok.pk):
+            r = self.act(b, action="set_firmware", add=choice)
+            self.assertEqual(r.status_code, 302)
+        self.assertEqual(list(b.build_firmware.values_list("release", flat=True)), [ok.pk])
 
 
 class ShortageOrderTests(Base):

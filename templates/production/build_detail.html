@@ -104,19 +104,27 @@
     {% endif %}
 
     {# ---------------- reference ---------------- #}
-    <div class="card"><div class="card-head"><h2>{% icon 'cpu' 16 %} Firmware to flash</h2></div>
-      {% if firmware %}<div class="table-wrap"><table class="table"><thead><tr><th>Firmware</th><th>Version</th><th>Files</th><th>Check</th></tr></thead><tbody>
+    <div class="card" id="firmware"><div class="card-head"><h2>{% icon 'cpu' 16 %} Firmware to flash</h2>{% if firmware %}<a class="btn btn-sm" href="{% url 'firmware:build_bundle' b.pk %}">{% icon 'download' 14 %} Flashing bundle</a>{% endif %}</div>
+      {% if fw_editable %}<form method="post" action="{% url 'production:build_action' b.pk %}">{% csrf_token %}{% endif %}
+      {% if firmware %}<div class="table-wrap"><table class="table"><thead><tr><th>Controller</th><th>Firmware</th><th>Version</th><th>Files</th><th>Check</th>{% if fw_editable %}<th class="right">Remove</th>{% endif %}</tr></thead><tbody>
       {% for f in firmware %}<tr class="{% for lvl, t in f.issues %}{% if lvl == 'bad' %}row-bad{% endif %}{% endfor %}">
-        <td>{{ f.rel.firmware.name }}</td><td><a href="{{ f.rel.get_absolute_url }}"><strong>{{ f.rel.version }}</strong></a> {% status_badge f.rel.status f.rel.get_status_display %}</td>
+        <td>{{ f.row.controller_label|default:"—" }}</td>
+        <td>{{ f.rel.firmware.name }}</td>
+        <td>{% if fw_editable %}<select name="row_{{ f.row.pk }}" aria-label="Version of {{ f.rel.firmware.name }}">
+            {% for v in f.versions %}<option value="{{ v.pk }}"{% if v == f.rel %} selected{% endif %}>{{ v.version }}{% if v.status != 'released' %} ({{ v.get_status_display|lower }}){% endif %}</option>{% endfor %}
+            {% if f.rel not in f.versions %}<option value="{{ f.rel.pk }}" selected>{{ f.rel.version }} ({{ f.rel.get_status_display|lower }})</option>{% endif %}
+          </select>{% else %}<a href="{{ f.rel.get_absolute_url }}"><strong>{{ f.rel.version }}</strong></a> {% status_badge f.rel.status f.rel.get_status_display %}{% endif %}</td>
         <td class="small">{% for a in f.rel.artifacts.all %}{% if a.kind != 'debug' %}<a href="{% url 'firmware:artifact' a.pk %}">{{ a.name }}</a> <span class="mono faint" title="SHA-256 {{ a.sha256 }}">{{ a.sha256|slice:":10" }}</span><br>{% endif %}{% endfor %}</td>
-        <td class="small">{% for lvl, t in f.issues %}<span class="{% if lvl == 'bad' %}overdue{% else %}warn-text{% endif %}">{{ t }}</span><br>{% empty %}<span class="ok-text">✓ Released and compatible</span>{% endfor %}</td></tr>{% endfor %}
+        <td class="small">{% for lvl, t in f.issues %}<span class="{% if lvl == 'bad' %}overdue{% else %}warn-text{% endif %}">{{ t }}</span><br>{% empty %}<span class="ok-text">✓ Released and compatible</span>{% endfor %}</td>
+        {% if fw_editable %}<td class="right"><input type="checkbox" name="remove_{{ f.row.pk }}" value="1" aria-label="Remove {{ f.rel }}"></td>{% endif %}</tr>{% endfor %}
       </tbody></table></div>
-      {% else %}<div class="card-body small muted">No firmware recorded for this build yet.</div>{% endif %}
-      {% if can_edit and b.status != 'completed' and b.status != 'cancelled' and fw_choices %}
-      <div class="card-foot"><form method="post" action="{% url 'production:build_action' b.pk %}">{% csrf_token %}
-        <div class="field-label">Choose the firmware for this build</div>
-        <div class="checks">{% for r in fw_choices %}<label><input type="checkbox" name="firmware" value="{{ r.pk }}" {% if r in b.firmware_releases.all %}checked{% endif %}> {{ r.firmware.name }} {{ r.version }}{% if r.status != 'released' %} ({{ r.get_status_display|lower }}){% endif %}{% if r.recommended %} — recommended{% endif %}</label>{% endfor %}</div>
-        <p></p><button class="btn btn-sm" name="action" value="set_firmware">Save firmware</button></form></div>{% endif %}
+      {% else %}<div class="card-body small muted">No firmware recorded for this build yet. Choose the firmware for each controller on <a href="{{ b.revision.get_absolute_url }}#firmware">{{ b.revision.title }}</a>, then copy it here.</div>{% endif %}
+      {% if fw_editable %}<div class="card-foot">
+        {% if fw_choices %}<label class="field-label" for="fw-add">Add firmware</label>
+        <select id="fw-add" name="add"><option value="">—</option>{% for r in fw_choices %}<option value="{{ r.pk }}">{{ r.firmware.name }} {{ r.version }}{% if r.status != 'released' %} ({{ r.get_status_display|lower }}){% endif %}</option>{% endfor %}</select>{% endif %}
+        <p></p><button class="btn btn-sm" name="action" value="set_firmware">Save firmware</button>
+        <button class="btn btn-sm btn-ghost" name="action" value="reset_firmware" data-confirm="Replace this build's firmware with what {{ b.revision.title }} ships with?">Copy from {{ b.revision.title }}</button>
+      </div></form>{% endif %}
     </div>
 
     <div class="card"><div class="card-head"><h2>{% if b.by_fab %}In-house parts from your stock{% else %}Parts needed{% endif %}</h2>

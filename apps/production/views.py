@@ -14,7 +14,7 @@ from apps.core.utils import audit, notify, procurement_required
 from apps.inventory.models import BASE_CURRENCY, Part, Supplier
 from apps.projects.models import Project, Revision, log_activity
 
-from .models import BuildOrder, PurchaseOrder, PurchaseOrderLine
+from .models import BuildFirmware, BuildOrder, PurchaseOrder, PurchaseOrderLine
 
 
 class DateInput(forms.DateInput):
@@ -62,7 +62,7 @@ class POLineForm(forms.ModelForm):
 class BuildForm(forms.ModelForm):
     class Meta:
         model = BuildOrder
-        fields = ["revision", "quantity", "assembly", "manufacturer", "due_date", "serial_prefix", "firmware_releases", "notes"]
+        fields = ["revision", "quantity", "assembly", "manufacturer", "due_date", "serial_prefix", "notes"]
         widgets = {"due_date": DateInput(), "notes": forms.Textarea(attrs={"rows": 3})}
 
     def __init__(self, user, *args, **kwargs):
@@ -74,21 +74,6 @@ class BuildForm(forms.ModelForm):
         self.fields["manufacturer"].label = "Assembly house"
         self.fields["manufacturer"].help_text = "e.g. JLCPCB or Seeed Fusion. Add them under Parts → Suppliers."
         self.fields["assembly"].widget = forms.RadioSelect(choices=BuildOrder.Assembly.choices)
-        from apps.firmware.models import FirmwareRelease
-        self.fields["firmware_releases"].queryset = FirmwareRelease.objects.filter(
-            firmware__project__in=Project.objects.visible_to(user), status__in=["released", "testing"]
-        ).select_related("firmware__project").order_by("firmware__project__key", "firmware__name", "-sort_key")
-        self.fields["firmware_releases"].label_from_instance = lambda r: f"{r.firmware.project.key} · {r.firmware.name} {r.version}" + (" (testing)" if r.status == "testing" else "")
-        self.fields["firmware_releases"].widget = forms.CheckboxSelectMultiple(choices=self.fields["firmware_releases"].choices)
-
-    def clean(self):
-        data = super().clean()
-        rev = data.get("revision")
-        for r in data.get("firmware_releases") or []:
-            if rev and r.firmware.project_id != rev.project_id:
-                self.add_error("firmware_releases", f"{r} belongs to a different project.")
-        return data
-
 
 class CompleteForm(forms.Form):
     passed = forms.IntegerField(min_value=0, label="Boards that passed test")
@@ -245,6 +230,7 @@ def build_create(request):
         b = form.save(commit=False)
         b.created_by = request.user
         b.save()
+        b.copy_firmware_from_revision()
         log_activity(b.revision.project, f"planned build {b.number}: {b.quantity} × {b.revision.title}", actor=request.user, url=b.get_absolute_url())
         audit(request, "build.created", b)
         if not b.revision.bom_lines.exists():
@@ -253,31 +239,57 @@ def build_create(request):
     return render(request, "production/build_form.html", {"form": form})
 
 
+def fw_versions(b, firmware_id):
+    """The versions a build may use for one firmware: released or testing."""
+    from apps.firmware.models import FirmwareRelease
+    return FirmwareRelease.objects.filter(firmware_id=firmware_id, firmware__project=b.revision.project,
+                                          status__in=["released", "testing"]).order_by("-sort_key")
+
+
+def _set_build_firmware(request, b):
+    """Apply the build page's firmware form: change versions, remove rows, add one. Returns how many choices were refused."""
+    from apps.firmware.models import FirmwareRelease
+    skipped = 0
+    with transaction.atomic():
+        BuildOrder.objects.select_for_update().filter(pk=b.pk).first()
+        for row in b.build_firmware.select_related("release"):
+            if request.POST.get(f"remove_{row.pk}"):
+                row.delete()
+                continue
+            raw = request.POST.get(f"row_{row.pk}", "")
+            if raw.isdigit() and int(raw) != row.release_id:
+                rel = fw_versions(b, row.release.firmware_id).filter(pk=int(raw)).first()
+                if rel is None or b.build_firmware.filter(release=rel).exists():
+                    skipped += 1
+                else:
+                    row.release = rel
+                    row.save(update_fields=["release"])
+        raw = request.POST.get("add", "")
+        if raw.isdigit():
+            rel = FirmwareRelease.objects.filter(pk=int(raw), firmware__project=b.revision.project,
+                                                 status__in=["released", "testing"]).first()
+            if rel is None:
+                skipped += 1
+            else:
+                BuildFirmware.objects.get_or_create(build=b, release=rel)
+    chosen = ", ".join(str(r.release) for r in b.build_firmware.select_related("release__firmware")) or "none"
+    audit(request, "build.firmware", b, firmware=chosen)
+    log_activity(b.revision.project, f"set firmware for build {b.number}: {chosen}", actor=request.user, url=b.get_absolute_url())
+    return skipped
+
+
 @login_required
 def build_detail(request, pk):
     b = get_object_or_404(BuildOrder.objects.select_related("revision__project", "manufacturer"), pk=pk)
     if not b.revision.project.can_view(request.user):
         raise PermissionDenied
     reqs = b.requirements()
-    firmware = []
-    for r in b.firmware_releases.select_related("firmware").prefetch_related("artifacts", "revisions"):
-        issues = []
-        if r.status == "recalled":
-            issues.append(("bad", "RECALLED — do not flash"))
-        elif r.status != "released":
-            issues.append(("warn", f"{r.get_status_display()} — not released yet"))
-        if not r.revisions.filter(pk=b.revision_id).exists():
-            issues.append(("warn", f"not marked compatible with {b.revision.title}"))
-        newer = r.firmware.recommended_for(b.revision)
-        if newer and newer.sort_key > r.sort_key:
-            issues.append(("warn", f"newer release {newer.version} is available"))
-        firmware.append({"rel": r, "issues": issues})
     from apps.firmware.models import FirmwareRelease
+    from apps.firmware.sets import issues_for
+    firmware = [{"row": row, "rel": row.release, "issues": issues_for(row.release, b.revision),
+                 "versions": [r for r in fw_versions(b, row.release.firmware_id)]} for row in b.firmware_rows()]
     fw_choices = list(FirmwareRelease.objects.filter(firmware__project=b.revision.project, status__in=["released", "testing"])
-                      .select_related("firmware").order_by("firmware__name", "-sort_key"))
-    recommended = {fw.pk: fw.recommended_for(b.revision) for fw in {r.firmware for r in fw_choices}}
-    for r in fw_choices:
-        r.recommended = recommended.get(r.firmware_id) == r
+                      .exclude(build_firmware__build=b).select_related("firmware").order_by("firmware__name", "-sort_key"))
     from .fab_views import FabOrderForm, ReceiveForm, build_context
     ctx = build_context(b, request.user)
     stages = [("planned", "Planned")]
@@ -296,6 +308,7 @@ def build_detail(request, pk):
         "fab_form": FabOrderForm(initial={"fab_ordered_at": timezone.localdate()}),
         "receive_form": ReceiveForm(initial={"received_qty": b.quantity}),
         "can_edit": request.user.can_manage_procurement,
+        "fw_editable": request.user.can_manage_procurement and b.status in BuildOrder.ACTIVE,
         "stages": [{"key": k, "label": label, "state": "done" if i < current else ("now" if i == current else "todo")}
                    for i, (k, label) in enumerate(stages)] if b.status != "cancelled" else [],
         "steps_total": len(ctx["steps"]), "steps_complete": sum(1 for s in ctx["steps"] if s.complete),
@@ -310,7 +323,8 @@ def build_action(request, pk):
     action = request.POST.get("action")
     project = b.revision.project
     S = BuildOrder.Status
-    recalled = b.firmware_releases.filter(status="recalled")
+    from apps.firmware.models import FirmwareRelease
+    recalled = FirmwareRelease.objects.filter(build_firmware__build=b, status="recalled")
     if action == "start":
         if b.status != S.PLANNED:
             messages.info(request, f"{b.number} is {b.get_status_display().lower()}, so it can't be started.")
@@ -378,14 +392,15 @@ def build_action(request, pk):
         else:
             messages.info(request, "Nothing returned — enter how many of each part are left over.")
     elif action == "set_firmware" and b.status in BuildOrder.ACTIVE:
-        from apps.firmware.models import FirmwareRelease
-        ids = [int(x) for x in request.POST.getlist("firmware") if x.isdigit()]
-        chosen = FirmwareRelease.objects.filter(pk__in=ids, firmware__project=project, status__in=["released", "testing"])
-        b.firmware_releases.set(chosen)
-        log_activity(project, f"set firmware for build {b.number}: " + (", ".join(str(r) for r in chosen) or "none"), actor=request.user, url=b.get_absolute_url())
-        if len(chosen) != len(ids):
+        skipped = _set_build_firmware(request, b)
+        if skipped:
             messages.warning(request, "Only released or testing firmware of this project can be used; the rest was left out.")
         messages.success(request, "Firmware for this build saved.")
+    elif action == "reset_firmware" and b.status in BuildOrder.ACTIVE:
+        n = b.copy_firmware_from_revision()
+        audit(request, "build.firmware", b, reset="from revision")
+        log_activity(project, f"reset the firmware for build {b.number} from {b.revision.title}", actor=request.user, url=b.get_absolute_url())
+        messages.success(request, f"Firmware copied from {b.revision.title}: {n} version{'s' if n != 1 else ''}.")
     elif action == "order_shortages" and b.status == S.PLANNED:
         created = _order_shortages(request, b)
         if created:

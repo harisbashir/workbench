@@ -159,9 +159,6 @@ class BuildOrder(models.Model):
     completed_qty = models.PositiveIntegerField(default=0, help_text="Boards that passed test.")
     failed_qty = models.PositiveIntegerField(default=0, help_text="Boards that failed test.")
     serial_prefix = models.CharField(max_length=20, blank=True, help_text="Optional, e.g. PWRB-2026-")
-    firmware_releases = models.ManyToManyField(
-        "firmware.FirmwareRelease", blank=True, related_name="builds", verbose_name="Firmware to flash",
-        help_text="Which firmware versions go on these boards. Recorded so every build is traceable.")
     notes = models.TextField(blank=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+")
     created_at = models.DateTimeField(auto_now_add=True)
@@ -246,6 +243,25 @@ class BuildOrder(models.Model):
                 setattr(self, k, v)
         return bool(n)
 
+    def copy_firmware_from_revision(self):
+        """Replace this build's firmware with the revision's firmware set. Returns the number of rows."""
+        from apps.firmware.models import FirmwareSetEntry
+        entries = FirmwareSetEntry.objects.filter(revision_id=self.revision_id).select_related("slot__controller", "release")
+        with transaction.atomic():
+            BuildOrder.objects.select_for_update().filter(pk=self.pk).first()
+            self.build_firmware.all().delete()
+            BuildFirmware.objects.bulk_create([
+                BuildFirmware(build=self, slot=e.slot, controller_label=str(e.slot.controller), release=e.release,
+                              flash_order=e.slot.flash_order) for e in entries])
+        return len(entries)
+
+    def firmware_rows(self):
+        return self.build_firmware.select_related("release__firmware", "slot__controller").prefetch_related(
+            "release__artifacts", "release__revisions")
+
+    def has_recalled_firmware(self):
+        return self.build_firmware.filter(release__status="recalled").exists()
+
     def begin(self, stage, **extra):
         """Planned → in progress (at `stage`). Returns False if it had already started or was cancelled."""
         return self._claim({"status": self.Status.PLANNED}, status=self.Status.IN_PROGRESS, stage=stage,
@@ -320,6 +336,25 @@ class BuildOrder(models.Model):
     def yield_percent(self):
         tested = self.completed_qty + self.failed_qty
         return round(100 * self.completed_qty / tested) if tested else None
+
+
+class BuildFirmware(models.Model):
+    """A firmware version flashed on a build, copied from the revision when the build is created.
+
+    It's a snapshot: later changes to the revision's firmware don't change what this build recorded."""
+
+    build = models.ForeignKey(BuildOrder, on_delete=models.CASCADE, related_name="build_firmware")
+    slot = models.ForeignKey("firmware.ControllerSlot", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    controller_label = models.CharField(max_length=100, blank=True)
+    release = models.ForeignKey("firmware.FirmwareRelease", on_delete=models.PROTECT, related_name="build_firmware")
+    flash_order = models.PositiveIntegerField(default=1)
+
+    class Meta:
+        ordering = ["controller_label", "flash_order", "release__firmware__name"]
+        unique_together = [("build", "release")]
+
+    def __str__(self):
+        return f"{self.controller_label or 'Board'} · {self.release}"
 
 
 class BuildStep(models.Model):

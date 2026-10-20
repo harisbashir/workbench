@@ -20,7 +20,7 @@ from apps.integrations import github
 from apps.inventory import bom_import
 from apps.inventory.models import BomLine, Part, StockMovement, Supplier
 from apps.production.models import BuildOrder, PurchaseOrder
-from apps.projects.models import Project, Revision, Task, TaskComment, log_activity
+from apps.projects.models import Controller, Project, Revision, Task, TaskComment, log_activity
 
 PEOPLE = [
     # username, first, last, role, title, tz, github
@@ -239,7 +239,7 @@ class Command(BaseCommand):
             task=Task.objects.get(project=pwr, number=4))
 
         # Firmware
-        from apps.firmware.models import Firmware, FirmwareArtifact, FirmwareRelease
+        from apps.firmware.models import ControllerSlot, Firmware, FirmwareArtifact, FirmwareRelease, FirmwareSetEntry
         FR = FirmwareRelease.Status
         app_fw = Firmware.objects.create(project=pwr, name="Main application", target="STM32G031K8", created_by=u["bilal"],
                                          description="Power supervisor: PVD brown-out handling, fuel gauge, logging over UART.")
@@ -269,6 +269,16 @@ class Command(BaseCommand):
                    [("pwr-app-1.4.0-rc.1.bin", 45100), ("pwr-app-1.4.0-rc.1.elf", 415000)])
         fw_boot = fw_release(boot_fw, "1.0.0", FR.RELEASED, [rev_a, rev_b], "### Changes\n- DFU over USB and UART\n- CRC32 image check before jump", 80,
                              [("pwr-boot-1.0.0.bin", 12288)])
+
+        # The power board's MCU runs the bootloader and the application; both revisions ship 1.3.0 + boot 1.0.0.
+        mcu = Controller.objects.create(board=rev_b.board, designator="U1", name="Main MCU", part="STM32G031K8")
+        boot_slot = ControllerSlot.objects.create(controller=mcu, firmware=boot_fw, flash_order=1)
+        app_slot = ControllerSlot.objects.create(controller=mcu, firmware=app_fw, flash_order=2)
+        for rev in (rev_a, rev_b):
+            FirmwareSetEntry.objects.create(revision=rev, slot=boot_slot, release=fw_boot, updated_by=u["bilal"])
+            FirmwareSetEntry.objects.create(revision=rev, slot=app_slot, release=fw_app_13, updated_by=u["bilal"])
+        rev_a.firmware_set_locked = True
+        rev_a.save(update_fields=["firmware_set_locked"])
 
         # Purchasing and production
         po = PurchaseOrder.objects.create(supplier=s["LCSC"], created_by=u["fatima"], reference="LC-20260918-7731",
@@ -307,7 +317,7 @@ class Command(BaseCommand):
                                         assembly=BuildOrder.Assembly.FAB, due_date=(now + timedelta(days=6)).date(), serial_prefix="PWRB-26-",
                                         fab_order_ref="SO2609118842", fab_tracking="DHL 4471 2290 18",
                                         notes="EVT build for field trials. 5 units go to Toronto.")
-        evt.firmware_releases.set([fw_app_13, fw_boot])
+        evt.copy_firmware_from_revision()
         evt.start()
         evt.consume_stock(u["fatima"])
         evt.create_steps()

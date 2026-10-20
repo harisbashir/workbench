@@ -25,8 +25,8 @@
 
   <div class="grid grid-2">
     <div class="card"><div class="card-head"><h3>Firmware to flash</h3></div><div class="card-body small">
-      {% for r in firmware %}<div class="kv"><span>{{ r.firmware.name }} <strong>{{ r.version }}</strong>{% if r.status != 'released' %} ({{ r.get_status_display|lower }}){% endif %}</span>
-        <span class="mono">{% for a in r.artifacts.all %}{% if a.kind != 'debug' %}{{ a.name }} · {{ a.sha256|slice:":12" }}<br>{% endif %}{% endfor %}</span></div>
+      {% for row in firmware %}{% with r=row.release %}<div class="kv"><span>{% if row.controller_label %}{{ row.controller_label }} · {% endif %}{{ r.firmware.name }} <strong>{{ r.version }}</strong>{% if r.status != 'released' %} ({{ r.get_status_display|lower }}){% endif %}</span>
+        <span class="mono">{% for a in r.artifacts.all %}{% if a.kind != 'debug' %}{{ a.name }} · {{ a.sha256|slice:":12" }}<br>{% endif %}{% endfor %}</span></div>{% endwith %}
       {% empty %}<p class="muted">None recorded.</p>{% endfor %}</div></div>
     <div class="card"><div class="card-head"><h3>Test results</h3></div><div class="card-body small">
       <div class="kv"><span>Boards passed</span><span class="sign-line"></span></div>

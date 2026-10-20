@@ -241,8 +241,8 @@ def build_export(include_versions=False, user=None):
         w.csv(["Production", "Builds.csv"], ["Build", "Project", "Revision", "Quantity", "Status", "Built by", "Firmware",
                                             "Passed", "Failed", "Started", "Completed", "Notes"],
               [[b.number, b.revision.project.key, b.revision.title, b.quantity, b.get_status_display(), b.manufacturer or "In-house",
-                "; ".join(str(r) for r in b.firmware_releases.all()), b.completed_qty, b.failed_qty, fmt(b.started_at),
-                fmt(b.completed_at), b.notes] for b in BuildOrder.objects.select_related("revision__project", "manufacturer")])
+                "; ".join(str(r.release) for r in b.build_firmware.all()), b.completed_qty, b.failed_qty, fmt(b.started_at),
+                fmt(b.completed_at), b.notes] for b in BuildOrder.objects.select_related("revision__project", "manufacturer").prefetch_related("build_firmware__release__firmware")])
 
         # People & audit
         w.csv(["People.csv"], ["Username", "Name", "Email", "Role", "Job title", "Time zone", "Active", "Last sign-in"],
